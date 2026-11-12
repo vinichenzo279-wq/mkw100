@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -442,10 +443,16 @@ void TeamUiRenderRight(CpuContext* ctx, const CpuContext& saved, uint32_t column
         return s;
     };
     const bool paired = teams > kConfirmRowCount;
+    // Listed in the fixed colour order (Red, Orange, ... Magenta), not deal order: a re-deal
+    // shuffles which colour each team has, and the list jumped about with every change.
+    std::vector<uint32_t> listed(teams);
+    for (uint32_t i = 0; i < teams; ++i) listed[i] = i;
+    std::sort(listed.begin(), listed.end(), [](uint32_t x, uint32_t y) { return Teams::ColourIndexOf(x) < Teams::ColourIndexOf(y); });
     for (uint32_t k = 0; k < kConfirmRowCount; ++k) {
         const uint32_t row = TeamUiRow(column, k);
-        const uint32_t a = paired ? 2 * k : k;
-        if (a >= teams) { Memory::Write8(row + kConfirmRowHidden, 1); continue; }
+        const uint32_t at = paired ? 2 * k : k;
+        if (at >= teams) { Memory::Write8(row + kConfirmRowHidden, 1); continue; }
+        const uint32_t a = listed[at];
         if (!paired) {
             const Teams::Colour& colour = Teams::ColourOf(a);
             std::string label = std::string(colour.name) + " Team (" + std::to_string(Teams::Members(a)) + ")";
@@ -455,8 +462,9 @@ void TeamUiRenderRight(CpuContext* ctx, const CpuContext& saved, uint32_t column
         }
         // Two teams a row, white; the player's team marked with "*".
         std::string label;
-        for (uint32_t b = a; b < a + 2 && b < teams; ++b) {
-            if (b > a) label += "  ";
+        for (uint32_t n = at; n < at + 2 && n < teams; ++n) {
+            const uint32_t b = listed[n];
+            if (n > at) label += "  ";
             label += std::string(Teams::ColourOf(b).name) + " " + std::to_string(Teams::Members(b)) + markers(b);
         }
         const uint32_t slot = k < 2 ? kPairSlot + k : Teams::ColourIndexOf(a);  // 4 rows at most: 2 free slots + colour slots
