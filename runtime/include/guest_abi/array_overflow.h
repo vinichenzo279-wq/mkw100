@@ -96,6 +96,10 @@ inline constexpr ArrayClass kClasses[] = {
     // module's other data, and racer 25's record a Pulsar hook list node (26 racers jumped to 0).
     // Not in array-classes.tsv: array_sites.py only handles singletons; its sites are hand-listed.
     {10, "rr_racer_state", 0x8189FC60, kStaticObject, 0x0, 0x38, 0, {kNoArray, kNoArray}},
+    // Balloon battle manager (0x4F8 bytes, created by 0x808697BC): {u8 held, Balloon* held[5]}[12]
+    // at 0x3C4 (stride 0x18), one per player. More than 12 players: balloon_battle.cpp runs its
+    // methods natively; the game's other readers are rewritten sites.
+    {11, "balloon_manager", 0x809C4748, -1, 0x3C4, 0x3DC, 0, {kNoArray, kNoArray}},
 };
 
 constexpr bool ValidTable() {
