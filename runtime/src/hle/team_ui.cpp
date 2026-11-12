@@ -251,15 +251,55 @@ uint32_t gScreenRacers = 0;
 uint32_t gScreenCustomColour = 0;  // the colour "Size of" edits
 uint32_t gScreenHeld = 0;          // frames left/right has been held (repeat)
 
-// Rows in use: the custom size row only with custom sizes.
-uint32_t TeamUiSettingCount() { return Teams::CustomSizes() ? kSettingRows : kSettingCustomSize; }
+// Which settings the screen shows: Team VS (2-8 teams) or battle (red/blue sizes).
+enum class TeamScreen { kNone, kVs, kBattle };
+TeamScreen gScreenKind = TeamScreen::kNone;
 
-bool TeamUiScreenActive() {
+// Rows in use: the custom size row only with custom sizes.
+// Battle rows: split (even / custom), red's size (custom only), your team.
+enum BattleSetting : uint32_t { kBattleSplit, kBattleRed, kBattleTeam };
+uint32_t TeamUiSettingCount() {
+    if (gScreenKind == TeamScreen::kBattle) return 3;
+    return Teams::CustomSizes() ? kSettingRows : kSettingCustomSize;
+}
+
+std::string TeamUiBattleText(uint32_t setting) {
+    const uint32_t racers = uint32_t(LocalVs::DesiredCount());
+    switch (setting) {
+    case kBattleSplit: return std::string("Teams: ") + (Teams::BattleRedSize() ? "Custom sizes" : "Even");
+    case kBattleRed:
+        return Teams::BattleRedSize() ? "Red racers: " + std::to_string(Teams::BattleRedFor(racers)) : "Red racers: half";
+    default: {
+        static const char* const kChoice[3] = {"Random", "Red", "Blue"};
+        return std::string("Your team: ") + kChoice[Teams::BattleTeamChoice() % 3];
+    }
+    }
+}
+
+void TeamUiBattleChange(uint32_t setting, int step) {
+    const uint32_t racers = uint32_t(LocalVs::DesiredCount());
+    switch (setting) {
+    case kBattleSplit:
+        Teams::SetBattleRedSize(Teams::BattleRedSize() ? 0 : (racers + 1) / 2);
+        break;
+    case kBattleRed:
+        if (Teams::BattleRedSize() == 0) Teams::SetBattleRedSize((racers + 1) / 2);
+        Teams::SetBattleRedSize(uint32_t(std::clamp(int(Teams::BattleRedFor(racers)) + step, 1, int(racers) - 1)));
+        break;
+    default:
+        Teams::SetBattleTeamChoice((Teams::BattleTeamChoice() + 3 + uint32_t(step)) % 3);
+        break;
+    }
+}
+
+TeamScreen TeamUiScreenKind() {
     const uint32_t rd = Memory::Read32(kRacedata);
     const int racers = LocalVs::DesiredCount();
-    // Offline Team VS only (menu scenario gameMode 1); battles use the same team screen.
-    return rd != 0 && racers > 12 && Memory::Read32(rd + kMenuGameMode) == 1 && (Memory::Read32(rd + kMenuFlags) & 2) != 0;
+    if (rd == 0 || racers <= 12 || (Memory::Read32(rd + kMenuFlags) & 2) == 0) return TeamScreen::kNone;
+    const uint32_t mode = Memory::Read32(rd + kMenuGameMode);
+    return mode == 1 ? TeamScreen::kVs : mode == 3 ? TeamScreen::kBattle : TeamScreen::kNone;
 }
+bool TeamUiScreenActive() { return TeamUiScreenKind() != TeamScreen::kNone; }
 
 void TeamUiTextColour(CpuContext* ctx, const CpuContext& saved, uint32_t text, const Teams::Colour& c) {
     for (uint32_t k = 0; k < 2; ++k) {
@@ -349,15 +389,34 @@ void TeamUiRenderLeft(CpuContext* ctx, const CpuContext& saved, uint32_t column)
     for (uint32_t k = 0; k < kConfirmRowCount; ++k) {
         const uint32_t row = TeamUiRow(column, k);
         if (k >= TeamUiSettingCount()) { Memory::Write8(row + kConfirmRowHidden, 1); continue; }
-        std::string text = TeamUiSettingText(k);
+        std::string text = gScreenKind == TeamScreen::kBattle ? TeamUiBattleText(k) : TeamUiSettingText(k);
         if (k == gScreenPick) text = "< " + text + " >";
         // The custom size row in its colour, the rest white; the picked one yellow.
-        const Teams::Colour& plain = k == kSettingCustomSize ? Teams::ColourByIndex(gScreenCustomColour) : kWhite;
+        const Teams::Colour& plain = gScreenKind == TeamScreen::kVs && k == kSettingCustomSize
+                                         ? Teams::ColourByIndex(gScreenCustomColour) : kWhite;
         TeamUiSetRow(ctx, saved, row, CustomMessages::LabelBmg(kSettingSlot + k, text), k == gScreenPick ? kPicked : plain);
     }
 }
 
+void TeamUiRenderBattleRight(CpuContext* ctx, const CpuContext& saved, uint32_t column) {
+    const uint32_t racers = uint32_t(LocalVs::DesiredCount());
+    const uint32_t red = Teams::BattleRedFor(racers);
+    const uint32_t choice = Teams::BattleTeamChoice();
+    for (uint32_t k = 0; k < kConfirmRowCount; ++k) {
+        const uint32_t row = TeamUiRow(column, k);
+        if (k >= 2) { Memory::Write8(row + kConfirmRowHidden, 1); continue; }
+        const uint32_t colour = k == 0 ? 0 : 4;  // Red, Blue in the colour table
+        std::string label = std::string(k == 0 ? "Red" : "Blue") + " Team (" + std::to_string(k == 0 ? red : racers - red) + ")";
+        if (choice == k + 1) label += " You";
+        TeamUiSetRow(ctx, saved, row, CustomMessages::TeamLabelBmg(colour, label), Teams::ColourByIndex(colour));
+    }
+}
+
 void TeamUiRenderRight(CpuContext* ctx, const CpuContext& saved, uint32_t column) {
+    if (gScreenKind == TeamScreen::kBattle) {
+        TeamUiRenderBattleRight(ctx, saved, column);
+        return;
+    }
     const uint32_t teams = Teams::InPlay();
     const uint32_t mine = Teams::TeamOf(0);
     const bool paired = teams > kConfirmRowCount;
@@ -406,8 +465,9 @@ extern "C" void TeamUi_ConfirmTeamInit_807e9f5c(CpuContext* ctx) {
         WriteName(kRedPane, "red_null");
         WriteName(kBluePane, "blue_null");
     }
+    gScreenKind = TeamUiScreenKind();
     gScreenRacers = uint32_t(LocalVs::DesiredCount());
-    Teams::DealForMenu(gScreenRacers);
+    if (gScreenKind == TeamScreen::kVs) Teams::DealForMenu(gScreenRacers);
     const uint32_t side = Memory::Read32(column + kConfirmTeam) == 0 ? 0 : 1;
     gScreenColumn[side] = column;
     if (side == 0) gScreenPick = 0;
@@ -436,14 +496,20 @@ extern "C" void TeamUi_ControlUpdate_8063db00(CpuContext* ctx) {
     // Left/right: once per press; held, the custom size repeats (after ~0.3 s, every 3 frames).
     const bool held = (now & 0x60) != 0;
     gScreenHeld = held ? gScreenHeld + 1 : 0;
-    const bool repeat = gScreenPick == kSettingCustomSize && gScreenHeld > 18 && gScreenHeld % 3 == 0;
+    const bool sizeRow = gScreenKind == TeamScreen::kBattle ? gScreenPick == kBattleRed : gScreenPick == kSettingCustomSize;
+    const bool repeat = sizeRow && gScreenHeld > 18 && gScreenHeld % 3 == 0;
     if (pressed(0x8)) { gScreenPick = (gScreenPick + rows - 1) % rows; redraw = true; }
     else if (pressed(0x10)) { gScreenPick = (gScreenPick + 1) % rows; redraw = true; }
     else if (pressed(0x20) || pressed(0x40) || repeat) {
-        TeamUiChange(gScreenPick, (now & 0x40) != 0 ? 1 : -1);
+        const int step = (now & 0x40) != 0 ? 1 : -1;
         redraw = true;
-        redeal = gScreenPick != kSettingScore && gScreenPick != kSettingHits &&
-                 !(gScreenPick == kSettingAmount && Teams::CustomSizes());
+        if (gScreenKind == TeamScreen::kBattle) {
+            TeamUiBattleChange(gScreenPick, step);  // counts only: battle teams are dealt at race start
+        } else {
+            TeamUiChange(gScreenPick, step);
+            redeal = gScreenPick != kSettingScore && gScreenPick != kSettingHits &&
+                     !(gScreenPick == kSettingAmount && Teams::CustomSizes());
+        }
         if (gScreenPick >= TeamUiSettingCount()) gScreenPick = 0;
     }
     if (!redraw) return;

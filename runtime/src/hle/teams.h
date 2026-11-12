@@ -50,6 +50,15 @@ void SetColourSize(uint32_t colour, uint32_t size);
 // The fixed colour table, for settings UIs.
 const Colour& ColourByIndex(uint32_t colour);
 
+// Battle past 12 keeps the game's red (team 0) and blue (1): balloons, items and karts are red/blue
+// assets. Red's size (local_vs.battle_red, 0 = even) and the player's team (battle_team: 0 random,
+// 1 red, 2 blue) are settable; local_vs.cpp deals them at the first battle of a series.
+uint32_t BattleRedSize();
+void SetBattleRedSize(uint32_t racers);
+uint32_t BattleRedFor(uint32_t racers);  // red's size in a battle of `racers`
+uint32_t BattleTeamChoice();
+void SetBattleTeamChoice(uint32_t choice);
+
 // After RaceConfig::InitRace (0x805302C4): a Team VS race of more than 12 racers has the race
 // scenario's team flag cleared and becomes a teams race; the first race of a series (and a
 // headless boot) deals new teams.

@@ -13,6 +13,8 @@
 #include "runtime_log.h"
 #include <imgui.h>
 #include <algorithm>
+#include <numeric>
+#include <random>
 #include <array>
 #include <atomic>
 #include <mutex>
@@ -448,7 +450,24 @@ void PrepareRace(uint32_t rd) {
             Memory::Write8(p+0xE2, i<seriesCount ? seriesCount-i : 0);
         }
     }
-    if (teamVs) {
+    if (teamVs && mode==3 && seriesCount>12 && first) {
+        // Battle past 12: red/blue by the battle settings (Teams::BattleRedFor, BattleTeamChoice).
+        const uint32_t choice=Teams::BattleTeamChoice();
+        const uint32_t dealt=Memory::Read32(Player(menu,0)+0xCC);
+        const uint32_t mine=choice==1 ? 0 : choice==2 ? 1 : (dealt<2 ? dealt : 0);
+        const uint32_t red=Teams::BattleRedFor(seriesCount);
+        std::vector<uint32_t> cpus(seriesCount-1);
+        std::iota(cpus.begin(),cpus.end(),1u);
+        std::mt19937 random(uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()));
+        std::shuffle(cpus.begin(),cpus.end(),random);
+        const uint32_t redCpus=std::min<uint32_t>(uint32_t(cpus.size()), red-(mine==0 ? 1 : 0));
+        Memory::Write32(Player(menu,0)+0xCC,mine);
+        for (uint32_t k=0;k<cpus.size();++k) Memory::Write32(Player(menu,cpus[k])+0xCC,k<redCpus ? 0 : 1);
+        RT_LOGF("local-vs", "battle teams: red %u blue %u (you %s)\n", redCpus+(mine==0), uint32_t(cpus.size())-redCpus+(mine==1),
+                mine==0 ? "red" : "blue");
+    } else if (teamVs && mode==3 && seriesCount>12) {
+        // Later battles of the series keep the teams dealt at the first.
+    } else if (teamVs) {
         // The team page assigns the first 12; the rest join whichever team is smaller.
         uint32_t size[2] = {0, 0};
         for (uint32_t i=0;i<12 && i<seriesCount;++i) { const uint32_t t=Memory::Read32(Player(menu,i)+0xCC); if (t<2) ++size[t]; }

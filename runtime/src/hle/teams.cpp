@@ -51,6 +51,8 @@ std::atomic<uint32_t> g_inPlay{0};
 std::atomic<bool> g_teamHits{true};
 std::atomic<uint32_t> g_playerColour{Teams::kNoTeam};
 std::atomic<bool> g_custom{false};
+std::atomic<uint32_t> g_battleRed{0};
+std::atomic<uint32_t> g_battleTeam{0};
 std::array<std::atomic<uint32_t>, Teams::kMaxTeams> g_colourSize{};
 
 const char* const kTeamsColourKeys[Teams::kMaxTeams] = {"red", "orange", "yellow", "green", "blue", "purple", "pink", "cyan"};
@@ -133,6 +135,9 @@ void Initialize(uint32_t teamsFromConfig) {
     for (uint32_t k = 0; k < kMaxTeams; ++k)
         if (c.localVsTeamColour.value_or("random") == kTeamsColourKeys[k]) g_playerColour = k;
     g_custom = c.localVsTeamCustom.value_or(false);
+    g_battleRed = std::min<uint32_t>(c.localVsBattleRed.value_or(0), PlayerSlots::kMaxPlayers);
+    const std::string battleTeam = c.localVsBattleTeam.value_or("random");
+    g_battleTeam = battleTeam == "red" ? 1 : battleTeam == "blue" ? 2 : 0;
     const std::string sizes = c.localVsTeamSizes.value_or("50,0,0,0,50,0,0,0");
     size_t at = 0;
     for (uint32_t k = 0; k < kMaxTeams; ++k) {
@@ -162,6 +167,23 @@ void SetColourSize(uint32_t colour, uint32_t size) {
     TeamsSaveColourSizes();
 }
 const Colour& ColourByIndex(uint32_t colour) { return colour < kMaxTeams ? kColours[colour] : kNoColour; }
+
+uint32_t BattleRedSize() { return g_battleRed.load(); }
+void SetBattleRedSize(uint32_t racers) {
+    g_battleRed = std::min<uint32_t>(racers, PlayerSlots::kMaxPlayers);
+    RuntimeConfigFile::WriteSetting("local_vs", "battle_red", std::to_string(g_battleRed.load()));
+}
+uint32_t BattleRedFor(uint32_t racers) {
+    if (racers < 2) return racers;
+    const uint32_t red = BattleRedSize();
+    return red ? std::clamp<uint32_t>(red, 1, racers - 1) : (racers + 1) / 2;
+}
+uint32_t BattleTeamChoice() { return g_battleTeam.load(); }
+void SetBattleTeamChoice(uint32_t choice) {
+    g_battleTeam = choice % 3;
+    static const char* const kNames[3] = {"random", "red", "blue"};
+    RuntimeConfigFile::WriteSetting("local_vs", "battle_team", RuntimeConfigFile::FormatString(kNames[g_battleTeam.load()]));
+}
 
 bool TeamHits() { return g_teamHits.load(); }
 void SetTeamHits(bool on) {
