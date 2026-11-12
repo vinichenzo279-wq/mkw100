@@ -7,6 +7,8 @@ void DrawSettings();
 void DrawHud();
 void TestItems(CpuContext* ctx, uint32_t raceinfo);
 void PrepareRace(uint32_t racedata);
+// After RaceConfig::InitRace: past 12 racers in GP, every racer's start position from the cup standings.
+void AfterInitRace(uint32_t racedata);
 bool UnlocksEnabled();
 // "Impossible CPUs": Hard CPUs get the faster speed and always-on action tables of ai_impossible.cpp.
 bool ImpossibleCpus();

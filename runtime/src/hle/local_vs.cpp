@@ -78,7 +78,7 @@ uint32_t RaceCount() {
 bool ExpandedOffline() {
     const auto rd = Memory::Read32(MKW_GADDR(809BD728));
     return rd && RaceCount() > 12 && RaceCount() <= PlayerSlots::kMaxPlayers &&
-           Memory::Read32(rd + 0x20 + 0xB50) == 1 && Memory::Read32(rd + 0x20 + 0xB54) == 0;
+           Memory::Read32(rd + 0x20 + 0xB50) <= 1 && Memory::Read32(rd + 0x20 + 0xB54) == 0;  // GP (0) or VS (1)
 }
 }
 
@@ -450,9 +450,9 @@ void PrepareRace(uint32_t rd) {
     for (uint32_t i=1;i<12;++i) solo = solo && Memory::Read32(Player(menu,i)+0x10) != 0;
     // Offline VS, solo or Team VS (past 12 racers teams.cpp takes it over after InitRace).
     const bool teamVs = (Memory::Read32(menu+0xB70)&2)!=0;
-    // Offline VS or battle (gameMode 1, 3: battles are always red/blue teams; balloon_battle.cpp).
+    // Offline GP, VS or battle (gameMode 0, 1, 3: battles are always red/blue teams; balloon_battle.cpp).
     const uint32_t mode = Memory::Read32(menu+0xB50);
-    const bool eligible = solo && (mode==1 || mode==3) && (gameType==0 || preview);
+    const bool eligible = solo && (mode==0 || mode==1 || mode==3) && (gameType==0 || preview);
     if (!eligible) {
         for (uint32_t i=12;i<PlayerSlots::kMaxPlayers;++i) Memory::Write32(Player(menu,i)+0x10,5);
         seriesCount=0;
@@ -512,6 +512,29 @@ void PrepareRace(uint32_t rd) {
             Memory::Read32(menu+0xB48),seriesCount,Memory::Read8(menu+0xB6C),humanCharacter);
 }
 }
+
+// GP: between races the game recomputes each racer's start position (race scenario player +0xE1)
+// from the cup points, for racers 0-11 only; the rest kept their first-race value and collided
+// with those (race_positions.cpp: "racer 13 has rank 11 of 24"). Past 12 every racer's start
+// position is set here instead: by series total (+0xDA), ties by the last race's place (+0xE2).
+namespace LocalVs {
+void AfterInitRace(uint32_t rd) {
+    using namespace local_vs_detail;
+    const uint32_t race = rd + 0x20;
+    if (Memory::Read32(race + 0xB50) != 0 || Memory::Read8(race + 0xB6C) == 0) return;  // GP, after race 1
+    const uint32_t count = RaceCount();
+    if (count <= 12 || count > PlayerSlots::kMaxPlayers) return;
+    std::vector<uint32_t> order(count);
+    std::iota(order.begin(), order.end(), 0u);
+    std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
+        const uint32_t ta = Memory::Read16(Player(race, a) + 0xDA), tb = Memory::Read16(Player(race, b) + 0xDA);
+        if (ta != tb) return ta > tb;
+        return Memory::Read8(Player(race, a) + 0xE2) < Memory::Read8(Player(race, b) + 0xE2);
+    });
+    for (uint32_t k = 0; k < count; ++k) Memory::Write8(Player(race, order[k]) + 0xE1, uint8_t(k + 1));
+    RT_LOGF("local-vs", "gp grid: %u racers by standings (leader racer %u)\n", count, order[0]);
+}
+} // namespace LocalVs
 
 // The vanilla function has a 12-entry stack array and indexes pointsRoom[12][12].
 // Never call it for expanded offline VS, even to repair the result afterward.
@@ -863,10 +886,10 @@ REGISTER_NATIVE_WRAPPER_AS(0x807F4A08, LocalVs_Rank_807f4a08, "LocalVs_Rank_807f
 // Reference: https://mariokartwii.com/showthread.php?tid=2206 (Unnamed, credits Anarion).
 extern "C" void LocalVs_ItemBox_80828cb8(CpuContext* ctx) {
     const uint32_t self=ctx->gpr[3];
-    // Expanded offline VS and battle (battle arenas have item boxes too).
+    // Expanded offline GP, VS and battle (battle arenas have item boxes too).
     const uint32_t rd=Memory::Read32(MKW_GADDR(809BD728));
     const uint32_t mode=rd ? Memory::Read32(rd+0x20+0xB50) : 0;
-    const bool expanded=rd && local_vs_detail::RaceCount()>12 && (mode==1 || mode==3) && Memory::Read32(rd+0x20+0xB54)==0;
+    const bool expanded=rd && local_vs_detail::RaceCount()>12 && (mode<=1 || mode==3) && Memory::Read32(rd+0x20+0xB54)==0;
     const bool instant=expanded && local_vs_detail::instantBoxes.load();
     const uint32_t active=Memory::Read32(self+0xB0);
     MKW_GUEST_NEXT(80828CB8)(ctx);

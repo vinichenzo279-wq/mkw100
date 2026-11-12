@@ -213,10 +213,12 @@ extern "C" void RaceConfig_InitRace_805302c4(CpuContext* ctx) {
     LocalVs::PrepareRace(racedata);
     MKW_GUEST_NEXT(805302C4)(ctx);
     Cc200::OnInitRace(racedata);
-    Teams::OnInitRace(racedata);
     for (uint32_t i = kInlineSlots; i < kMaxPlayers; ++i) {
         CopyPlayer(PlayerAddress(racedata, racedata + kScenarioOffsets[0], i),
                    PlayerAddress(racedata, racedata + kScenarioOffsets[1], i));
     }
+    // After the overflow players are copied, so their race scenario fields stay as set here.
+    Teams::OnInitRace(racedata);
+    LocalVs::AfterInitRace(racedata);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x805302C4, RaceConfig_InitRace_805302c4, "RaceConfig_InitRace_805302c4");
