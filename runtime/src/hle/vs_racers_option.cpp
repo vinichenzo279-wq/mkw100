@@ -231,16 +231,25 @@ REGISTER_NATIVE_WRAPPER_AS(0x806284C8, VsSettings_Ctor_806284c8, "VsSettings_Cto
 constexpr uint32_t kSaveManager = 0x809BD748;  // SaveDataManager instance (current license +0x36)
 constexpr uint32_t kLicenseBase = 0x38, kLicenseSize = 0x93F0, kMirrorWord = 0x9000, kMirrorBit = 1u << 20;
 
-extern "C" void VsSettings_CreateControl_808530b8(CpuContext* ctx) {
-    if (ctx->gpr[4] != kVsPage.rowId) {
+// Sets the Mirror completion bit for its scope (with the unlocks setting) and puts it back after.
+struct MirrorUnlockScope {
+    uint32_t word = 0, saved = 0;
+    MirrorUnlockScope() {
+        if (!LocalVs::UnlocksEnabled()) return;
         const uint32_t sdm = Memory::Read32(kSaveManager);
         const int16_t license = sdm ? int16_t(Memory::Read16(sdm + 0x36)) : -1;
-        const uint32_t word = license >= 0 ? sdm + kLicenseBase + uint32_t(license) * kLicenseSize + kMirrorWord : 0;
-        const uint32_t saved = word ? Memory::Read32(word) : 0;
-        const bool unlock = word != 0 && LocalVs::UnlocksEnabled();
-        if (unlock) Memory::Write32(word, saved | kMirrorBit);
+        if (license < 0) return;
+        word = sdm + kLicenseBase + uint32_t(license) * kLicenseSize + kMirrorWord;
+        saved = Memory::Read32(word);
+        Memory::Write32(word, saved | kMirrorBit);
+    }
+    ~MirrorUnlockScope() { if (word) Memory::Write32(word, saved); }
+};
+
+extern "C" void VsSettings_CreateControl_808530b8(CpuContext* ctx) {
+    if (ctx->gpr[4] != kVsPage.rowId) {
+        MirrorUnlockScope unlock;
         MKW_GUEST_NEXT(808530B8)(ctx);
-        if (unlock) Memory::Write32(word, saved);
         return;
     }
     ctx->gpr[3] = BuildRow(ctx, ctx->gpr[3], kVsPage);
@@ -412,3 +421,17 @@ extern "C" void BattleSettings_OnUpDownSelect_8083c838(CpuContext* ctx) {
     gSettingHelp = false;
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8083C838, BattleSettings_OnUpDownSelect_8083c838, "BattleSettings_OnUpDownSelect_8083c838");
+
+// The GP class page offers Mirror (200cc here) on the same completion bit, read inline in its
+// OnInit (0x8083F4A8) and CreateExternalControl (0x8083F580).
+extern "C" void GpClassSelect_OnInit_8083f4a8(CpuContext* ctx) {
+    MirrorUnlockScope unlock;
+    MKW_GUEST_NEXT(8083F4A8)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8083F4A8, GpClassSelect_OnInit_8083f4a8, "GpClassSelect_OnInit_8083f4a8");
+
+extern "C" void GpClassSelect_CreateExternalControl_8083f580(CpuContext* ctx) {
+    MirrorUnlockScope unlock;
+    MKW_GUEST_NEXT(8083F580)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8083F580, GpClassSelect_CreateExternalControl_8083f580, "GpClassSelect_CreateExternalControl_8083f580");

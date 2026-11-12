@@ -584,6 +584,24 @@ extern "C" void LocalVs_UpdatePoints_8052e950(CpuContext* ctx) {
         Teams::SetStandings(Teams::Rank(totals));
         Teams::Log("series totals", totals);
     }
+    // GP: the game ends UpdatePoints by adding each human racer's driving score for the race
+    // (RaceinfoPlayer::ComputeGPRank 0x805368F8, into +0xDE; docs/mkw100/gp-rank.md). Without it
+    // the GP rank past 12 racers had no driving score at all.
+    // This function also runs again from the results page (LocalVs_UpdateRows); the score adds, so
+    // once per race (Raceinfo instance and race number).
+    static uint64_t scoredRace = 0;
+    const uint64_t raceKey = (uint64_t(info) << 8) | Memory::Read8(rd + 0x20 + 0xB6C);
+    if (Memory::Read32(rd + 0x20 + 0xB50) == 0 && raceKey != scoredRace) {
+        scoredRace = raceKey;
+        const CpuContext saved = *ctx;
+        for (uint32_t i = 0; i < count; ++i) {
+            if (Memory::Read32(rd + MKW100_PlayerSlotOffset(i) + 0x38) != 0) continue;  // humans only, as the game
+            *ctx = saved;
+            ctx->gpr[3] = Memory::Read32(infos + 4 * i);
+            InvokeIndirectCpu(MKW_GADDR(805368F8), ctx);
+        }
+        *ctx = saved;
+    }
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8052E950, LocalVs_UpdatePoints_8052e950, "LocalVs_UpdatePoints_8052e950");
 
@@ -1063,3 +1081,19 @@ extern "C" void LocalVs_AwardResultItems_805bcdc4(CpuContext* ctx) {
     *ctx = saved;
 }
 REGISTER_NATIVE_WRAPPER_AS(0x805BCDC4, LocalVs_AwardResultItems_805bcdc4, "LocalVs_AwardResultItems_805bcdc4");
+
+// RacedataPlayer::ComputeGPRank (0x8052DAF0): the GP rank (3 stars .. E) adds a driving score
+// (+0xDE, s16, 1000/700/400/200/0) and the cup points (+0xDA, u16: 60/52/40/20, made for 12 racers'
+// scoring, 4 wins = 60); 0 is 3 stars, 7 is E. Past 12 racers the points are scaled to that range
+// for the call: points * 60 / (first place's points * 4 races).
+extern "C" void LocalVs_ComputeGpRank_8052daf0(CpuContext* ctx) {
+    const uint32_t player = ctx->gpr[3];
+    const uint32_t count = local_vs_detail::RaceCount();
+    if (count <= 12 || player < 0x80000000u) { MKW_GUEST_NEXT(8052DAF0)(ctx); return; }
+    const uint32_t best = std::max<uint32_t>(LocalVs::PointsFor(1, count) * 4, 1);
+    const uint32_t total = Memory::Read16(player + 0xDA);
+    Memory::Write16(player + 0xDA, uint16_t(std::min<uint32_t>(total * 60 / best, 60)));
+    MKW_GUEST_NEXT(8052DAF0)(ctx);
+    Memory::Write16(player + 0xDA, uint16_t(total));
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8052DAF0, LocalVs_ComputeGpRank_8052daf0, "LocalVs_ComputeGpRank_8052daf0");
