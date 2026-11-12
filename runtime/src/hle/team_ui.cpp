@@ -230,6 +230,7 @@ constexpr uint32_t kConfirmVtable = 0x808D37D8;
 constexpr uint32_t kSetMessage = 0x8063DCBC; // LayoutUIControl::SetMessage(control, pane, bmg, args)
 constexpr uint32_t kGetControllerHolder = 0x805EEE0C;  // ManipulatorManager::GetControllerHolder(0)
 constexpr uint32_t kMenuFlags = 0xC10 + 0xB70;    // menu scenario settings modeFlags (bit 2 teams)
+constexpr uint32_t kMenuGameMode = 0xC10 + 0xB50; // menu scenario settings gameMode (1 VS)
 constexpr uint32_t kScreenNames = ArrayOverflow::kMenuText + 0x2040;  // pane name strings
 constexpr uint32_t kMiiNamePane = kScreenNames;           // "mii_name"
 constexpr uint32_t kIconPane = kScreenNames + 0x10;       // "chara_icon"
@@ -256,7 +257,8 @@ uint32_t TeamUiSettingCount() { return Teams::CustomSizes() ? kSettingRows : kSe
 bool TeamUiScreenActive() {
     const uint32_t rd = Memory::Read32(kRacedata);
     const int racers = LocalVs::DesiredCount();
-    return rd != 0 && racers > 12 && (Memory::Read32(rd + kMenuFlags) & 2) != 0;
+    // Offline Team VS only (menu scenario gameMode 1); battles use the same team screen.
+    return rd != 0 && racers > 12 && Memory::Read32(rd + kMenuGameMode) == 1 && (Memory::Read32(rd + kMenuFlags) & 2) != 0;
 }
 
 void TeamUiTextColour(CpuContext* ctx, const CpuContext& saved, uint32_t text, const Teams::Colour& c) {
