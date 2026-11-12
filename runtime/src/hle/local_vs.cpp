@@ -441,6 +441,11 @@ void PrepareRace(uint32_t rd) {
     // The CPU row's 4th option is Impossible (vs_racers_option.cpp: "Off" relabelled, also offered
     // in 1P). It stores cpuMode 3, the game's "no CPUs": the race runs Hard CPUs with
     // ai_impossible.cpp's tables, and in 2-4P the slots the game left empty get CPUs.
+    // 1P (one local player): the 3 buttons are Normal, Hard, Impossible (Easy dropped).
+    uint32_t humans=0;
+    for (uint32_t i=0;i<4;++i) humans += Memory::Read32(Player(menu,i)+0x10)==0;
+    const uint32_t cpuOption=Memory::Read32(menu+0xB5C);
+    if (humans<=1 && cpuOption<3) Memory::Write32(menu+0xB5C, cpuOption==2 ? 3u : cpuOption+1);
     impossibleCpus = Memory::Read32(menu+0xB5C)==3;
     if (impossibleCpus.load()) {
         Memory::Write32(menu+0xB5C,2);
@@ -767,6 +772,24 @@ extern "C" void LocalVs_TotalRows_8085cae8(CpuContext* ctx) {
 REGISTER_NATIVE_WRAPPER_AS(0x8085CAE8, LocalVs_TotalRows_8085cae8, "LocalVs_TotalRows_8085cae8");
 
 // Leaderboard::AfterControlUpdate: scroll the page set up above with the local player's input.
+namespace {
+// The rows' point count-up (CtrlRaceResult::OnUpdate), floats: +384 still to count, +388 the
+// step a frame, +392 the shown value x10; +396 (int) the target x10.
+constexpr uint32_t kCountLeft = 384, kCountStep = 388, kCountShown = 392, kCountTarget = 396;
+// Scrolling refills rows with final values, so their counting stops (it ran past them before);
+// A finishes every row's count: one step left, so the game writes the final number next frame.
+void LocalVsFinishCounting(uint32_t pg, bool showFinal) {
+    for (uint32_t row = 0; row < results_scroll::kRows; ++row) {
+        const uint32_t c = results_scroll::Control(pg, row);
+        if (!(Memory::ReadFloat32(c + kCountLeft) > 0.0f)) continue;
+        if (!showFinal) { Memory::WriteFloat32(c + kCountLeft, 0.0f); continue; }
+        const float step = std::max(Memory::ReadFloat32(c + kCountStep), 1.0f);
+        Memory::WriteFloat32(c + kCountShown, float(int32_t(Memory::Read32(c + kCountTarget))) - step);
+        Memory::WriteFloat32(c + kCountLeft, step);
+    }
+}
+} // namespace
+
 extern "C" void LocalVs_LeaderboardScroll_8085c0c4(CpuContext* ctx) {
     using namespace results_scroll;
     const uint32_t pg = ctx->gpr[3];
@@ -786,6 +809,7 @@ extern "C" void LocalVs_LeaderboardScroll_8085c0c4(CpuContext* ctx) {
     const uint32_t now = Memory::Read16(holder + 0x5C), before = Memory::Read16(holder + 0x90);  // UIState actions
     const float stickY = Memory::ReadFloat32(holder + 0x64);
     const auto pressed = [&](uint32_t bit) { return (now & bit) != 0 && (before & bit) == 0; };
+    if (pressed(0x1)) LocalVsFinishCounting(pg, true);  // A: skip the count-up
     int step = 0;
     if (pressed(0x8)) step = -1;
     else if (pressed(0x10)) step = 1;
@@ -806,6 +830,7 @@ extern "C" void LocalVs_LeaderboardScroll_8085c0c4(CpuContext* ctx) {
         const auto byPlace = StandingsByPlace();
         for (uint32_t row = 0; row < kRows; ++row) FillRaceRow(ctx, saved, pg, row, false, byPlace);
     }
+    LocalVsFinishCounting(pg, false);
     *ctx = saved;
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8085C0C4, LocalVs_LeaderboardScroll_8085c0c4, "LocalVs_LeaderboardScroll_8085c0c4");

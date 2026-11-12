@@ -92,3 +92,24 @@ extern "C" void ItemSlotTable_DecideRouletteItem_807bb8d0(CpuContext* ctx) {
 }
 REGISTER_NATIVE_WRAPPER_AS(0x807BB8D0, ItemSlotTable_DecideRouletteItem_807bb8d0,
                            "ItemSlotTable_DecideRouletteItem_807bb8d0");
+
+// Item::SlotData::Init (0x807BAF48) loads the player and CPU item tables (+0x10, +0x18) three ways:
+// online (0x809C38B9 set) and offline with 0x809C38BA set (VS, battle) remap them to one row per
+// player (0x807BAD20 above); offline with 0x809C38BA clear (Grand Prix) leaves them as the file's
+// 12 rows, so past 12 players a position read past the table (100 racers, last place: green
+// shells). There the remap is run after Init, as the other paths do.
+extern "C" void ItemSlotData_Init_807baf48(CpuContext* ctx) {
+    const uint32_t self = ctx->gpr[3];
+    MKW_GUEST_NEXT(807BAF48)(ctx);
+    if (Memory::Read32(self + kPlayerCountOffset) <= kItemMapPlayers) return;
+    if (Memory::Read8(0x809C38B9) != 0 || Memory::Read8(0x809C38BA) != 0) return;  // already remapped
+    const CpuContext saved = *ctx;
+    for (const uint32_t table : {0x10u, 0x18u}) {
+        *ctx = saved;
+        ctx->gpr[3] = self;
+        ctx->gpr[4] = self + table;
+        InvokeIndirectCpu(MKW_GADDR(807BAD20), ctx);
+    }
+    *ctx = saved;
+}
+REGISTER_NATIVE_WRAPPER_AS(0x807BAF48, ItemSlotData_Init_807baf48, "ItemSlotData_Init_807baf48");
