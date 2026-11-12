@@ -44,6 +44,10 @@ struct RuntimeUserConfig {
     std::optional<uint32_t> localVsTeams;                // Team VS past 12: 2..8 teams
     std::optional<uint32_t> localVsTeamSize;             // 0: by team count, else racers per team
     std::optional<std::string> localVsTeamScoring;       // "average" or "total"
+    std::optional<bool> localVsTeamHits;                 // items hit teammates (default true)
+    std::optional<std::string> localVsTeamColour;        // "random" or a colour name ("red".."cyan")
+    std::optional<bool> localVsTeamCustom;               // team_sizes instead of count/size
+    std::optional<std::string> localVsTeamSizes;         // per colour, "10,0,40,..." (0 = unused)
     std::optional<bool> widescreen;
     std::optional<bool> forceAspect169;
     std::optional<int32_t> windowPosX;
@@ -426,6 +430,10 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     config.localVsTeams = FindConfigUint(document, "local_vs", "teams");
     config.localVsTeamSize = FindConfigUint(document, "local_vs", "team_size");
     config.localVsTeamScoring = FindConfigValue<std::string>(document, "local_vs", "team_scoring");
+    config.localVsTeamHits = FindConfigValue<bool>(document, "local_vs", "team_hits");
+    config.localVsTeamColour = FindConfigValue<std::string>(document, "local_vs", "team_colour");
+    config.localVsTeamCustom = FindConfigValue<bool>(document, "local_vs", "team_custom");
+    config.localVsTeamSizes = FindConfigValue<std::string>(document, "local_vs", "team_sizes");
     config.widescreen = FindConfigValue<bool>(document, "video", "widescreen");
     config.forceAspect169 = FindConfigValue<bool>(document, "video", "force_16_9");
     config.windowPosX = FindConfigInt(document, "video", "window_x");

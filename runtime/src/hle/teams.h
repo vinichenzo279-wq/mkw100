@@ -35,6 +35,20 @@ bool ScoreByAverage();
 void SetScoreByAverage(bool average);
 // Teams in play this series (0 when none dealt).
 uint32_t InPlay();
+// Items (and star/mega/bullet bumps) hit teammates (local_vs.team_hits, default on).
+bool TeamHits();
+void SetTeamHits(bool on);
+// Your team's colour: kNoTeam = random, else a colour index (local_vs.team_colour).
+uint32_t PlayerColour();
+void SetPlayerColour(uint32_t colour);
+// Custom team sizes per colour (local_vs.team_custom, local_vs.team_sizes): every colour with a
+// size above 0 is a team; sizes are scaled to the field when they do not add up to it.
+bool CustomSizes();
+void SetCustomSizes(bool on);
+uint32_t ColourSize(uint32_t colour);
+void SetColourSize(uint32_t colour, uint32_t size);
+// The fixed colour table, for settings UIs.
+const Colour& ColourByIndex(uint32_t colour);
 
 // After RaceConfig::InitRace (0x805302C4): a Team VS race of more than 12 racers has the race
 // scenario's team flag cleared and becomes a teams race; the first race of a series (and a

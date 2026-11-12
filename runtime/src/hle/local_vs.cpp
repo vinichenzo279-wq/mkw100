@@ -207,20 +207,48 @@ void DrawSettings() {
         int teams = int(Teams::Count()) - 2;
         ImGui::SetNextItemWidth(280);
         int size = int(Teams::TeamSize());
-        int by = size ? 1 : 0;
-        static constexpr std::array<const char*, 2> byNames{{"Team count", "Team size"}};
+        int by = Teams::CustomSizes() ? 2 : size ? 1 : 0;
+        static constexpr std::array<const char*, 3> byNames{{"Team count", "Team size", "Custom sizes"}};
         ImGui::SetNextItemWidth(280);
-        if (ImGui::Combo("Team VS teams by", &by, byNames.data(), int(byNames.size()))) Teams::SetTeamSize(by ? std::max(size, 4) : 0);
+        if (ImGui::Combo("Team VS teams by", &by, byNames.data(), int(byNames.size()))) {
+            Teams::SetCustomSizes(by == 2);
+            if (by == 0) Teams::SetTeamSize(0);
+            if (by == 1) Teams::SetTeamSize(std::max(size, 4));
+        }
         ImGui::SetNextItemWidth(280);
-        if (!by) {
+        if (by == 0) {
             if (ImGui::Combo("Team count", &teams, teamNames.data(), int(teamNames.size()))) Teams::SetCount(uint32_t(teams) + 2);
-        } else if (ImGui::SliderInt("Racers per team", &size, 2, 64)) {
-            Teams::SetTeamSize(uint32_t(size));
+        } else if (by == 1) {
+            if (ImGui::SliderInt("Racers per team", &size, 2, 64)) Teams::SetTeamSize(uint32_t(size));
+        } else {
+            uint32_t sum = 0, used = 0;
+            for (uint32_t k = 0; k < Teams::kMaxTeams; ++k) {
+                const auto& colour = Teams::ColourByIndex(k);
+                int racers = int(Teams::ColourSize(k));
+                ImGui::PushID(int(k));
+                ImGui::SetNextItemWidth(200);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(colour.r / 255.f, colour.g / 255.f, colour.b / 255.f, 1.f));
+                if (ImGui::SliderInt(colour.name, &racers, 0, int(PlayerSlots::kMaxPlayers))) Teams::SetColourSize(k, uint32_t(racers));
+                ImGui::PopStyleColor();
+                ImGui::PopID();
+                sum += uint32_t(racers); used += racers > 0;
+            }
+            ImGui::Text("%u teams, %u racers set; scaled to the field when that differs (0 = colour unused).", used, sum);
+        }
+        {
+            static constexpr std::array<const char*, Teams::kMaxTeams + 1> colourNames{{
+                "Random", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Cyan"}};
+            int colour = Teams::PlayerColour() < Teams::kMaxTeams ? int(Teams::PlayerColour()) + 1 : 0;
+            ImGui::SetNextItemWidth(280);
+            if (ImGui::Combo("Your team colour", &colour, colourNames.data(), int(colourNames.size())))
+                Teams::SetPlayerColour(colour == 0 ? Teams::kNoTeam : uint32_t(colour - 1));
         }
         int scoring = Teams::ScoreByAverage() ? 0 : 1;
         static constexpr std::array<const char*, 2> scoringNames{{"Average per member", "Total"}};
         ImGui::SetNextItemWidth(280);
         if (ImGui::Combo("Team score", &scoring, scoringNames.data(), int(scoringNames.size()))) Teams::SetScoreByAverage(scoring == 0);
+        bool hits = Teams::TeamHits();
+        if (ImGui::Checkbox("Team hits (items hit teammates)", &hits)) Teams::SetTeamHits(hits);
         ImGui::TextUnformatted("Team VS with more than 12 racers (up to 12 it is the game's red vs blue). At most 8 teams:\n"
                                "a team size that needs more makes the teams bigger. Average keeps uneven teams fair.");
         const auto teamRows = Teams::LastStandings();
