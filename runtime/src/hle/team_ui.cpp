@@ -18,6 +18,7 @@
 #include "custom_messages.h"
 #include "local_vs.h"
 #include "guest_abi/array_overflow.h"
+#include "guest_abi/player_slots.h"
 #include "guest_function_imports.h"
 #include "memory.h"
 
@@ -217,7 +218,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x8063C91C, TeamUi_PlayAnimation_8063c91c, "TeamUi_Pl
 //   right column, the teams as dealt now, re-dealt on every change ("Red Team (13)" in its colour,
 //   "You" on the player's; with more than six teams two share a row).
 // Backgrounds and icons are hidden. The teams dealt here are the series' (Teams::DealForMenu).
-// Custom per-colour sizes are edited in F10; here they show as "Custom (F10)".
+// Custom per-colour sizes: "Size of" picks a colour and the row below sets its racers.
 namespace {
 
 constexpr uint32_t kConfirmTeam = 0x174;     // CtrlMenuTeamConfirmTeam: the column's team (0, 1)
@@ -240,11 +241,17 @@ constexpr uint32_t kPairSlot = 14;                        // ..14, 15: rows hold
 constexpr Teams::Colour kWhite{255, 255, 255, "White"};
 constexpr Teams::Colour kPicked{255, 225, 60, "Picked"};
 
-enum TeamSetting : uint32_t { kSettingBy, kSettingAmount, kSettingScore, kSettingHits, kSettingColour, kSettingCount };
+enum TeamSetting : uint32_t { kSettingBy, kSettingAmount, kSettingScore, kSettingHits, kSettingColour, kSettingCustomSize,
+                              kSettingRows };
 
 uint32_t gScreenColumn[2] = {0, 0};  // left, right; game thread only
 uint32_t gScreenPick = 0;
 uint32_t gScreenRacers = 0;
+uint32_t gScreenCustomColour = 0;  // the colour "Size of" edits
+uint32_t gScreenHeld = 0;          // frames left/right has been held (repeat)
+
+// Rows in use: the custom size row only with custom sizes.
+uint32_t TeamUiSettingCount() { return Teams::CustomSizes() ? kSettingRows : kSettingCustomSize; }
 
 bool TeamUiScreenActive() {
     const uint32_t rd = Memory::Read32(kRacedata);
@@ -285,13 +292,16 @@ std::string TeamUiSettingText(uint32_t setting) {
     case kSettingBy:
         return std::string("Teams by: ") + (Teams::CustomSizes() ? "Custom" : Teams::TeamSize() ? "Size" : "Count");
     case kSettingAmount:
-        if (Teams::CustomSizes()) return "Sizes: set in F10";
+        if (Teams::CustomSizes()) return std::string("Size of: ") + Teams::ColourByIndex(gScreenCustomColour).name;
         if (Teams::TeamSize()) return "Per team: " + std::to_string(Teams::TeamSize());
         return "Teams: " + std::to_string(Teams::Count());
     case kSettingScore:
         return std::string("Score: ") + (Teams::ScoreByAverage() ? "Average" : "Total");
     case kSettingHits:
         return std::string("Team hits: ") + (Teams::TeamHits() ? "On" : "Off");
+    case kSettingCustomSize:
+        return std::string(Teams::ColourByIndex(gScreenCustomColour).name) + " racers: " +
+               std::to_string(Teams::ColourSize(gScreenCustomColour));
     default: {
         const uint32_t mine = Teams::PlayerColour();
         return std::string("Your colour: ") + (mine < Teams::kMaxTeams ? Teams::ColourByIndex(mine).name : "Random");
@@ -310,12 +320,19 @@ void TeamUiChange(uint32_t setting, int step) {
         break;
     }
     case kSettingAmount:
-        if (Teams::CustomSizes()) break;
+        if (Teams::CustomSizes()) {
+            gScreenCustomColour = (gScreenCustomColour + Teams::kMaxTeams + uint32_t(step)) % Teams::kMaxTeams;
+            break;
+        }
         if (Teams::TeamSize()) Teams::SetTeamSize(uint32_t(std::clamp(int(Teams::TeamSize()) + step, 2, 64)));
         else Teams::SetCount(uint32_t(std::clamp(int(Teams::Count()) + step, 2, int(Teams::kMaxTeams))));
         break;
     case kSettingScore: Teams::SetScoreByAverage(!Teams::ScoreByAverage()); break;
     case kSettingHits: Teams::SetTeamHits(!Teams::TeamHits()); break;
+    case kSettingCustomSize:
+        Teams::SetColourSize(gScreenCustomColour,
+                             uint32_t(std::clamp(int(Teams::ColourSize(gScreenCustomColour)) + step, 0, int(PlayerSlots::kMaxPlayers))));
+        break;
     default: {
         // Random, then the 8 colours.
         const int at = Teams::PlayerColour() < Teams::kMaxTeams ? int(Teams::PlayerColour()) + 1 : 0;
@@ -329,10 +346,12 @@ void TeamUiChange(uint32_t setting, int step) {
 void TeamUiRenderLeft(CpuContext* ctx, const CpuContext& saved, uint32_t column) {
     for (uint32_t k = 0; k < kConfirmRowCount; ++k) {
         const uint32_t row = TeamUiRow(column, k);
-        if (k >= kSettingCount) { Memory::Write8(row + kConfirmRowHidden, 1); continue; }
+        if (k >= TeamUiSettingCount()) { Memory::Write8(row + kConfirmRowHidden, 1); continue; }
         std::string text = TeamUiSettingText(k);
         if (k == gScreenPick) text = "< " + text + " >";
-        TeamUiSetRow(ctx, saved, row, CustomMessages::LabelBmg(kSettingSlot + k, text), k == gScreenPick ? kPicked : kWhite);
+        // The custom size row in its colour, the rest white; the picked one yellow.
+        const Teams::Colour& plain = k == kSettingCustomSize ? Teams::ColourByIndex(gScreenCustomColour) : kWhite;
+        TeamUiSetRow(ctx, saved, row, CustomMessages::LabelBmg(kSettingSlot + k, text), k == gScreenPick ? kPicked : plain);
     }
 }
 
@@ -410,12 +429,20 @@ extern "C" void TeamUi_ControlUpdate_8063db00(CpuContext* ctx) {
     const uint32_t now = Memory::Read16(holder + 0x5C), before = Memory::Read16(holder + 0x90);  // UIState actions
     const auto pressed = [&](uint32_t bit) { return (now & bit) != 0 && (before & bit) == 0; };
     bool redraw = false, redeal = false;
-    if (pressed(0x8)) { gScreenPick = (gScreenPick + kSettingCount - 1) % kSettingCount; redraw = true; }
-    else if (pressed(0x10)) { gScreenPick = (gScreenPick + 1) % kSettingCount; redraw = true; }
-    else if (pressed(0x20) || pressed(0x40)) {
-        TeamUiChange(gScreenPick, pressed(0x40) ? 1 : -1);
+    const uint32_t rows = TeamUiSettingCount();
+    if (gScreenPick >= rows) gScreenPick = 0;
+    // Left/right: once per press; held, the custom size repeats (after ~0.3 s, every 3 frames).
+    const bool held = (now & 0x60) != 0;
+    gScreenHeld = held ? gScreenHeld + 1 : 0;
+    const bool repeat = gScreenPick == kSettingCustomSize && gScreenHeld > 18 && gScreenHeld % 3 == 0;
+    if (pressed(0x8)) { gScreenPick = (gScreenPick + rows - 1) % rows; redraw = true; }
+    else if (pressed(0x10)) { gScreenPick = (gScreenPick + 1) % rows; redraw = true; }
+    else if (pressed(0x20) || pressed(0x40) || repeat) {
+        TeamUiChange(gScreenPick, (now & 0x40) != 0 ? 1 : -1);
         redraw = true;
-        redeal = gScreenPick != kSettingScore && gScreenPick != kSettingHits;
+        redeal = gScreenPick != kSettingScore && gScreenPick != kSettingHits &&
+                 !(gScreenPick == kSettingAmount && Teams::CustomSizes());
+        if (gScreenPick >= TeamUiSettingCount()) gScreenPick = 0;
     }
     if (!redraw) return;
     if (redeal) Teams::DealForMenu(gScreenRacers, true);
