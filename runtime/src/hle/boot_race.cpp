@@ -347,6 +347,17 @@ extern "C" void Pulsar_BootSection_8184ec74(CpuContext* ctx) {
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8184EC74, Pulsar_BootSection_8184ec74, "Pulsar_BootSection_8184ec74");
 
+// Item Fever (Pulsar) hooks the same SectionMgr::Init call (0x80634F20) with its own boot-section
+// function at 0x8180D038. Retro Rewind has no function there, so this never runs under it.
+extern "C" void ItemFever_BootSection_8180d038(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8180D038)(ctx);
+    if (g_raceSectionPicked) {
+        g_raceSectionPicked = false;
+        ctx->gpr[3] = g_battle ? kSectionP1Battle : g_gp ? kSectionP1Gp : g_teams ? kSectionP1TeamVs : kSectionP1Vs;
+    }
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8180D038, ItemFever_BootSection_8180d038, "ItemFever_BootSection_8180d038");
+
 // --race-cpu hands the local racer to the CPU driver while it keeps its camera and HUD.
 
 // RacedataScenario::InitScreens; local racers keep no real controller channel.

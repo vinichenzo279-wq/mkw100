@@ -39,6 +39,9 @@ public sealed class ArrayOverflowSites
 
     public int Count => _sites.Count;
 
+    /// <summary>The sites <paramref name="keep"/> accepts.</summary>
+    public ArrayOverflowSites Where(Func<Site, bool> keep) => new(_sites.Values.Where(keep));
+
     public bool TryGet(uint address, out Site site) => _sites.TryGetValue(address, out site!);
 
     /// <summary>The lifted IR of <paramref name="ins"/>, rewritten when it is a listed site.</summary>

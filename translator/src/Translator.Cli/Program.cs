@@ -65,8 +65,12 @@ if (project?.Translation.PlayerSlotSitesPath is { } playerSlotSitesPath)
 }
 if (project?.Translation.ArraySitesPath is { } arraySitesPath)
 {
-    Translator.Core.Lifting.ArrayOverflowSites.Current =
-        Translator.Core.Lifting.ArrayOverflowSites.Load(arraySitesPath);
+    var arraySites = Translator.Core.Lifting.ArrayOverflowSites.Load(arraySitesPath);
+    // Sites in the Kamek module range (0x81000000+) are hand-listed for one pack's code (Retro
+    // Rewind's); another pack has other code at those addresses.
+    if (!string.Equals(profile?.Name, "retro-rewind", StringComparison.OrdinalIgnoreCase))
+        arraySites = arraySites.Where(site => site.Address < 0x81000000u);
+    Translator.Core.Lifting.ArrayOverflowSites.Current = arraySites;
 }
 var root = project?.WorkspaceRoot ?? Directory.GetCurrentDirectory();
 var preferCachedInputs = HasFlag(tail, "--prefer-cached-inputs");
