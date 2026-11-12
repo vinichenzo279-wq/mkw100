@@ -270,6 +270,9 @@ void PrepareAwardSlots(uint32_t racedata) {
     for (uint32_t k = 0; k < kInlineSlots; ++k) slots[k] = k;
     std::stable_sort(slots.begin(), slots.end(), [&](uint32_t a, uint32_t b) { return better(a, b); });
     for (uint32_t r = 0; r < kInlineSlots; ++r) Memory::Write8(player(slots[r]) + 0xE0, uint8_t(r + 1));
+    // The award ranking shows +0xD8 as the score; the expanded scoring keeps the running total at
+    // +0xDA (+0xD8 is the total before the last race), so the ranking read 0 / the last-but-one.
+    for (uint32_t k = 0; k < kInlineSlots; ++k) Memory::Write16(player(k) + 0xD8, Memory::Read16(player(k) + 0xDA));
 }
 
 extern "C" void Racedata_InitAwards_80530864(CpuContext* ctx) {
