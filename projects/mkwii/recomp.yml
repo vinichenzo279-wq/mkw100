@@ -69,3 +69,19 @@ profiles:
         - section: Retro Rewind
           option: Pack
           choice: 1
+  item-fever:
+    enabled: true
+    requires_game_id: RMCP01
+    requires_dol_sha256: 80d18895b39c63bd80f457398bfcbb91b7d16ac116a41a88967e954080155b05
+    code_pul: PulsarPacks/completed/ItemFever/ItemFever/Binaries/Code.pul
+    mod_root: PulsarPacks/completed/ItemFever/ItemFever
+    region: P
+    module_guest_base: 0x81800000
+    module_link_base: 0x803992E0
+    output: build/mods/item_fever_full_cpp
+    riivolution:
+      xml: riivolution/ItemFever.xml
+      options:
+        - section: Item Fever
+          option: Item Fever
+          choice: 1

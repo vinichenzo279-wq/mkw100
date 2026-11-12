@@ -18,10 +18,12 @@
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
 #include "memory.h"
+#include "recomp_mod_loader.h"
 #include "runtime_log.h"
 
 #include <cmath>
 #include <cstdint>
+#include <string>
 
 namespace {
 
@@ -44,6 +46,15 @@ constexpr uint32_t kItemCooldownFrames = 300;       // the game's own constant i
 // ItemSlotData +0x34 +0x38 +0x3C +0x40, the order 0x807BB380 reads them in.
 constexpr bool IsFieldItem(uint32_t id) { return id == 5 || id == 6 || id == 10 || id == 11; }
 
+// Item Fever reworks the Thunder Cloud (ItemObjId 14) with its own per-cloud data, made for the
+// stock limit: a second cloud object read a garbage list in Item::ObjKumo::InitSelf and a later
+// cloud spawned with no model (100 racers). Under that pack the cloud keeps its stock limit.
+bool ItemFeverPack() {
+    static const bool itemFever = RecompMod::RiivolutionXml().find("ItemFever") != std::string::npos;
+    return itemFever;
+}
+bool KeepsStockLimit(uint32_t id) { return IsFieldItem(id) || (id == 14 && ItemFeverPack()); }
+
 uint32_t ItemPlayerCount() {
     const uint32_t racedata = Memory::Read32(kItemRacedata);
     return racedata == 0 ? 0 : Memory::Read8(racedata + 0x24);
@@ -60,7 +71,7 @@ extern "C" void ItemObjProperties_ComputeCapacities_80790fb8(CpuContext* ctx) {
         for (uint32_t i = 0; i < kItemObjKinds; ++i) {
             const uint32_t address = kItemObjProperties + i * kItemObjStride + kItemObjLimit;
             const uint32_t stock = Memory::Read32(address);
-            if (!IsFieldItem(i)) {
+            if (!KeepsStockLimit(i)) {
                 Memory::Write32(address, (stock * players + kItemStockPlayers - 1) / kItemStockPlayers);
             }
             RT_LOGF("item-limits", "%u players: item object %u limit %u -> %u\n", players, i, stock, Memory::Read32(address));

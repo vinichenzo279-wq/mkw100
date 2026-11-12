@@ -82,7 +82,8 @@ public sealed class PlayerSlotStrideSites
     /// One `0x80xxxxxx` per line: a mulli site, or with a second field `deref` a deref site;
     /// `#` starts a comment.
     /// </summary>
-    public static PlayerSlotStrideSites Load(string path)
+    /// <param name="profile">The translate-mod profile; lines tagged `profile=NAME` apply only to it.</param>
+    public static PlayerSlotStrideSites Load(string path, string? profile = null)
     {
         var sites = new List<uint>();
         var derefs = new List<uint>();
@@ -91,7 +92,12 @@ public sealed class PlayerSlotStrideSites
             var text = raw.Split('#', 2)[0].Trim();
             if (text.Length == 0)
                 continue;
-            var fields = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            var all = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            var siteProfile = all.Where(f => f.StartsWith("profile=", StringComparison.Ordinal))
+                .Select(f => f["profile=".Length..]).SingleOrDefault();
+            var fields = all.Where(f => !f.StartsWith("profile=", StringComparison.Ordinal)).ToArray();
+            if (siteProfile is not null && !string.Equals(siteProfile, profile, StringComparison.OrdinalIgnoreCase))
+                continue;
             if (!fields[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
                 || !uint.TryParse(fields[0].AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var address))
                 throw new FormatException($"{path}:{index + 1}: expected a 0x-prefixed guest address, got '{text}'");

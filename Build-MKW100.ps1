@@ -6,16 +6,29 @@ param(
     [switch]$AllowSourceDependencies,
     # A Retro Rewind release folder (RetroRewind6, holding Binaries\Code.pul): also builds the
     # RetroRewind product, offline (no Retro-WFC payload), as scripts/mkw100/build_rr.sh does on
-    # macOS. Both executables come from one set of shards, but RR-aware shards differ from
-    # base-only ones: switching -RetroRewind on or off recompiles everything, so keep passing it
-    # for a checkout once you use it (Install-MKW100.ps1 remembers it). Another mod product
-    # (Item Fever) builds the same RetroRewind target, so it needs its own checkout.
-    [string]$RetroRewind
+    # macOS. Both executables come from one set of shards, but mod-aware shards differ from
+    # base-only ones: switching -RetroRewind/-ItemFever on or off recompiles everything, so keep
+    # passing it for a checkout once you use it (Install-MKW100.ps1 remembers it).
+    [string]$RetroRewind,
+    # An Item Fever pack folder (ItemFever, holding Binaries\Code.pul and riivolution\ItemFever.xml):
+    # builds the mod product from it instead of Retro Rewind. Both build the RetroRewind target
+    # (the mod product), so one checkout holds the base game plus one of them.
+    [string]$ItemFever
 )
 # Standalone, isolated Windows fork build. Never calls LocalBuild.ps1, never
 # modifies original Install\Base or the older R13/R23 build cache.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($RetroRewind -and $ItemFever) { throw 'Pass -RetroRewind or -ItemFever, not both.' }
+# The mod product's pack, its recomp.yml profile, where that profile reads Code.pul, and its output.
+$ModPack = $null
+if ($RetroRewind) {
+    $ModPack = $RetroRewind; $ModProfile = 'retro-rewind'; $ModName = 'Retro Rewind'
+    $ModStagedPul = 'PulsarPacks\completed\RetroRewind\RetroRewind6\Binaries'; $ModOut = 'build\mods\retro_rewind_full_cpp'
+} elseif ($ItemFever) {
+    $ModPack = $ItemFever; $ModProfile = 'item-fever'; $ModName = 'Item Fever'
+    $ModStagedPul = 'PulsarPacks\completed\ItemFever\ItemFever\Binaries'; $ModOut = 'build\mods\item_fever_full_cpp'
+}
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Repo = $Here
 $Logs = Join-Path $Here 'build-logs'
@@ -148,16 +161,17 @@ try {
     }
     MakeJunction (Join-Path $OriginalWorkspace 'Dependencies') (Join-Path $Repo 'Dependencies')
     Record 'Clean PAL inputs validated; shared Dependencies are a junction (not copied).'
-    if ($RetroRewind) {
-        $RetroRewind = [IO.Path]::GetFullPath($RetroRewind)
-        $retroPul = Join-Path $RetroRewind 'Binaries\Code.pul'
-        Require $retroPul 'Retro Rewind Code.pul'
-        # The project's retro-rewind profile reads the pul from this workspace path, and the base
+    if ($ModPack) {
+        $ModPack = [IO.Path]::GetFullPath($ModPack)
+        $retroPul = Join-Path $ModPack 'Binaries\Code.pul'
+        Require $retroPul ($ModName + ' Code.pul')
+        # The project's profile reads the pul from this workspace path, and the base
         # leg blocks leaf inlining at every address it patches, so it must be staged first.
-        $stagedPulDir = Join-Path $Repo 'PulsarPacks\completed\RetroRewind\RetroRewind6\Binaries'
+        $stagedPulDir = Join-Path $Repo $ModStagedPul
         New-Item -ItemType Directory -Path $stagedPulDir -Force | Out-Null
-        Copy-Item -LiteralPath $retroPul -Destination (Join-Path $stagedPulDir 'Code.pul') -Force
-        Record ('Retro Rewind Code.pul staged, SHA256 ' + (Get-FileHash -LiteralPath $retroPul -Algorithm SHA256).Hash.ToLowerInvariant())
+        $stagedPul = Join-Path $stagedPulDir 'Code.pul'
+        if ([IO.Path]::GetFullPath($stagedPul) -ne $retroPul) { Copy-Item -LiteralPath $retroPul -Destination $stagedPul -Force }
+        Record ($ModName + ' Code.pul staged, SHA256 ' + (Get-FileHash -LiteralPath $retroPul -Algorithm SHA256).Hash.ToLowerInvariant())
     }
     Record ('Incremental fork cache: ' + $NativeBuild)
     if ($PreflightOnly) {
@@ -203,18 +217,20 @@ try {
         '--threads',"$threads") '02_translate'
     InvokeTool $dotnet.Source @('--roll-forward','Major',$translatorDll,'emit-base-manifest','--project',$project,'--out',$baseMan,
         '--functions-dir',$functions,'--translation-output-metadata',$metadata,'--region','P') '03_manifest'
-    $retroOut = Join-Path $Repo 'build\mods\retro_rewind_full_cpp'
-    if ($RetroRewind) {
+    if ($ModPack) {
+        $retroOut = Join-Path $Repo $ModOut
         New-Item -ItemType Directory -Path $retroOut -Force | Out-Null
-        InvokeTool $dotnet.Source @('--roll-forward','Major',$translatorDll,'translate-mod','--project',$project,'--profile','retro-rewind',
+        $modArgs = @('--roll-forward','Major',$translatorDll,'translate-mod','--project',$project,'--profile',$ModProfile,
             '--base-manifest',(Join-Path $baseMan 'mkwii_base_manifest.json'),'--base-translation-output-metadata',$metadata,
-            '--code-pul',(Join-Path $RetroRewind 'Binaries\Code.pul'),'--mod-root',$RetroRewind,'--mod-name','Retro Rewind',
-            '--region','P','--out',$retroOut,'--prefer-cached-inputs','--emit-cpp','--threads',"$threads",'--skip-retro-wfc') '03b_translate_rr'
+            '--code-pul',(Join-Path $ModPack 'Binaries\Code.pul'),'--mod-root',$ModPack,'--mod-name',$ModName,
+            '--region','P','--out',$retroOut,'--prefer-cached-inputs','--emit-cpp','--threads',"$threads")
+        if ($RetroRewind) { $modArgs += '--skip-retro-wfc' }
+        InvokeTool $dotnet.Source $modArgs '03b_translate_mod'
     }
     InvokeTool $dotnet.Source @('--roll-forward','Major',$translatorDll,'generate-data-init','--project',$project) '04_data_init'
     $shardArgs = @('--roll-forward','Major',$translatorDll,'emit-build-shards','--project',$project,'--base-metadata',$metadata,
         '--base-functions-dir',$functions,'--native-source-dir',(Join-Path $Repo 'runtime\src'),'--out',$shards)
-    if ($RetroRewind) {
+    if ($ModPack) {
         $shardArgs += @('--resolved-profile',(Join-Path $retroOut 'resolved_dispatch_profile.json'),'--retro-cpp-dir',(Join-Path $retroOut 'cpp'))
     }
     InvokeTool $dotnet.Source $shardArgs '05_shards'
@@ -228,7 +244,7 @@ try {
         -DependenciesDirectory (Join-Path $Repo 'Dependencies') -NativePrebuiltDirectory $prebuilt `
         -AdditionalArguments @('-DMKW_TRANSLATED_COMPILE_JOBS=4','-DMKW_X86_CPU_PROFILE=v3',('-DMKW_AURORA_DIR=' + $auroraDir.Replace('\','/')))
     InvokeTool $cmake $configure '06_configure'
-    $targets = @('WiiCompiled') + $(if ($RetroRewind) { @('RetroRewind') } else { @() })
+    $targets = @('WiiCompiled') + $(if ($ModPack) { @('RetroRewind') } else { @() })
     InvokeTool $cmake (@('--build',$NativeBuild,'--target') + $targets + @('--parallel',"$threads")) '07_compile'
     $builtExe = Join-Path $NativeBuild 'WiiCompiled.exe'
     Require $builtExe 'new mkw100 Windows executable'

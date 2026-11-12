@@ -61,12 +61,16 @@ if (functionMap is not null)
 if (project?.Translation.PlayerSlotSitesPath is { } playerSlotSitesPath)
 {
     Translator.Core.Lifting.PlayerSlotStrideSites.Current =
-        Translator.Core.Lifting.PlayerSlotStrideSites.Load(playerSlotSitesPath);
+        Translator.Core.Lifting.PlayerSlotStrideSites.Load(playerSlotSitesPath, profile?.Name);
 }
 if (project?.Translation.ArraySitesPath is { } arraySitesPath)
 {
-    Translator.Core.Lifting.ArrayOverflowSites.Current =
-        Translator.Core.Lifting.ArrayOverflowSites.Load(arraySitesPath);
+    var arraySites = Translator.Core.Lifting.ArrayOverflowSites.Load(arraySitesPath);
+    // Sites in a pack's code (profile=NAME) apply only when translate-mod runs that profile;
+    // another pack has other code at those addresses.
+    arraySites = arraySites.Where(site => site.Profile is null ||
+        string.Equals(site.Profile, profile?.Name, StringComparison.OrdinalIgnoreCase));
+    Translator.Core.Lifting.ArrayOverflowSites.Current = arraySites;
 }
 var root = project?.WorkspaceRoot ?? Directory.GetCurrentDirectory();
 var preferCachedInputs = HasFlag(tail, "--prefer-cached-inputs");

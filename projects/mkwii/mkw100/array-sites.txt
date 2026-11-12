@@ -76,10 +76,10 @@
 0x805413D4  9  scale  28  0x0  # archive_manager 0x8
 0x80541444  9  scale  28  0x0  # archive_manager 0x158
 0x80541E5C  9  scale  28  0x0  # archive_manager 0x8
-0x81837BC8  10  scale  56  0x0  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
-0x81837DE8  10  scale  56  0x0  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
-0x81838350  10  scale  56  0x0  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
-0x818383E4  10  scale  56  0x0  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
+0x81837BC8  10  scale  56  0x0  profile=retro-rewind  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
+0x81837DE8  10  scale  56  0x0  profile=retro-rewind  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
+0x81838350  10  scale  56  0x0  profile=retro-rewind  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
+0x818383E4  10  scale  56  0x0  profile=retro-rewind  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
 0x80538E38  11  scale  24  0x0  # balloon_manager 0x3C4
 0x8053BDC0  11  scale  24  0x0  # balloon_manager 0x3C4
 0x8053CC0C  11  scale  24  0x0  # balloon_manager 0x3C4
@@ -102,3 +102,10 @@
 0x8053C440  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
 0x807AC2C4  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
 0x80870194  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
+# Item Fever (profile item-fever): u8 flags[12] at 0x818A2D34, one per racer (Kart::Link::GetPlayerIdx).
+# Unchecked index: racers 12+ wrote over the next tables and, from racer 76, a race-load hook node
+# (0x818A2D80; the menu race jumped to 0). Racers 12..127 use a shadow at 0x82D00000.
+0x81816D50  0  index  1  0x818A2D34  0x82D00000  profile=item-fever  # stbx flag = 1
+0x81816D58  0  index  1  0x818A2D34  0x82D00000  profile=item-fever  # lbzx flag
+0x818177E8  0  index  1  0x818A2D34  0x82D00000  profile=item-fever  # lbzx flag
+0x8181724C  0  index  1  0x818A2D34  0x82D00000  profile=item-fever  # stbx flag = 0

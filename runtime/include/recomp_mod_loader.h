@@ -56,6 +56,10 @@ uint32_t CurrentTranslatedExecutionAddress() noexcept;
 
 void RegisterExecutableRange(uint32_t start, uint32_t end, std::string name);
 bool HandleExecutableWrite(uint32_t address, size_t length, uint64_t value);
+// A word of game code a pack rewrites at run time (an immediate it changes per setting). The write
+// is let through to memory; translated code ignores it, so a native that registers the word reads
+// it back and applies its effect itself.
+void AllowExecutableWord(uint32_t address, const char* name);
 void CheckExecutableWrite(uint32_t address, size_t length, uint64_t value);
 
 inline bool ExecutableWriteGuardMayHit(uint32_t address, size_t length) noexcept {

@@ -119,6 +119,18 @@ extern "C" uint32_t MKW100_IndexScaled(uint32_t scaled, uint32_t classId, uint32
     return Window(c, index) - instance;
 }
 
+extern "C" uint32_t MKW100_IndexedBase(uint32_t base, uint32_t offset, uint32_t table, uint32_t size,
+                                       uint32_t shadow) {
+    if (base != table || offset < kInlineSlots * size || offset >= kMaxPlayers * size) {
+        return base;
+    }
+    return shadow - kInlineSlots * size;
+}
+
+extern "C" uint32_t MKW100_IndexedRestore(uint32_t base, uint32_t table, uint32_t size, uint32_t shadow) {
+    return base == shadow - kInlineSlots * size ? table : base;
+}
+
 extern "C" uint32_t MKW100_ArrayStep(uint32_t pointer, uint32_t classId, uint32_t stride, uint32_t origin) {
     const ArrayClass& c = Class(classId);
     const uint32_t instance = Instance(c);
