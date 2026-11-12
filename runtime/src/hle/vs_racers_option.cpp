@@ -23,6 +23,7 @@
 #include "runtime_log.h"
 
 #include <cstdint>
+#include <string>
 
 namespace {
 
@@ -52,6 +53,7 @@ constexpr uint32_t kSetMessage = 0x8063DDB4;     // LayoutUIControl: control, bm
 
 constexpr uint32_t kLabelBmg = 3450;             // "Number of Races"
 constexpr uint32_t kValueBmg = 3451;             // the number in Text::Info intToPass[0]
+constexpr uint32_t kRacersValueSlot = 16;        // CustomMessages::LabelBmg slot
 constexpr uint32_t kInjectedMsg = 0x7FFF;        // msg index no BMG file reaches
 constexpr uint32_t kHelpBmg = 3465;              // "Set the number of races."
 constexpr uint32_t kHelpMsg = 0x7FFE;
@@ -129,7 +131,7 @@ uint32_t BuildRow(CpuContext* ctx, uint32_t page) {
     ctx->gpr[6] = Memory::Read32(kVsVariants + 128); ctx->cr &= ~(1u << (31 - 6));
     Call(ctx, kSprintf);
 
-    const uint32_t count = PlayerSlots::kMaxPlayers;
+    const uint32_t count = uint32_t(LocalVs::MaxRacers());
     *ctx = base;
     ctx->gpr[3] = row; ctx->gpr[4] = count; ctx->gpr[5] = uint32_t(LocalVs::DesiredCount() - 1);
     ctx->gpr[6] = kVsStrings + 102; ctx->gpr[7] = kVsStrings + 110; ctx->gpr[8] = variant;
@@ -167,7 +169,9 @@ void SetRowValue(CpuContext* ctx, uint32_t textControl, uint32_t option) {
     const uint32_t info = sp + 0x10;
     ctx->gpr[3] = info; Call(ctx, kTextInfoInit);
     Memory::Write32(info, option + 1);
-    ctx->gpr[1] = sp; ctx->gpr[3] = textControl; ctx->gpr[4] = kValueBmg; ctx->gpr[5] = info;
+    // The race count's value message reads "Races: N"; this row says "Racers: N" (a runtime label).
+    const uint32_t value = CustomMessages::LabelBmg(kRacersValueSlot, "Racers: " + std::to_string(option + 1));
+    ctx->gpr[1] = sp; ctx->gpr[3] = textControl; ctx->gpr[4] = value ? value : kValueBmg; ctx->gpr[5] = info;
     Call(ctx, kSetMessage);
     *ctx = entry;
 }

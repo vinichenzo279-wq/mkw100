@@ -9,6 +9,7 @@
 #include "hle/rank_icons.h"
 #include "memory.h"
 #include "runtime_config.h"
+#include "runtime_product.h"
 #include "runtime_log.h"
 #include <imgui.h>
 #include <algorithm>
@@ -124,9 +125,13 @@ uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows) {
     }
     return std::min(row, rows-1);
 }
-int DesiredCount() { return local_vs_detail::desiredCount.load(); }
+// Retro Rewind is capped at 100 for now: its per-racer skins (rr_skins.cpp) give every racer its
+// own kart archive, and at 128 one no longer fits in memory (Pulsar ArchiveFile::Decompress fails,
+// then ARCInitHandle panics).
+int MaxRacers() { return RuntimeProduct::IsRetroRewind() ? 100 : int(PlayerSlots::kMaxPlayers); }
+int DesiredCount() { return std::min(local_vs_detail::desiredCount.load(), MaxRacers()); }
 void SetDesiredCount(int count) {
-    count = std::clamp(count, 1, int(PlayerSlots::kMaxPlayers));
+    count = std::clamp(count, 1, MaxRacers());
     local_vs_detail::desiredCount = count;
     RuntimeConfigFile::WriteSetting("local_vs", "players", std::to_string(count));
 }
@@ -135,7 +140,7 @@ void DrawSettings() {
     using namespace local_vs_detail;
     int count = desiredCount.load();
     ImGui::SetNextItemWidth(240);
-    if (ImGui::SliderInt("Racers", &count, 1, PlayerSlots::kMaxPlayers, "%d", ImGuiSliderFlags_AlwaysClamp)) {
+    if (ImGui::SliderInt("Racers", &count, 1, MaxRacers(), "%d", ImGuiSliderFlags_AlwaysClamp)) {
         SetDesiredCount(count);
     }
     ImGui::TextUnformatted("Applies when starting a new single-player VS series.");
