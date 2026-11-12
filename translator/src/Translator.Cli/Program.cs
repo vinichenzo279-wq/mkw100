@@ -66,10 +66,10 @@ if (project?.Translation.PlayerSlotSitesPath is { } playerSlotSitesPath)
 if (project?.Translation.ArraySitesPath is { } arraySitesPath)
 {
     var arraySites = Translator.Core.Lifting.ArrayOverflowSites.Load(arraySitesPath);
-    // Sites in the Kamek module range (0x81000000+) are hand-listed for one pack's code (Retro
-    // Rewind's); another pack has other code at those addresses.
-    if (!string.Equals(profile?.Name, "retro-rewind", StringComparison.OrdinalIgnoreCase))
-        arraySites = arraySites.Where(site => site.Address < 0x81000000u);
+    // Sites in a pack's code (profile=NAME) apply only when translate-mod runs that profile;
+    // another pack has other code at those addresses.
+    arraySites = arraySites.Where(site => site.Profile is null ||
+        string.Equals(site.Profile, profile?.Name, StringComparison.OrdinalIgnoreCase));
     Translator.Core.Lifting.ArrayOverflowSites.Current = arraySites;
 }
 var root = project?.WorkspaceRoot ?? Directory.GetCurrentDirectory();

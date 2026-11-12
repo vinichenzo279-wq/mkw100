@@ -140,3 +140,8 @@ void InitWindows(const ArrayClass& c, CpuContext* ctx);
 // Called by translated code at each rewritten site; see above.
 extern "C" uint32_t MKW100_IndexScaled(uint32_t scaled, uint32_t classId, uint32_t stride);
 extern "C" uint32_t MKW100_ArrayStep(uint32_t pointer, uint32_t classId, uint32_t stride, uint32_t origin);
+// index sites (a pack's static [12] tables): around `op rS, table, offset`, the table register
+// becomes shadow - 12 * size while the offset reaches element 12, so element i >= 12 lands at
+// shadow + (i - 12) * size; afterwards it is put back.
+extern "C" uint32_t MKW100_IndexedBase(uint32_t base, uint32_t offset, uint32_t table, uint32_t size, uint32_t shadow);
+extern "C" uint32_t MKW100_IndexedRestore(uint32_t base, uint32_t table, uint32_t size, uint32_t shadow);

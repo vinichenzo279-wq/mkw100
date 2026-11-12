@@ -26,10 +26,16 @@ public sealed class ArrayOverflowSites
 {
     public const string IndexScaledHelper = "MKW100_IndexScaled";
     public const string ArrayStepHelper = "MKW100_ArrayStep";
+    public const string IndexedBaseHelper = "MKW100_IndexedBase";
+    public const string IndexedRestoreHelper = "MKW100_IndexedRestore";
 
-    public enum SiteKind { Scale, Step }
+    public enum SiteKind { Scale, Step, Index }
 
-    public sealed record Site(uint Address, int ClassId, SiteKind Kind, int Stride, int Offset);
+    /// <param name="Offset">scale/step: byte offset from the instance. index: the table's address.</param>
+    /// <param name="Shadow">index only: where elements 12.. of the table live.</param>
+    /// <param name="Profile">null for the base game; else the translate-mod profile the site is for.</param>
+    public sealed record Site(uint Address, int ClassId, SiteKind Kind, int Stride, int Offset,
+        uint Shadow = 0, string? Profile = null);
 
     public static ArrayOverflowSites Current { get; set; } = new(Array.Empty<Site>());
 
@@ -58,6 +64,9 @@ public sealed class ArrayOverflowSites
         var simm = (int)(short)(word & 0xFFFF);
         string Fail(string why) =>
             throw new InvalidOperationException($"array site 0x{ins.Address:X8} ({ins.Mnemonic}): {why}");
+
+        if (site.Kind == SiteKind.Index)
+            return RewriteIndexed(ins, ir, site, Fail);
 
         if (site.Kind == SiteKind.Scale)
         {
@@ -88,9 +97,51 @@ public sealed class ArrayOverflowSites
         };
     }
 
+    // X-form indexed loads and stores: lbzx stbx lhzx lhax sthx lwzx stwx lfsx stfsx lfdx stfdx.
+    private static readonly HashSet<int> IndexedForms = [87, 215, 279, 343, 407, 23, 151, 535, 663, 599, 727];
+    private static readonly HashSet<int> IndexedStores = [215, 407, 151, 663, 727];
+
     /// <summary>
-    /// One site per line: `0xADDRESS class-id kind stride offset`, kind `scale` or `step`, offset a
-    /// 0x-prefixed byte offset from the instance; `#` starts a comment.
+    /// index: `op rS, rA, rB` on a static table of 12 elements (rA the table, rB the byte offset).
+    /// rA is moved to the shadow table around the access when rB reaches element 12, then put back,
+    /// so the code's own registers are unchanged afterwards.
+    /// </summary>
+    private static IReadOnlyList<IrInstruction> RewriteIndexed(
+        PpcInstruction ins, IReadOnlyList<IrInstruction> ir, Site site, Func<string, string> fail)
+    {
+        var word = ins.Word;
+        var xo = (int)((word >> 1) & 0x3FF);
+        var rs = (int)((word >> 21) & 31);
+        var ra = (int)((word >> 16) & 31);
+        var rb = (int)((word >> 11) & 31);
+        if (word >> 26 != 31 || !IndexedForms.Contains(xo))
+            fail("not an X-form indexed load or store");
+        if (ra == 0 || ra == rb)
+            fail("needs a base register distinct from the index");
+        var isFloat = xo is 535 or 663 or 599 or 727;
+        if (!IndexedStores.Contains(xo) && !isFloat && rs == ra)
+            fail("the load overwrites its base register");
+        var args = new[]
+        {
+            IrValue.Register($"r{ra}"), IrValue.Register($"r{rb}"), IrValue.Imm(site.Offset),
+            IrValue.Imm(site.Stride), IrValue.Imm(unchecked((int)site.Shadow))
+        };
+        var restore = new[]
+        {
+            IrValue.Register($"r{ra}"), IrValue.Imm(site.Offset), IrValue.Imm(site.Stride),
+            IrValue.Imm(unchecked((int)site.Shadow))
+        };
+        return new IrInstruction[] { new IrCall($"r{ra}", IndexedBaseHelper, args) }
+            .Concat(ir)
+            .Append(new IrCall($"r{ra}", IndexedRestoreHelper, restore))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// One site per line: `0xADDRESS class-id kind stride offset [0xSHADOW] [profile=NAME]`, kind
+    /// `scale`, `step` or `index`; offset a 0x-prefixed byte offset from the instance (index: the
+    /// table's address, stride its element size, SHADOW required); `#` starts a comment. A site with
+    /// a profile only applies when translate-mod runs that profile.
     /// </summary>
     public static ArrayOverflowSites Load(string path)
     {
@@ -100,20 +151,28 @@ public sealed class ArrayOverflowSites
             var text = raw.Split('#', 2)[0].Trim();
             if (text.Length == 0)
                 continue;
-            var fields = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            var all = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             FormatException Bad(string why) => new($"{path}:{index + 1}: {why}: '{text}'");
-            if (fields.Length != 5)
+            var profile = all.Where(f => f.StartsWith("profile=", StringComparison.Ordinal))
+                .Select(f => f["profile=".Length..]).SingleOrDefault();
+            var fields = all.Where(f => !f.StartsWith("profile=", StringComparison.Ordinal)).ToArray();
+            if (fields.Length < 5)
                 throw Bad("expected address, class id, kind, stride, offset");
             var kind = fields[2] switch
             {
                 "scale" => SiteKind.Scale,
                 "step" => SiteKind.Step,
-                _ => throw Bad("kind must be scale or step")
+                "index" => SiteKind.Index,
+                _ => throw Bad("kind must be scale, step or index")
             };
+            if (fields.Length != (kind == SiteKind.Index ? 6 : 5))
+                throw Bad(kind == SiteKind.Index ? "index sites need a shadow address" : "too many fields");
             sites.Add(new Site(Hex(fields[0]) ?? throw Bad("bad address"),
                 int.Parse(fields[1], CultureInfo.InvariantCulture), kind,
                 int.Parse(fields[3], CultureInfo.InvariantCulture),
-                (int)(Hex(fields[4]) ?? throw Bad("bad offset"))));
+                unchecked((int)(Hex(fields[4]) ?? throw Bad("bad offset"))),
+                kind == SiteKind.Index ? Hex(fields[5]) ?? throw Bad("bad shadow") : 0,
+                profile));
         }
         return new ArrayOverflowSites(sites);
     }
