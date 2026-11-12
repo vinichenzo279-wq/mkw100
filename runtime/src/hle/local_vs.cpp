@@ -466,8 +466,10 @@ void PrepareRace(uint32_t rd) {
     const uint32_t gameType=Memory::Read32(menu+0xB54);
     const uint32_t firstType=Memory::Read32(Player(menu,0)+0x10);
     const bool preview=gameType==5;
+    // 1-4 local players (slots 0..humans-1, type 0), the rest CPUs or empty: split screen too.
+    const uint32_t locals = std::max<uint32_t>(humans, 1);
     bool solo = firstType == 0 || (preview && firstType == 1);
-    for (uint32_t i=1;i<12;++i) solo = solo && Memory::Read32(Player(menu,i)+0x10) != 0;
+    for (uint32_t i=locals;i<12;++i) solo = solo && Memory::Read32(Player(menu,i)+0x10) != 0;
     // Offline VS, solo or Team VS (past 12 racers teams.cpp takes it over after InitRace).
     const bool teamVs = (Memory::Read32(menu+0xB70)&2)!=0;
     // Offline GP, VS or battle (gameMode 0, 1, 3: battles are always red/blue teams; balloon_battle.cpp).
@@ -486,8 +488,8 @@ void PrepareRace(uint32_t rd) {
     const uint32_t humanCharacter=Memory::Read32(Player(menu,0)+0xC);
     for (uint32_t i=0;i<PlayerSlots::kMaxPlayers;++i) {
         const uint32_t p=Player(menu,i);
-        Memory::Write32(p+0x10, i>=seriesCount ? 5 : i==0 ? firstType : 1);
-        if (i && i<seriesCount && (diversity.load() || i>=12)) {
+        Memory::Write32(p+0x10, i>=seriesCount ? 5 : i==0 ? firstType : i<locals ? Memory::Read32(p+0x10) : 1);
+        if (i>=locals && i<seriesCount && (diversity.load() || i>=12)) {
             const uint32_t character=(humanCharacter+ i)%24;
             // Battles load red/blue kart models (%s_red/_blue.brres), which only the standard kart
             // and bike have (S/M/L_Kart_Red ...): there the CPUs take one of those two.
@@ -967,13 +969,17 @@ extern "C" void LocalVs_Rank_807f4a08(CpuContext* ctx) {
         if (local_vs_detail::finishRaceNow.exchange(false)) LocalVsFinishRaceNow(ctx);
     }
     if (!local_vs_detail::ExpandedOffline()) return;
-    const uint32_t id=Memory::Read32(self+0x19C);
-    if (id!=0) return; // current menu integration supports one local player
+    const uint32_t id=Memory::Read32(self+0x19C);  // the counter's racer (each split-screen player)
     const uint32_t info=Memory::Read32(MKW_GADDR(809BD730));
+    if (id>=local_vs_detail::RaceCount()) return;
     const uint32_t player=Memory::Read32(Memory::Read32(info+0xC)+4*id);
     const uint32_t rank=Memory::Read8(player+0x20);
     if (!rank || rank>local_vs_detail::RaceCount()) return;
     const bool icon=RankIcons::Show(ctx,self,rank);
+    if (id!=0) {  // other local players: the icon, or no counter (the overlay draws player 1's only)
+        if (!icon) Memory::Write8(self+0x80,1);
+        return;
+    }
     local_vs_detail::hudIcons=icon;
     if (!icon) Memory::Write8(self+0x80,1);  // no icon: hide the counter, the overlay draws the number
     local_vs_detail::hudRank=rank | (local_vs_detail::RaceCount()<<8);
