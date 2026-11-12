@@ -19,7 +19,7 @@ uint32_t TeamNameBmg(uint32_t colour, bool average);
 // A runtime label in the team-name font for colour `colour` (one slot per colour; the text is
 // rewritten on every call, at most 23 characters).
 uint32_t TeamLabelBmg(uint32_t colour, const std::string& text);
-// Any runtime label: slots 0..7 are TeamLabelBmg's, 8..15 the team screen's, 16 the racers row's, 17-18 Mirror's 200cc.
+// Any runtime label: slots 0..7 are TeamLabelBmg's, 8..15 the team screen's, 16 the racers row's, 17-18 Mirror's 200cc, 19-20 Impossible.
 // `fontBmg`: the message whose font entry the text borrows; it must be in the BMG the asking control
 // reads (0: Common.bmg 9501, the player name, which menu value texts do not reach).
 uint32_t LabelBmg(uint32_t slot, const std::string& text, uint32_t fontBmg = 0);

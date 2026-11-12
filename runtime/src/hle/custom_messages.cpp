@@ -46,7 +46,7 @@ static_assert(kPlaceText + (PlayerSlots::kMaxPlayers - 13 + 1) * 16 <= kTeamText
 static_assert(kPlaceIndexBase + kLastPlace < 0x7FFE);
 static_assert(kTeamText + kTeamMessages * kTeamTextBytes <= ArrayOverflow::kMenuText + 0x1A00);
 constexpr uint32_t kTeamLabelText = ArrayOverflow::kMenuText + 0x1A00;
-constexpr uint32_t kTeamLabelSlots = 19;  // 16: the racers row value; 17, 18: "200cc" for Mirror
+constexpr uint32_t kTeamLabelSlots = 21;  // 16: racers value; 17, 18: "200cc" for Mirror; 19, 20: "Impossible"
 static_assert(kTeamLabelText + kTeamLabelSlots * kTeamLabelBytes <= ArrayOverflow::kMenuText + 0x2000);  // team_ui strings follow
 
 std::array<uint32_t, kLastPlace + 1> g_fontIndex{};  // msg index of 1312 in the holder that asked

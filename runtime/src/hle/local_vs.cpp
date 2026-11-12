@@ -33,7 +33,7 @@ std::atomic<bool> unlocks{true};
 std::atomic<bool> diversity{true};
 std::atomic<bool> thirtyFps{false};
 std::atomic<bool> instantBoxes{true};
-std::atomic<bool> impossibleCpus{false};
+std::atomic<bool> impossibleCpus{false};  // this race: the CPU row's 4th option (PrepareRace)
 std::atomic<bool> impossibleBoot{false};  // --race-impossible; Initialize runs after arguments and must not clear it
 std::atomic<uint32_t> scoring{uint32_t(LocalVs::Scoring::ClassicSpread)};
 std::atomic<uint32_t> itemDistribution{uint32_t(LocalVs::ItemDistribution::Even)};
@@ -91,7 +91,6 @@ void Initialize() {
     local_vs_detail::thirtyFps = c.localVsThirtyFps.value_or(false);
     local_vs_detail::instantBoxes = c.localVsInstantBoxes.value_or(true);
     local_vs_detail::speedometer = c.localVsSpeedometer.value_or(true);
-    local_vs_detail::impossibleCpus = c.localVsImpossibleCpus.value_or(false);
     local_vs_detail::scoring = local_vs_detail::ParseKey(c.localVsScoring, local_vs_detail::scoringKeys);
     local_vs_detail::itemDistribution = local_vs_detail::ParseKey(c.localVsItemDistribution, local_vs_detail::itemKeys);
     local_vs_detail::itemCycler = local_vs_detail::ParseKey(c.localVsItemCycler, local_vs_detail::cyclerKeys);
@@ -179,11 +178,7 @@ void DrawSettings() {
         instantBoxes = boxes;
         RuntimeConfigFile::WriteSetting("local_vs", "instant_boxes", boxes ? "true" : "false");
     }
-    bool impossible = impossibleCpus.load();
-    if (ImGui::Checkbox("Impossible CPUs (replaces Hard, next race)", &impossible)) {
-        impossibleCpus = impossible;
-        RuntimeConfigFile::WriteSetting("local_vs", "impossible_cpus", impossible ? "true" : "false");
-    }
+    ImGui::TextUnformatted("Impossible CPUs: the CPU row's 4th option on the rules page (Easy, Normal, Hard, Impossible).");
     ImGui::Separator();
     ImGui::TextUnformatted("Balancing for races of more than 12 racers:");
     int score = int(scoring.load());
@@ -443,6 +438,21 @@ void PrepareRace(uint32_t rd) {
     RT_LOGF("local-vs", "prepare: mode=%u type=%u flags=0x%X p0=%u p1=%u raceNumber=%u\n",
         Memory::Read32(menu+0xB50),Memory::Read32(menu+0xB54),Memory::Read32(menu+0xB70),
         Memory::Read32(Player(menu,0)+0x10),Memory::Read32(Player(menu,1)+0x10),Memory::Read8(menu+0xB6C));
+    // The CPU row's 4th option is Impossible (vs_racers_option.cpp: "Off" relabelled, also offered
+    // in 1P). It stores cpuMode 3, the game's "no CPUs": the race runs Hard CPUs with
+    // ai_impossible.cpp's tables, and in 2-4P the slots the game left empty get CPUs.
+    impossibleCpus = Memory::Read32(menu+0xB5C)==3;
+    if (impossibleCpus.load()) {
+        Memory::Write32(menu+0xB5C,2);
+        const uint32_t base=Memory::Read32(Player(menu,0)+0xC);
+        for (uint32_t i=1;i<12;++i) {
+            const uint32_t p=Player(menu,i);
+            if (Memory::Read32(p+0x10)!=5) continue;
+            const uint32_t character=(base+i)%24;
+            Memory::Write32(p+0x10,1); Memory::Write32(p+0xC,character); Memory::Write32(p+8,weights[character]);
+        }
+        RT_LOGF("local-vs", "impossible CPUs this race (CPU row option 4)\n");
+    }
     const uint32_t gameType=Memory::Read32(menu+0xB54);
     const uint32_t firstType=Memory::Read32(Player(menu,0)+0x10);
     const bool preview=gameType==5;

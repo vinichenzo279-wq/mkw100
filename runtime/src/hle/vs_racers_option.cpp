@@ -231,7 +231,26 @@ REGISTER_NATIVE_WRAPPER_AS(0x806284C8, VsSettings_Ctor_806284c8, "VsSettings_Cto
 constexpr uint32_t kSaveManager = 0x809BD748;  // SaveDataManager instance (current license +0x36)
 constexpr uint32_t kLicenseBase = 0x38, kLicenseSize = 0x93F0, kMirrorWord = 0x9000, kMirrorBit = 1u << 20;
 
+// The CPU row (id 1) has 4 buttons (Easy, Normal, Hard, Off) only with 2+ local players: its
+// CreateControl reads the section's local player count (SectionMgr +0x98, +0x124) inline. In 1P
+// that count reads 2 while the row is built, so 1P gets the 4th button too (Impossible).
+constexpr uint32_t kSectionMgr = 0x809C1E38;
+constexpr uint32_t kCpuRowId = 1;
+uint32_t LocalCountAddress() {
+    const uint32_t mgr = Memory::Read32(kSectionMgr);
+    const uint32_t section = mgr ? Memory::Read32(mgr + 0x98) : 0;
+    return section ? section + 0x124 : 0;
+}
+
 extern "C" void VsSettings_CreateControl_808530b8(CpuContext* ctx) {
+    if (ctx->gpr[4] == kCpuRowId) {
+        const uint32_t count = LocalCountAddress();
+        const uint32_t saved = count ? Memory::Read32(count) : 0;
+        if (count && (saved & 0xFF) < 2) Memory::Write32(count, (saved & ~0xFFu) | 2);
+        MKW_GUEST_NEXT(808530B8)(ctx);
+        if (count) Memory::Write32(count, saved);
+        return;
+    }
     if (ctx->gpr[4] != kVsPage.rowId) {
         const uint32_t sdm = Memory::Read32(kSaveManager);
         const int16_t license = sdm ? int16_t(Memory::Read16(sdm + 0x36)) : -1;
@@ -303,7 +322,16 @@ REGISTER_NATIVE_WRAPPER_AS(0x80853988, VsSettings_OnUpDownSelect_80853988, "VsSe
 // Menu.bmg 3414 "Mirror" and 3418 "150cc class with mirrored courses." when Mirror is 200cc.
 constexpr uint32_t kMirrorBmg = 3414, kMirrorHelpBmg = 3418;
 
+// Menu.bmg 3424 "Off" (the CPU row's 4th option) and 3428 "Race without CPU players." read as
+// Impossible: local_vs.cpp turns that option into Hard CPUs with ai_impossible.cpp's tables.
+constexpr uint32_t kCpuOffBmg = 3424, kCpuOffHelpBmg = 3428;
+
 extern "C" void BmgHolder_GetMsgId_805f8c88(CpuContext* ctx) {
+    if (ctx->gpr[4] == kCpuOffBmg || ctx->gpr[4] == kCpuOffHelpBmg) {
+        const bool help = ctx->gpr[4] == kCpuOffHelpBmg;
+        ctx->gpr[4] = CustomMessages::LabelBmg(help ? 20 : 19, help ? "CPU players are much faster." : "Impossible",
+                                               help ? kCpuOffHelpBmg : kCpuOffBmg);
+    }
     if (Cc200::ReplacesMirror() && (ctx->gpr[4] == kMirrorBmg || ctx->gpr[4] == kMirrorHelpBmg)) {
         const bool help = ctx->gpr[4] == kMirrorHelpBmg;
         ctx->gpr[4] = CustomMessages::LabelBmg(help ? 18 : 17, help ? "200cc class with brake drifting." : "200cc",
