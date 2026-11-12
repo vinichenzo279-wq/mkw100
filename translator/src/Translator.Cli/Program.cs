@@ -61,7 +61,7 @@ if (functionMap is not null)
 if (project?.Translation.PlayerSlotSitesPath is { } playerSlotSitesPath)
 {
     Translator.Core.Lifting.PlayerSlotStrideSites.Current =
-        Translator.Core.Lifting.PlayerSlotStrideSites.Load(playerSlotSitesPath);
+        Translator.Core.Lifting.PlayerSlotStrideSites.Load(playerSlotSitesPath, profile?.Name);
 }
 if (project?.Translation.ArraySitesPath is { } arraySitesPath)
 {

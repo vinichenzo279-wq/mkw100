@@ -6,7 +6,9 @@
 // races only. For each local racer, Y + D-pad left/right (Classic/GameCube; D-pad alone on a
 // Nunchuk) steps through Empty, Green Shell, Red Shell, Banana, Fake Box, Mushroom, Triple
 // Mushroom, Bob-omb, Blue Shell, Lightning, Star, Golden Mushroom, Mega, Blooper, POW, Thunder
-// Cloud, Bullet Bill, Triple Green, Triple Red, Triple Banana and puts the item in the slot.
+// Cloud, Bullet Bill, Triple Green, Triple Red, Triple Banana and puts the item in the slot. Under
+// Item Fever the cycle goes on through its own items, ids 0x15..0x29 (its code treats exactly that
+// range as its items, e.g. 0x81855C68).
 //   debug:    items are used up as normal; using an item with the slot empty refills it with the
 //             last cycled item.
 //   infinite: the slot keeps the cycled item (it is put back whenever it changes).
@@ -17,9 +19,11 @@
 #include "guest_function_imports.h"
 #include "local_vs.h"
 #include "memory.h"
+#include "recomp_mod_loader.h"
 
 #include <array>
 #include <cstdint>
+#include <string>
 
 namespace {
 
@@ -36,8 +40,17 @@ constexpr uint32_t kPreviousButtons = 0x44;            // inputStates[1]
 constexpr uint32_t kNetController = 0x809C20D8;        // RKNet::Controller*: roomType at +0xE8
 
 // Item ids in cycle order; index 0 (0x14) is the empty slot.
-constexpr std::array<uint8_t, 20> kCycle{{0x14, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                                          0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12}};
+constexpr std::array<uint8_t, 41> kCycleIds{{0x14, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                                             0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12,
+                                             0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E,
+                                             0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29}};
+constexpr uint32_t kStockCycle = 20;  // empty + the 19 stock items
+
+// The ids in the cycle: Item Fever's 21 items too when that pack runs.
+uint32_t CycleSize() {
+    static const bool itemFever = RecompMod::RiivolutionXml().find("ItemFever") != std::string::npos;
+    return itemFever ? uint32_t(kCycleIds.size()) : kStockCycle;
+}
 
 bool Offline() {
     const uint32_t net = Memory::Read32(kNetController);
@@ -76,22 +89,22 @@ extern "C" void ItemCycler_PlayerUpdate_80797928(CpuContext* ctx) {
     if (type == 0 || Memory::Read32(player + kRoulette) != 0) return;
 
     uint32_t index = Memory::Read8(player + kCycleIndex);
-    if (index >= kCycle.size()) index = 0;
+    const uint32_t size = CycleSize();
+    if (index >= size) index = 0;
     const uint32_t buttons = Memory::Read32(holder + kButtons);
     const uint32_t previous = Memory::Read32(holder + kPreviousButtons);
     const uint32_t hold = type < 2 ? type : type == 2 ? 0x20 : 0x800;  // Nunchuk, Classic Y, GameCube Y
     const uint32_t pressed = buttons & ~previous & 3;                  // D-pad left (1) / right (2)
     if ((buttons & hold) != 0 && pressed != 0) {
-        index = (pressed & 1) ? (index == 0 ? kCycle.size() - 1 : index - 1)
-                              : (index + 1 == kCycle.size() ? 0 : index + 1);
+        index = (pressed & 1) ? (index == 0 ? size - 1 : index - 1) : (index + 1 == size ? 0 : index + 1);
         Memory::Write8(player + kCycleIndex, uint8_t(index));
-        SetSlot(ctx, saved, player, kCycle[index]);
+        SetSlot(ctx, saved, player, kCycleIds[index]);
     } else if (mode == LocalVs::ItemCycler::Infinite) {
-        if (index != 0 && Memory::Read32(player + kSlotItem) != kCycle[index]) {
-            SetSlot(ctx, saved, player, kCycle[index]);
+        if (index != 0 && Memory::Read32(player + kSlotItem) != kCycleIds[index]) {
+            SetSlot(ctx, saved, player, kCycleIds[index]);
         }
     } else if ((Memory::Read16(player + kUseFlags) & 0x46) == 0x40) {
-        SetSlot(ctx, saved, player, kCycle[index]);  // debug: use with an empty slot refills it
+        SetSlot(ctx, saved, player, kCycleIds[index]);  // debug: use with an empty slot refills it
     }
     *ctx = saved;
 }

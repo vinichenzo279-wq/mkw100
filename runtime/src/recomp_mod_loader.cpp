@@ -187,6 +187,20 @@ std::optional<ExecutableRange> FindExecutableRange(uint32_t address, size_t leng
     return std::nullopt;
 }
 
+std::vector<uint32_t>& AllowedExecutableWords() {
+    static std::vector<uint32_t> words;
+    return words;
+}
+
+bool IsAllowedExecutableWord(uint32_t address, size_t length) {
+    for (const uint32_t word : AllowedExecutableWords()) {
+        if (address >= word && static_cast<uint64_t>(address) + length <= static_cast<uint64_t>(word) + 4) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool IsKnownBaseRelLoaderWrite(const ExecutableRange& range) {
     if (range.name.find("StaticR.rel") == std::string::npos) {
         return false;
@@ -394,11 +408,17 @@ bool HandleExecutableWrite(uint32_t address, size_t length, uint64_t value) {
         return false;
     }
 
-    if (IsKnownBaseRelLoaderWrite(*hit)) {
+    if (IsKnownBaseRelLoaderWrite(*hit) || IsAllowedExecutableWord(address, length)) {
         return false;
     }
 
     ReportForbiddenExecutableWrite(address, length, value, *hit);
+}
+
+void AllowExecutableWord(uint32_t address, const char* name) {
+    std::lock_guard<std::mutex> lock(ModMutex());
+    AllowedExecutableWords().push_back(address & ~3u);
+    (void)name;
 }
 
 void CheckExecutableWrite(uint32_t address, size_t length, uint64_t value) {
