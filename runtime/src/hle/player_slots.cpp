@@ -12,9 +12,11 @@
 #include "local_vs.h"
 #include "boot_race.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <stdexcept>
+#include <vector>
 
 namespace PlayerSlots {
 
@@ -222,3 +224,62 @@ extern "C" void RaceConfig_InitRace_805302c4(CpuContext* ctx) {
     LocalVs::AfterInitRace(racedata);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x805302C4, RaceConfig_InitRace_805302c4, "RaceConfig_InitRace_805302c4");
+
+// Racedata::InitAwards (0x80530864) sets up the ceremony after a GP: it runs InitRace (above, which
+// copies the overflow players into the race scenario) and then rebuilds slots 0-11 from the final
+// ranks. Past 12 the overflow players stayed in the race, so the ceremony scene loaded every one of
+// them and broke (RaceScene::OnEnter, a call through an empty object). The ceremony gets 12.
+// Before it, past 12: InitAwards fills the ceremony by final rank (+0xE0) looking at slots 0-11
+// only, and the expanded scoring keeps no such rank, so slots stayed empty (the ceremony scene
+// then called through an empty object). The menu scenario is reordered so slots 1-11 hold the
+// top CPUs by series total (+0xDA, ties by the last place +0xE2); the player stays in slot 0 (its
+// controller); those 12 get ranks 1-12 in that order. The ceremony then shows the real podium.
+void PrepareAwardSlots(uint32_t racedata) {
+    const uint32_t count = Memory::Read8(racedata + 0x24);
+    if (count <= kInlineSlots || count > kMaxPlayers) return;
+    const uint32_t menu = racedata + kScenarioOffsets[1];
+    const auto player = [&](uint32_t i) { return PlayerAddress(racedata, menu, i); };
+    std::vector<uint32_t> order(count);
+    for (uint32_t i = 0; i < count; ++i) order[i] = i;
+    const auto better = [&](uint32_t a, uint32_t b) {
+        const uint32_t ta = Memory::Read16(player(a) + 0xDA), tb = Memory::Read16(player(b) + 0xDA);
+        if (ta != tb) return ta > tb;
+        return Memory::Read8(player(a) + 0xE2) < Memory::Read8(player(b) + 0xE2);
+    };
+    std::stable_sort(order.begin(), order.end(), better);
+    // Slots 1..11: the best racers other than slot 0, moved in by swapping whole players.
+    std::vector<uint32_t> chosen;
+    for (uint32_t id : order) if (id != 0 && chosen.size() < kInlineSlots - 1) chosen.push_back(id);
+    std::vector<uint32_t> where(count);  // racer id -> current slot
+    std::vector<uint32_t> who(count);    // slot -> racer id
+    for (uint32_t i = 0; i < count; ++i) where[i] = who[i] = i;
+    std::vector<uint32_t> tmp(kStride / 4);
+    for (uint32_t k = 1; k < kInlineSlots && k - 1 < chosen.size(); ++k) {
+        const uint32_t from = where[chosen[k - 1]];
+        if (from == k) continue;
+        const uint32_t a = player(k), b = player(from);
+        for (uint32_t o = 4; o < kStride; o += 4) tmp[o / 4] = Memory::Read32(a + o);
+        CopyPlayer(a, b);
+        for (uint32_t o = 4; o < kStride; o += 4) Memory::Write32(b + o, tmp[o / 4]);
+        const uint32_t moved = who[k];
+        who[k] = chosen[k - 1]; who[from] = moved;
+        where[chosen[k - 1]] = k; where[moved] = from;
+    }
+    // Ranks 1..12 for slots 0..11 in series order.
+    std::vector<uint32_t> slots(kInlineSlots);
+    for (uint32_t k = 0; k < kInlineSlots; ++k) slots[k] = k;
+    std::stable_sort(slots.begin(), slots.end(), [&](uint32_t a, uint32_t b) { return better(a, b); });
+    for (uint32_t r = 0; r < kInlineSlots; ++r) Memory::Write8(player(slots[r]) + 0xE0, uint8_t(r + 1));
+}
+
+extern "C" void Racedata_InitAwards_80530864(CpuContext* ctx) {
+    const uint32_t racedata = ctx->gpr[3];
+    PrepareAwardSlots(racedata);
+    MKW_GUEST_NEXT(80530864)(ctx);
+    const uint32_t race = racedata + kScenarioOffsets[0];
+    const uint32_t count = Memory::Read8(racedata + 0x24);
+    if (count <= kInlineSlots) return;
+    for (uint32_t i = kInlineSlots; i < kMaxPlayers; ++i) Memory::Write32(PlayerAddress(racedata, race, i) + 0x10, 5);
+    Memory::Write8(racedata + 0x24, uint8_t(kInlineSlots));
+}
+REGISTER_NATIVE_WRAPPER_AS(0x80530864, Racedata_InitAwards_80530864, "Racedata_InitAwards_80530864");

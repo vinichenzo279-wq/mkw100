@@ -3,6 +3,7 @@
 #include "abi_bridge.h"
 #include "boot_race.h"
 #include "guest_function_imports.h"
+#include "guest_abi/array_overflow.h"
 #include "guest_abi/player_slots.h"
 #include "hle/custom_messages.h"
 #include "hle/teams.h"
@@ -61,6 +62,7 @@ std::atomic<uint32_t> simulationRate{0};
 std::atomic<bool> speedometer{true};
 std::atomic<float> hudSpeed{0.0f};
 std::atomic<int64_t> hudSpeedTime{0};
+std::atomic<bool> finishRaceNow{false};  // F10 debug button: finish everyone on the next race frame
 int64_t NowMs() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 uint32_t seriesCount = 0;
 struct Entry { uint32_t id, character, place, earned, total; };
@@ -168,6 +170,9 @@ void DrawSettings() {
         thirtyFps = half;
         RuntimeConfigFile::WriteSetting("local_vs", "render_30fps", half ? "true" : "false");
     }
+    if (ImGui::Button("Finish race now (debug)")) finishRaceNow = true;
+    ImGui::SameLine();
+    ImGui::TextUnformatted("ends the race with everyone in their current place");
     bool speedo = speedometer.load();
     if (ImGui::Checkbox("Speedometer", &speedo)) {
         speedometer = speedo;
@@ -876,6 +881,40 @@ bool LocalVsKartPosition(float& x, float& y, float& z) {
     return true;
 }
 
+// Debug: every racer still racing finishes now, in its current place (RaceinfoPlayer::EndRace
+// 0x805347F4 with a Timer: minutes u16 +4, seconds u8 +6, ms u16 +8, valid +0xA). Times step up a
+// millisecond a place from the current race time, so the results keep that order.
+void LocalVsFinishRaceNow(CpuContext* ctx) {
+    const uint32_t info = Memory::Read32(MKW_GADDR(809BD730));
+    if (info < 0x80000000u || Memory::Read32(info + 0x28) != 2) return;  // racing
+    const uint32_t count = local_vs_detail::RaceCount();
+    const uint32_t players = Memory::Read32(info + 0xC);
+    std::vector<std::pair<uint32_t, uint32_t>> racing;  // (place, racer)
+    for (uint32_t i = 0; i < count; ++i) {
+        const uint32_t p = Memory::Read32(players + 4 * i);
+        if (p < 0x80000000u || (Memory::Read32(p + 0x38) & 2)) continue;
+        racing.emplace_back(Memory::Read8(p + 0x20), i);
+    }
+    std::sort(racing.begin(), racing.end());
+    const uint32_t timer = ArrayOverflow::kMenuText + 0x2100;
+    const uint64_t base = uint64_t(Memory::Read32(info + 0x20)) * 1000 / 60;
+    const CpuContext saved = *ctx;
+    uint32_t k = 0;
+    for (const auto& [place, racer] : racing) {
+        const uint64_t ms = base + (++k);
+        Memory::Write16(timer + 4, uint16_t(std::min<uint64_t>(ms / 60000, 99)));
+        Memory::Write8(timer + 6, uint8_t(ms / 1000 % 60));
+        Memory::Write16(timer + 8, uint16_t(ms % 1000));
+        Memory::Write8(timer + 0xA, 1);
+        *ctx = saved;
+        ctx->gpr[3] = Memory::Read32(players + 4 * racer);
+        ctx->gpr[4] = timer;
+        InvokeIndirectCpu(MKW_GADDR(805347F4), ctx);
+    }
+    *ctx = saved;
+    RT_LOGF("local-vs", "finish race now: %u racers finished\n", k);
+}
+
 void LocalVsSampleSpeed() {
     static uint32_t lastFrame = 0;
     static float lx = 0, ly = 0, lz = 0;
@@ -901,6 +940,14 @@ extern "C" void LocalVs_Rank_807f4a08(CpuContext* ctx) {
     const uint32_t self=ctx->gpr[3];
     MKW_GUEST_NEXT(807F4A08)(ctx);
     if (Memory::Read32(self+0x19C)==0) LocalVsSampleSpeed();  // any race, player 0's counter
+    if (Memory::Read32(self+0x19C)==0) {
+        // Tests: MKW100_TEST_FINISH=<race frame> finishes every race at that frame (scripted runs only).
+        static const long testFinish = std::getenv("MKW100_TEST_FINISH") ? std::atol(std::getenv("MKW100_TEST_FINISH")) : 0;
+        const uint32_t info = Memory::Read32(MKW_GADDR(809BD730));
+        if (testFinish > 0 && BootRace::Scripted() && info >= 0x80000000u && Memory::Read32(info + 0x20) == uint32_t(testFinish))
+            local_vs_detail::finishRaceNow = true;
+        if (local_vs_detail::finishRaceNow.exchange(false)) LocalVsFinishRaceNow(ctx);
+    }
     if (!local_vs_detail::ExpandedOffline()) return;
     const uint32_t id=Memory::Read32(self+0x19C);
     if (id!=0) return; // current menu integration supports one local player
@@ -989,3 +1036,30 @@ extern "C" void LocalVs_SectionPages_8062c3a4(CpuContext* ctx) {
     RT_LOGF("local-vs", "team vs section: added the standings page\n");
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8062C3A4, LocalVs_SectionPages_8062c3a4, "LocalVs_SectionPages_8062c3a4");
+
+// Pages::AwardResults::PrepareResultItems (0x805BCDC4): the ceremony's final ranking has 12 result
+// items (page +1532, 0x174 each); each racer fills the item of its final place (racer + 232), so a
+// place past 12 reached past them (100-racer GP: a call through an empty control after race 4).
+// Past 12 racers only the top 12 fill their items; the full standings are the results pages'. The
+// other path (+5996 set: items placed by team) is left to the game.
+extern "C" void LocalVs_AwardResultItems_805bcdc4(CpuContext* ctx) {
+    const uint32_t page = ctx->gpr[3];
+    const uint32_t count = Memory::Read8(page + 5999);
+    if (count <= 12 || Memory::Read8(page + 5996) != 0) { MKW_GUEST_NEXT(805BCDC4)(ctx); return; }
+    const uint32_t mode = Memory::Read8(page + 5998);
+    const uint32_t flag = (int32_t((mode | ~2u) - ((mode - 2u) >> 1)) < 0) ? 1u : 0u;  // the game's r30
+    const uint32_t rd = Memory::Read32(MKW_GADDR(809BD728));
+    const CpuContext saved = *ctx;
+    for (uint32_t i = 0; i < count && i < PlayerSlots::kMaxPlayers; ++i) {
+        const uint32_t place = Memory::Read8(rd + 6144 + MKW100_PlayerSlotOffset(i) + 232);
+        if (place < 1 || place > 12) continue;
+        *ctx = saved;
+        ctx->gpr[3] = page + 1532 + (place - 1) * 372;
+        ctx->gpr[4] = i;
+        ctx->gpr[5] = 0;  // +5996, zero on this path
+        ctx->gpr[6] = flag;
+        InvokeIndirectCpu(MKW_GADDR(805BBBD0), ctx);  // AwardDemoResultItem::SetValues(item, player, r5, r6)
+    }
+    *ctx = saved;
+}
+REGISTER_NATIVE_WRAPPER_AS(0x805BCDC4, LocalVs_AwardResultItems_805bcdc4, "LocalVs_AwardResultItems_805bcdc4");
