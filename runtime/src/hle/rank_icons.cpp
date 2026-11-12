@@ -114,9 +114,17 @@ constexpr uint32_t kTransform = 0x0;      // Animation: AnimTransformBasic*
 constexpr uint32_t kTextureTable = 0x14;  // AnimTransformBasic: TPL* per pattern texture
 constexpr uint32_t kLastStock = 11;       // the 12th place's entry
 
-uint32_t g_control = 0;   // the counter whose table entry was replaced
-uint32_t g_entry = 0;     // address of that entry
-uint32_t g_stock = 0;     // its original TPL
+// One per local player's counter (split screen: up to 4): its table entry and original TPL.
+struct IconCounter { uint32_t control = 0, entry = 0, stock = 0; };
+std::array<IconCounter, 4> g_counters{};
+uint32_t g_race = 0;      // the Raceinfo instance the copies belong to
+
+IconCounter& CounterFor(uint32_t control) {
+    for (auto& c : g_counters) if (c.control == control) return c;
+    for (auto& c : g_counters) if (c.control == 0) { c.control = control; return c; }
+    g_counters[0] = IconCounter{control};
+    return g_counters[0];
+}
 
 bool RankInRam(uint32_t a) { return a >= 0x80000000u && a < 0x98000000u; }
 
@@ -133,22 +141,26 @@ uint32_t TableEntry(uint32_t control) {
 } // namespace
 
 bool Show(CpuContext* ctx, uint32_t control, uint32_t place) {
-    if (control != g_control) {  // a new race: its counter, and its scene heaps hold none of ours
-        g_control = control;
-        g_entry = 0;
+    // A new race (a new Raceinfo): its scene heaps hold none of our copies, and its counters are
+    // new. Split screen has a counter per player, which share the copies (one set per race).
+    const uint32_t race = Memory::Read32(0x809BD730);
+    if (race != g_race) {
+        g_race = race;
+        g_counters.fill(IconCounter{});
         g_guest.fill(0);
     }
+    IconCounter& counter = CounterFor(control);
     if (place < kFirstPlace) {
-        if (g_entry) Memory::Write32(g_entry, g_stock);
-        g_entry = 0;
+        if (counter.entry) Memory::Write32(counter.entry, counter.stock);
+        counter.entry = 0;
         return true;
     }
     if (!Available(place)) return false;
     const uint32_t entry = TableEntry(control);
     if (!entry) return false;
-    if (!g_entry) {
-        g_entry = entry;
-        g_stock = Memory::Read32(entry);
+    if (!counter.entry) {
+        counter.entry = entry;
+        counter.stock = Memory::Read32(entry);
     }
     const uint32_t tpl = GuestCopy(ctx, place);
     if (!tpl) return false;

@@ -139,6 +139,13 @@ uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows) {
 // own kart archive, and at 128 one no longer fits in memory (Pulsar ArchiveFile::Decompress fails,
 // then ARCInitHandle panics).
 int MaxRacers() { return RuntimeProduct::IsRetroRewind() ? 100 : int(PlayerSlots::kMaxPlayers); }
+uint32_t LocalPlayers() {
+    const uint32_t rd = Memory::Read32(MKW_GADDR(809BD728));
+    if (!rd) return 1;
+    uint32_t humans = 0;
+    for (uint32_t i = 0; i < 4; ++i) humans += Memory::Read32(local_vs_detail::Player(rd + 0xC10, i) + 0x10) == 0;
+    return humans;
+}
 int DesiredCount() { return std::min(local_vs_detail::desiredCount.load(), MaxRacers()); }
 void SetDesiredCount(int count) {
     count = std::clamp(count, 1, MaxRacers());
@@ -509,14 +516,17 @@ void PrepareRace(uint32_t rd) {
         const uint32_t dealt=Memory::Read32(Player(menu,0)+0xCC);
         const uint32_t mine=choice==1 ? 0 : choice==2 ? 1 : (dealt<2 ? dealt : 0);
         const uint32_t red=Teams::BattleRedFor(seriesCount);
-        std::vector<uint32_t> cpus(seriesCount-1);
-        std::iota(cpus.begin(),cpus.end(),1u);
+        // Players 2-4 keep the red/blue they picked on the game's team screen.
+        uint32_t redHumans=mine==0 ? 1 : 0;
+        for (uint32_t h=1;h<locals;++h) redHumans += Memory::Read32(Player(menu,h)+0xCC)==0;
+        std::vector<uint32_t> cpus(seriesCount-locals);
+        std::iota(cpus.begin(),cpus.end(),locals);
         std::mt19937 random(uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()));
         std::shuffle(cpus.begin(),cpus.end(),random);
-        const uint32_t redCpus=std::min<uint32_t>(uint32_t(cpus.size()), red-(mine==0 ? 1 : 0));
+        const uint32_t redCpus=std::min<uint32_t>(uint32_t(cpus.size()), red>redHumans ? red-redHumans : 0);
         Memory::Write32(Player(menu,0)+0xCC,mine);
         for (uint32_t k=0;k<cpus.size();++k) Memory::Write32(Player(menu,cpus[k])+0xCC,k<redCpus ? 0 : 1);
-        RT_LOGF("local-vs", "battle teams: red %u blue %u (you %s)\n", redCpus+(mine==0), uint32_t(cpus.size())-redCpus+(mine==1),
+        RT_LOGF("local-vs", "battle teams: red %u blue %u (you %s)\n", redCpus+redHumans, seriesCount-redCpus-redHumans,
                 mine==0 ? "red" : "blue");
     } else if (teamVs && mode==3 && seriesCount>12) {
         // Later battles of the series keep the teams dealt at the first.

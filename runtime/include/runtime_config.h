@@ -47,6 +47,7 @@ struct RuntimeUserConfig {
     std::optional<bool> localVsTeamHits;                 // items hit teammates (default true)
     std::optional<bool> localVsSpeedometer;              // HUD speedometer (default true)
     std::optional<std::string> localVsTeamColour;        // "random" or a colour name ("red".."cyan")
+    std::optional<std::string> localVsTeamColourP2, localVsTeamColourP3, localVsTeamColourP4;  // split screen
     std::optional<bool> localVsTeamCustom;               // team_sizes instead of count/size
     std::optional<std::string> localVsTeamSizes;         // per colour, "10,0,40,..." (0 = unused)
     std::optional<uint32_t> localVsBattleRed;            // battle past 12: red team size, 0 = even
@@ -436,6 +437,9 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     config.localVsTeamHits = FindConfigValue<bool>(document, "local_vs", "team_hits");
     config.localVsSpeedometer = FindConfigValue<bool>(document, "local_vs", "speedometer");
     config.localVsTeamColour = FindConfigValue<std::string>(document, "local_vs", "team_colour");
+    config.localVsTeamColourP2 = FindConfigValue<std::string>(document, "local_vs", "team_colour_p2");
+    config.localVsTeamColourP3 = FindConfigValue<std::string>(document, "local_vs", "team_colour_p3");
+    config.localVsTeamColourP4 = FindConfigValue<std::string>(document, "local_vs", "team_colour_p4");
     config.localVsTeamCustom = FindConfigValue<bool>(document, "local_vs", "team_custom");
     config.localVsTeamSizes = FindConfigValue<std::string>(document, "local_vs", "team_sizes");
     config.localVsBattleRed = FindConfigUint(document, "local_vs", "battle_red");

@@ -17,6 +17,8 @@ void SetImpossibleCpus(bool on);  // --race-impossible, for this run only
 int DesiredCount();
 // The most racers this product runs (128; Retro Rewind 100 for now).
 int MaxRacers();
+// Local players in the menu scenario (slots 0-3 of type 0), for split screen.
+uint32_t LocalPlayers();
 void SetDesiredCount(int count);
 // Expanded (13+) offline VS balancing, F10 and Config.toml [local_vs] scoring / item_distribution.
 enum class Scoring : uint32_t { ClassicSpread, ClassicTop12, Linear };

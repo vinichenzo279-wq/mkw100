@@ -38,9 +38,10 @@ uint32_t InPlay();
 // Items (and star/mega/bullet bumps) hit teammates (local_vs.team_hits, default on).
 bool TeamHits();
 void SetTeamHits(bool on);
-// Your team's colour: kNoTeam = random, else a colour index (local_vs.team_colour).
-uint32_t PlayerColour();
-void SetPlayerColour(uint32_t colour);
+// A local player's team colour (player 0-3; split screen): kNoTeam = random, else a colour index
+// (local_vs.team_colour, team_colour_p2..p4). Each player with a colour is put on that team.
+uint32_t PlayerColour(uint32_t player = 0);
+void SetPlayerColour(uint32_t colour, uint32_t player = 0);
 // Custom team sizes per colour (local_vs.team_custom, local_vs.team_sizes): every colour with a
 // size above 0 is a team; sizes are scaled to the field when they do not add up to it.
 bool CustomSizes();

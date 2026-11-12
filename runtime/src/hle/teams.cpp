@@ -49,7 +49,7 @@ std::atomic<uint32_t> g_teamSize{0};
 std::atomic<bool> g_byAverage{true};
 std::atomic<uint32_t> g_inPlay{0};
 std::atomic<bool> g_teamHits{true};
-std::atomic<uint32_t> g_playerColour{Teams::kNoTeam};
+std::array<std::atomic<uint32_t>, 4> g_playerColour{{Teams::kNoTeam, Teams::kNoTeam, Teams::kNoTeam, Teams::kNoTeam}};
 std::atomic<bool> g_custom{false};
 std::atomic<uint32_t> g_battleRed{0};
 std::atomic<uint32_t> g_battleTeam{0};
@@ -131,9 +131,13 @@ void Initialize(uint32_t teamsFromConfig) {
     g_teamSize = std::min<uint32_t>(c.localVsTeamSize.value_or(0), PlayerSlots::kMaxPlayers);
     g_byAverage = c.localVsTeamScoring.value_or("average") != "total";
     g_teamHits = c.localVsTeamHits.value_or(true);
-    g_playerColour = kNoTeam;
-    for (uint32_t k = 0; k < kMaxTeams; ++k)
-        if (c.localVsTeamColour.value_or("random") == kTeamsColourKeys[k]) g_playerColour = k;
+    const std::optional<std::string>* colours[4] = {&c.localVsTeamColour, &c.localVsTeamColourP2, &c.localVsTeamColourP3,
+                                                    &c.localVsTeamColourP4};
+    for (uint32_t p = 0; p < 4; ++p) {
+        g_playerColour[p] = kNoTeam;
+        for (uint32_t k = 0; k < kMaxTeams; ++k)
+            if (colours[p]->value_or("random") == kTeamsColourKeys[k]) g_playerColour[p] = k;
+    }
     g_custom = c.localVsTeamCustom.value_or(false);
     g_battleRed = std::min<uint32_t>(c.localVsBattleRed.value_or(0), PlayerSlots::kMaxPlayers);
     const std::string battleTeam = c.localVsBattleTeam.value_or("random");
@@ -149,10 +153,12 @@ void Initialize(uint32_t teamsFromConfig) {
     }
 }
 
-uint32_t PlayerColour() { return g_playerColour.load(); }
-void SetPlayerColour(uint32_t colour) {
-    g_playerColour = colour < kMaxTeams ? colour : kNoTeam;
-    RuntimeConfigFile::WriteSetting("local_vs", "team_colour",
+uint32_t PlayerColour(uint32_t player) { return player < 4 ? g_playerColour[player].load() : kNoTeam; }
+void SetPlayerColour(uint32_t colour, uint32_t player) {
+    if (player >= 4) return;
+    g_playerColour[player] = colour < kMaxTeams ? colour : kNoTeam;
+    static const char* const kKeys[4] = {"team_colour", "team_colour_p2", "team_colour_p3", "team_colour_p4"};
+    RuntimeConfigFile::WriteSetting("local_vs", kKeys[player],
                                     RuntimeConfigFile::FormatString(colour < kMaxTeams ? kTeamsColourKeys[colour] : "random"));
 }
 bool CustomSizes() { return g_custom.load(); }
@@ -292,22 +298,30 @@ void NewSeries(uint32_t racers, bool repeatable) {
         for (uint32_t i = 0; i < racers; ++i) g_teamOf[order[i]] = uint8_t(i % teams);  // sizes differ by <= 1
         if (!repeatable) std::shuffle(g_colour.begin(), g_colour.end(), random);  // any colours
     }
-    // Your colour: put racer 0 on that colour's team (custom), or give racer 0's team that colour.
-    const uint32_t mine = PlayerColour();
-    if (mine < kMaxTeams) {
+    // Local players' colours (racers 0..humans-1): each one with a colour joins that colour's team,
+    // swapping places with a CPU of it; a colour not in play is given to a team holding no other
+    // placed player and no other player's colour.
+    const uint32_t humans = std::min<uint32_t>(std::max<uint32_t>(LocalVs::LocalPlayers(), 1), std::min<uint32_t>(4, racers));
+    std::array<bool, kMaxTeams> holdsPlaced{};
+    for (uint32_t p = 0; p < humans; ++p) {
+        const uint32_t mine = PlayerColour(p);
+        if (mine >= kMaxTeams) continue;
         uint32_t want = kNoTeam;
         for (uint32_t k = 0; k < teams; ++k) if (g_colour[k] == mine) want = k;
         if (want == kNoTeam) {
-            // Not among this series' colours: racer 0's team takes it.
-            g_colour[g_teamOf[0]] = uint8_t(mine);
-        } else if (!customColours.empty()) {
-            if (g_teamOf[0] != want) {  // swap places with a member of that team
-                for (uint32_t i = 1; i < racers; ++i)
-                    if (g_teamOf[i] == want) { g_teamOf[i] = g_teamOf[0]; g_teamOf[0] = uint8_t(want); break; }
+            for (uint32_t k = 0; k < teams && want == kNoTeam; ++k) {
+                bool chosen = false;
+                for (uint32_t q = 0; q < humans; ++q) chosen = chosen || (q != p && PlayerColour(q) == g_colour[k]);
+                if (!holdsPlaced[k] && !chosen) want = k;
             }
-        } else {
-            std::swap(g_colour[want], g_colour[g_teamOf[0]]);
+            if (want == kNoTeam) continue;
+            g_colour[want] = uint8_t(mine);
         }
+        if (g_teamOf[p] != want) {
+            for (uint32_t i = humans; i < racers; ++i)
+                if (g_teamOf[i] == want) { g_teamOf[i] = g_teamOf[p]; g_teamOf[p] = uint8_t(want); break; }
+        }
+        holdsPlaced[want] = true;
     }
 }
 

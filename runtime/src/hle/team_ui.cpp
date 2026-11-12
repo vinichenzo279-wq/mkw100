@@ -345,6 +345,7 @@ std::string TeamUiSettingText(uint32_t setting) {
         return std::string(Teams::ColourByIndex(gScreenCustomColour).name) + " racers: " +
                std::to_string(Teams::ColourSize(gScreenCustomColour));
     default: {
+        if (LocalVs::LocalPlayers() > 1) return "Colour: on your pad";  // each player's own left/right
         const uint32_t mine = Teams::PlayerColour();
         return std::string("Your colour: ") + (mine < Teams::kMaxTeams ? Teams::ColourByIndex(mine).name : "Random");
     }
@@ -419,6 +420,14 @@ void TeamUiRenderRight(CpuContext* ctx, const CpuContext& saved, uint32_t column
     }
     const uint32_t teams = Teams::InPlay();
     const uint32_t mine = Teams::TeamOf(0);
+    const uint32_t humans = std::min<uint32_t>(LocalVs::LocalPlayers(), 4);
+    // " You" (1P) or the local players on a team (" P1 P3").
+    const auto markers = [&](uint32_t team) {
+        if (humans <= 1) return std::string(team == mine ? " You" : "");
+        std::string s;
+        for (uint32_t p = 0; p < humans; ++p) if (Teams::TeamOf(p) == team) s += " P" + std::to_string(p + 1);
+        return s;
+    };
     const bool paired = teams > kConfirmRowCount;
     for (uint32_t k = 0; k < kConfirmRowCount; ++k) {
         const uint32_t row = TeamUiRow(column, k);
@@ -427,7 +436,7 @@ void TeamUiRenderRight(CpuContext* ctx, const CpuContext& saved, uint32_t column
         if (!paired) {
             const Teams::Colour& colour = Teams::ColourOf(a);
             std::string label = std::string(colour.name) + " Team (" + std::to_string(Teams::Members(a)) + ")";
-            if (a == mine) label += " You";
+            label += markers(a);
             TeamUiSetRow(ctx, saved, row, CustomMessages::TeamLabelBmg(Teams::ColourIndexOf(a), label), colour);
             continue;
         }
@@ -435,7 +444,7 @@ void TeamUiRenderRight(CpuContext* ctx, const CpuContext& saved, uint32_t column
         std::string label;
         for (uint32_t b = a; b < a + 2 && b < teams; ++b) {
             if (b > a) label += "  ";
-            label += std::string(Teams::ColourOf(b).name) + " " + std::to_string(Teams::Members(b)) + (b == mine ? "*" : "");
+            label += std::string(Teams::ColourOf(b).name) + " " + std::to_string(Teams::Members(b)) + markers(b);
         }
         const uint32_t slot = k < 2 ? kPairSlot + k : Teams::ColourIndexOf(a);  // 4 rows at most: 2 free slots + colour slots
         const uint32_t bmg = k < 2 ? CustomMessages::LabelBmg(slot, label) : CustomMessages::TeamLabelBmg(slot, label);
@@ -498,6 +507,22 @@ extern "C" void TeamUi_ControlUpdate_8063db00(CpuContext* ctx) {
     gScreenHeld = held ? gScreenHeld + 1 : 0;
     const bool sizeRow = gScreenKind == TeamScreen::kBattle ? gScreenPick == kBattleRed : gScreenPick == kSettingCustomSize;
     const bool repeat = sizeRow && gScreenHeld > 18 && gScreenHeld % 3 == 0;
+    // Split screen, colour row: every local player changes their own colour with their own pad.
+    const uint32_t humans = gScreenKind == TeamScreen::kVs ? LocalVs::LocalPlayers() : 1;
+    if (humans > 1 && gScreenPick == kSettingColour) {
+        for (uint32_t p = 1; p < humans && p < 4; ++p) {
+            const uint32_t pad = TeamUiCall(ctx, saved, kGetControllerHolder, p);
+            *ctx = saved;
+            if (!TeamUiInRam(pad)) continue;
+            const uint32_t pn = Memory::Read16(pad + 0x5C), pb = Memory::Read16(pad + 0x90);
+            const bool left = (pn & 0x20) && !(pb & 0x20), right = (pn & 0x40) && !(pb & 0x40);
+            if (!left && !right) continue;
+            const int at = Teams::PlayerColour(p) < Teams::kMaxTeams ? int(Teams::PlayerColour(p)) + 1 : 0;
+            const int next = (at + (right ? 1 : -1) + int(Teams::kMaxTeams) + 1) % int(Teams::kMaxTeams + 1);
+            Teams::SetPlayerColour(next == 0 ? Teams::kNoTeam : uint32_t(next - 1), p);
+            redraw = redeal = true;
+        }
+    }
     if (pressed(0x8)) { gScreenPick = (gScreenPick + rows - 1) % rows; redraw = true; }
     else if (pressed(0x10)) { gScreenPick = (gScreenPick + 1) % rows; redraw = true; }
     else if (pressed(0x20) || pressed(0x40) || repeat) {
