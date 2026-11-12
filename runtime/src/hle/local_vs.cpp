@@ -13,6 +13,7 @@
 #include "runtime_log.h"
 #include <imgui.h>
 #include <algorithm>
+#include <cfloat>
 #include <numeric>
 #include <random>
 #include <array>
@@ -55,6 +56,11 @@ std::atomic<uint32_t> hudRank{0};
 std::atomic<int64_t> hudTime{0};
 std::atomic<bool> hudIcons{false};  // the race counter shows a rank icon; the overlay only shows game speed
 std::atomic<uint32_t> simulationRate{0};
+// Speedometer: player 0's kart speed, from its position change over race frames (game units a
+// frame, as the speedometer codes show: 150cc top speed about 84). Written on the game thread.
+std::atomic<bool> speedometer{true};
+std::atomic<float> hudSpeed{0.0f};
+std::atomic<int64_t> hudSpeedTime{0};
 int64_t NowMs() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 uint32_t seriesCount = 0;
 struct Entry { uint32_t id, character, place, earned, total; };
@@ -84,6 +90,7 @@ void Initialize() {
     local_vs_detail::diversity = c.localVsDiversity.value_or(true);
     local_vs_detail::thirtyFps = c.localVsThirtyFps.value_or(false);
     local_vs_detail::instantBoxes = c.localVsInstantBoxes.value_or(true);
+    local_vs_detail::speedometer = c.localVsSpeedometer.value_or(true);
     local_vs_detail::impossibleCpus = c.localVsImpossibleCpus.value_or(false);
     local_vs_detail::scoring = local_vs_detail::ParseKey(c.localVsScoring, local_vs_detail::scoringKeys);
     local_vs_detail::itemDistribution = local_vs_detail::ParseKey(c.localVsItemDistribution, local_vs_detail::itemKeys);
@@ -161,6 +168,11 @@ void DrawSettings() {
     if (ImGui::Checkbox("30 FPS rendering (experimental, next race)", &half)) {
         thirtyFps = half;
         RuntimeConfigFile::WriteSetting("local_vs", "render_30fps", half ? "true" : "false");
+    }
+    bool speedo = speedometer.load();
+    if (ImGui::Checkbox("Speedometer", &speedo)) {
+        speedometer = speedo;
+        RuntimeConfigFile::WriteSetting("local_vs", "speedometer", speedo ? "true" : "false");
     }
     bool boxes = instantBoxes.load();
     if (ImGui::Checkbox("Instant item boxes in expanded races", &boxes)) {
@@ -327,8 +339,27 @@ float DrawSegmentNumber(ImDrawList* list, ImVec2 origin, float height, uint32_t 
 }
 }
 
+void DrawSpeedometer() {
+    using namespace local_vs_detail;
+    if (!speedometer.load() || NowMs() - hudSpeedTime.load() > 250) return;
+    const auto* vp = ImGui::GetMainViewport();
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    char text[32];
+    std::snprintf(text, sizeof text, "%.0f", hudSpeed.load());
+    const float size = vp->Size.y * 0.06f;
+    ImFont* font = ImGui::GetFont();
+    const ImVec2 at(vp->Pos.x + vp->Size.x * 0.04f, vp->Pos.y + vp->Size.y * 0.86f);
+    for (int dx = -2; dx <= 2; dx += 2)
+        for (int dy = -2; dy <= 2; dy += 2)
+            if (dx || dy) list->AddText(font, size, ImVec2(at.x + dx, at.y + dy), IM_COL32(15, 15, 30, 235), text);
+    list->AddText(font, size, at, IM_COL32(255, 255, 255, 255), text);
+    const float w = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text).x;
+    list->AddText(font, size * 0.45f, ImVec2(at.x + w + size * 0.15f, at.y + size * 0.48f), IM_COL32(230, 230, 230, 230), "speed");
+}
+
 void DrawHud() {
     using namespace local_vs_detail;
+    DrawSpeedometer();
     const uint32_t packed=hudRank.load();
     if (!packed || NowMs()-hudTime.load()>250) return;
     const uint32_t rank = packed & 255, count = packed >> 8;
@@ -762,9 +793,56 @@ REGISTER_NATIVE_WRAPPER_AS(0x8054FC44, LocalVs_CupUnlocked_8054fc44, "LocalVs_Cu
 // The stock rank animation only contains twelve pictures. Past 12th the counter shows a rank icon
 // (rank_icons.cpp) when rank_icons/ is installed; otherwise the overlay draws the number. The
 // overlay never reads guest objects that may be destroyed.
+namespace {
+// Player 0's kart position (Kart::Manager players[0] -> pointers -> body +0x90 holder -> physics,
+// position at +0x68; as auto_driver.cpp reads it).
+bool LocalVsKartPosition(float& x, float& y, float& z) {
+    const auto ram = [](uint32_t a) { return (a >= 0x80000000u && a < 0x81800000u) || (a >= 0x90000000u && a < 0x98000000u); };
+    const uint32_t manager = Memory::Read32(MKW_GADDR(809C18F8));
+    if (!ram(manager)) return false;
+    const uint32_t players = Memory::Read32(manager + 0x20);
+    if (!ram(players)) return false;
+    const uint32_t kart = Memory::Read32(players);
+    if (!ram(kart)) return false;
+    const uint32_t pointers = Memory::Read32(kart);
+    if (!ram(pointers)) return false;
+    const uint32_t body = Memory::Read32(pointers + 8);
+    if (!ram(body)) return false;
+    const uint32_t holder = Memory::Read32(body + 0x90);
+    if (!ram(holder)) return false;
+    const uint32_t physics = Memory::Read32(holder + 4);
+    if (!ram(physics)) return false;
+    x = Memory::ReadFloat32(physics + 0x68);
+    y = Memory::ReadFloat32(physics + 0x6C);
+    z = Memory::ReadFloat32(physics + 0x70);
+    return true;
+}
+
+void LocalVsSampleSpeed() {
+    static uint32_t lastFrame = 0;
+    static float lx = 0, ly = 0, lz = 0;
+    static float smooth = 0;
+    const uint32_t info = Memory::Read32(MKW_GADDR(809BD730));
+    if (info < 0x80000000u) return;
+    const uint32_t frame = Memory::Read32(info + 0x20);
+    float x, y, z;
+    if (!LocalVsKartPosition(x, y, z)) return;
+    if (frame == lastFrame + 1) {
+        const float d = std::sqrt((x - lx) * (x - lx) + (y - ly) * (y - ly) + (z - lz) * (z - lz));
+        smooth = d < 400.0f ? smooth * 0.7f + d * 0.3f : smooth;  // a respawn jump is not speed
+        local_vs_detail::hudSpeed = smooth;
+        local_vs_detail::hudSpeedTime = local_vs_detail::NowMs();
+    } else if (frame != lastFrame) {
+        smooth = 0;
+    }
+    if (frame != lastFrame) { lastFrame = frame; lx = x; ly = y; lz = z; }
+}
+} // namespace
+
 extern "C" void LocalVs_Rank_807f4a08(CpuContext* ctx) {
     const uint32_t self=ctx->gpr[3];
     MKW_GUEST_NEXT(807F4A08)(ctx);
+    if (Memory::Read32(self+0x19C)==0) LocalVsSampleSpeed();  // any race, player 0's counter
     if (!local_vs_detail::ExpandedOffline()) return;
     const uint32_t id=Memory::Read32(self+0x19C);
     if (id!=0) return; // current menu integration supports one local player

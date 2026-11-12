@@ -45,6 +45,7 @@ struct RuntimeUserConfig {
     std::optional<uint32_t> localVsTeamSize;             // 0: by team count, else racers per team
     std::optional<std::string> localVsTeamScoring;       // "average" or "total"
     std::optional<bool> localVsTeamHits;                 // items hit teammates (default true)
+    std::optional<bool> localVsSpeedometer;              // HUD speedometer (default true)
     std::optional<std::string> localVsTeamColour;        // "random" or a colour name ("red".."cyan")
     std::optional<bool> localVsTeamCustom;               // team_sizes instead of count/size
     std::optional<std::string> localVsTeamSizes;         // per colour, "10,0,40,..." (0 = unused)
@@ -433,6 +434,7 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     config.localVsTeamSize = FindConfigUint(document, "local_vs", "team_size");
     config.localVsTeamScoring = FindConfigValue<std::string>(document, "local_vs", "team_scoring");
     config.localVsTeamHits = FindConfigValue<bool>(document, "local_vs", "team_hits");
+    config.localVsSpeedometer = FindConfigValue<bool>(document, "local_vs", "speedometer");
     config.localVsTeamColour = FindConfigValue<std::string>(document, "local_vs", "team_colour");
     config.localVsTeamCustom = FindConfigValue<bool>(document, "local_vs", "team_custom");
     config.localVsTeamSizes = FindConfigValue<std::string>(document, "local_vs", "team_sizes");
