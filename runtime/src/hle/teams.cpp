@@ -112,6 +112,8 @@ constexpr uint32_t kTeamsRacedata = 0x809BD728;     // RaceConfig::spInstance
 constexpr uint32_t kTeamsRaceModeFlags = 0x20 + 0xB70;  // race scenario settings modeFlags
 constexpr uint32_t kTeamsRaceNumber = 0x20 + 0xB6C;     // race scenario: race of the series (u8)
 constexpr uint32_t kTeamsFlag = 2;
+constexpr uint32_t kTeamsRaceGameMode = 0x20 + 0xB50;  // race scenario settings gameMode
+constexpr uint32_t kTeamsModeVs = 1;
 // Race scenario player team (+0x28 + 0xCC), compared for equality by the hit checks below; 2 there
 // means no team, so team t is stored as t + kTeamsFieldBase.
 constexpr uint32_t kTeamsRaceTeam = 0x28 + 0xCC;
@@ -184,6 +186,8 @@ void OnInitRace(uint32_t racedata) {
     g_teamVsRace = false;
     if (racedata == 0) return;
     const uint32_t flags = Memory::Read32(racedata + kTeamsRaceModeFlags);
+    // VS only: battles always run with the team flag and keep the game's red/blue.
+    if (Memory::Read32(racedata + kTeamsRaceGameMode) != kTeamsModeVs) return;
     if ((flags & kTeamsFlag) == 0 || local_vs_detail::RaceCount() <= 12) return;
     // Plain VS from here (karts, HUD, item hits); team identity is ours. The menu scenario keeps
     // the flag, so every race of the series comes back through here.
