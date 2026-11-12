@@ -80,7 +80,8 @@ profiles:
     module_link_base: 0x803992E0
     output: build/mods/item_fever_full_cpp
     riivolution:
-      xml: riivolution/ItemFever.xml
+      # The Item Fever download keeps riivolution\ beside the ItemFever\ pack folder.
+      xml: ../riivolution/ItemFever.xml
       options:
         - section: Item Fever
           option: Item Fever

@@ -8,11 +8,16 @@ param(
     # recorded. Remembered for later runs of this checkout; -NoRetroRewind turns it off again.
     [string]$RetroRewind,
     [switch]$NoRetroRewind,
+    # Or build Item Fever and stage it into play-if\: the unzipped Item Fever download (the folder
+    # holding ItemFever\ and riivolution\) or its ItemFever folder. One checkout builds one mod
+    # (both use the mod executable); remembered like -RetroRewind, -NoItemFever turns it off.
+    [string]$ItemFever,
+    [switch]$NoItemFever,
     [switch]$AllowSourceDependencies,
     [switch]$PreflightOnly
 )
 # Builds MKW100 from this checkout and stages it into play\ (base game) and, optionally, play-rr\
-# (Retro Rewind). Rerun after every git pull; settings and saves in the play folders are kept.
+# (Retro Rewind) or play-if\ (Item Fever). Rerun after every git pull; settings and saves in the play folders are kept.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Repo = $PSScriptRoot
@@ -50,7 +55,7 @@ function Resolve-RetroRewindPack([string]$Path) {
 
 if ($NoRetroRewind) {
     $RetroRewind = ''
-} elseif (!$RetroRewind -and $saved -and $saved.PSObject.Properties['RetroRewind'] -and $saved.RetroRewind) {
+} elseif (!$RetroRewind -and !$ItemFever -and $saved -and $saved.PSObject.Properties['RetroRewind'] -and $saved.RetroRewind) {
     $RetroRewind = $saved.RetroRewind
 } elseif (!$RetroRewind -and $interactive) {
     $recorded = Get-RecordedRetroRewind
@@ -61,17 +66,42 @@ if ($NoRetroRewind) {
         $RetroRewind = Read-Host 'Retro Rewind folder (RetroRewind6) to also build it, or Enter to skip'
     }
 }
+# Item Fever: the folder holding ItemFever\ and riivolution\, or ItemFever\ itself; returns ItemFever\.
+function Resolve-ItemFeverPack([string]$Path) {
+    $Path = [IO.Path]::GetFullPath($Path.Trim('"'))
+    foreach ($candidate in @((Join-Path $Path 'ItemFever'), $Path)) {
+        $xml = Join-Path (Split-Path -Parent $candidate) 'riivolution\ItemFever.xml'
+        if ((Test-Path -LiteralPath (Join-Path $candidate 'Binaries\Code.pul')) -and (Test-Path -LiteralPath $xml)) {
+            return $candidate
+        }
+    }
+    throw "Not an Item Fever download (needs ItemFever\Binaries\Code.pul and riivolution\ItemFever.xml beside it): $Path"
+}
+
+if ($NoItemFever) {
+    $ItemFever = ''
+} elseif (!$ItemFever -and !$RetroRewind -and $saved -and $saved.PSObject.Properties['ItemFever'] -and $saved.ItemFever) {
+    $ItemFever = $saved.ItemFever
+} elseif (!$ItemFever -and !$RetroRewind -and $interactive) {
+    $ItemFever = Read-Host 'Item Fever folder (the unzipped download) to build it instead, or Enter to skip'
+}
+if ($ItemFever -and $RetroRewind) {
+    throw 'One checkout builds one mod: pass -RetroRewind or -ItemFever (use a second clone for the other, or -NoRetroRewind / -NoItemFever).'
+}
+if ($ItemFever) { $ItemFever = Resolve-ItemFeverPack $ItemFever }
+
 if ($RetroRewind -eq 'auto') {
     $RetroRewind = Get-RecordedRetroRewind
     if (!$RetroRewind) { throw 'No Retro Rewind folder recorded in install-state.json; pass -RetroRewind <RetroRewind6 folder>.' }
 }
 if ($RetroRewind) { $RetroRewind = Resolve-RetroRewindPack $RetroRewind }
 
-[pscustomobject]@{ InstallRoot = $InstallRoot; RetroRewind = $RetroRewind } |
+[pscustomobject]@{ InstallRoot = $InstallRoot; RetroRewind = $RetroRewind; ItemFever = $ItemFever } |
     ConvertTo-Json | Set-Content -LiteralPath $OptionsFile -Encoding UTF8
 
 $buildArgs = @{ InstallRoot = $InstallRoot; Jobs = $Jobs; AllowSourceDependencies = $AllowSourceDependencies; PreflightOnly = $PreflightOnly }
 if ($RetroRewind) { $buildArgs.RetroRewind = $RetroRewind }
+if ($ItemFever) { $buildArgs.ItemFever = $ItemFever }
 & (Join-Path $Repo 'Build-MKW100.ps1') @buildArgs
 if ($LASTEXITCODE -ne 0) { throw 'Build failed; see build-logs.' }
 if ($PreflightOnly) { return }
@@ -156,9 +186,7 @@ function Mirror-Pack([string]$Pack, [string]$Stage) {
 }
 
 # A mod product: native-build-win\RetroRewind.exe (the mod target) plus its pack. One checkout
-# builds at most one mod product (Item Fever builds the same target), so a second mod product
-# needs its own clone. Item Fever (branch item-fever) plugs in here: Build-MKW100.ps1 -ItemFever
-# <pack>, then Install-ModProduct -Name 'Item Fever' -Stage play-if -Pack <pack> -Players 100.
+# builds at most one mod product (Retro Rewind or Item Fever), so the other needs its own clone.
 function Install-ModProduct([string]$Name, [string]$Stage, [string]$Pack, [int]$Players, [string]$ConfigKey) {
     Copy-Runtime $Stage 'RetroRewind.exe'
     $mirror = Mirror-Pack $Pack $Stage
@@ -177,5 +205,15 @@ if ($RetroRewind) {
     Install-ModProduct -Name 'Retro Rewind' -Stage (Join-Path $Repo 'play-rr') -Pack $RetroRewind -Players 100 -ConfigKey 'retro_rewind_root'
 }
 
-$launchers = if ($RetroRewind) { 'Play-MKW100.cmd or Play-RetroRewind.cmd' } else { 'Play-MKW100.cmd' }
+if ($ItemFever) {
+    $stageIf = Join-Path $Repo 'play-if'
+    Install-ModProduct -Name 'Item Fever' -Stage $stageIf -Pack $ItemFever -Players 100 -ConfigKey ''
+    # The pack's XML sits beside the pack, as in the download (recomp.yml: ../riivolution/ItemFever.xml).
+    New-Item -ItemType Directory -Force (Join-Path $stageIf 'riivolution') | Out-Null
+    Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $ItemFever) 'riivolution\ItemFever.xml') `
+        -Destination (Join-Path $stageIf 'riivolution') -Force
+}
+
+$launchers = if ($RetroRewind) { 'Play-MKW100.cmd or Play-RetroRewind.cmd' }
+             elseif ($ItemFever) { 'Play-MKW100.cmd or Play-ItemFever.cmd' } else { 'Play-MKW100.cmd' }
 Write-Host "Installed. Run $launchers. Settings and saves are kept on updates."

@@ -54,7 +54,8 @@ The first build takes a while: it translates the game, builds aurora (the graphi
 |---|---|
 | `play\` | `WiiCompiled.exe`, the base game, with its own `UserData` (settings, NAND saves, logs) |
 | `play-rr\` | `RetroRewind.exe` with its own `UserData`, plus `RetroRewind6\`, a folder of links to your pack. Retro Rewind's own save lives in `play-rr\riivolution\save`, so your Dolphin or WheelWizard save is left alone. |
-| `install-options.json` | Your WiiCompiled folder and Retro Rewind choice, reused on the next run |
+| `play-if\` | `RetroRewind.exe` built from Item Fever, with its own `UserData`, `ItemFever\` (links to your pack) and `riivolution\ItemFever.xml` |
+| `install-options.json` | Your WiiCompiled folder and mod choice, reused on the next run |
 
 Your WiiCompiled installation is only read from: the game data and the clean DOL/REL stay there, so keep it where it is. Nothing in it is changed, and your original WiiCompiled saves are not copied.
 
@@ -62,9 +63,15 @@ Your WiiCompiled installation is only read from: the game data and the clean DOL
 
 Run `git pull` and `git submodule update --init`, then run **Install-MKW100.cmd** again. It remembers your choices, rebuilds what changed and keeps your settings and saves. Once you add Retro Rewind, keep building it in that checkout (the installer does this for you). Switching it off and on again forces a full rebuild. `-NoRetroRewind` turns it off.
 
-### Item Fever (coming)
+### Item Fever
 
-An Item Fever version is in progress. It builds the same mod executable as Retro Rewind, so one checkout holds the base game plus **one** mod. For Item Fever, use a second clone in another folder, with its own `play-if\`.
+Instead of Retro Rewind, a checkout can build an **Item Fever 1.1.0** version (offline, PAL): its 21 new items, Item Rain and Loot Party, up to 100 racers. Unzip the Item Fever download anywhere and pass the folder that holds `ItemFever\` and `riivolution\`:
+
+```powershell
+./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -ItemFever 'D:\Mods\item-fever-110'
+```
+
+Play with **Play-ItemFever.cmd**. It lives in `play-if\` with its own `UserData`; Item Fever's own save (`ifever.dat`) is made from that NAND's save on the first launch. Both mods build the same mod executable, so one checkout holds the base game plus **one** mod: for both, use a second clone in another folder. Known gaps: Item Fever's own per-racer data is made for 12 racers, and not all of it has been extended yet, so a crash in a big race is possible.
 
 ## Development
 
