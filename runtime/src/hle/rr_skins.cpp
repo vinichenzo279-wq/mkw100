@@ -18,6 +18,13 @@
 // that exist, or the stock look as one more choice, by a hash of the racer index. The pick is
 // deterministic, so a race replays the same field. Retro Rewind product only: the base game
 // never calls these addresses.
+//
+// In a race the path builder is not what picks the skin: 0x81832B74 decides one skin per racer into
+// a 12-byte table (0x8189F3EC; CPUs get a random existing skin) and the getter 0x818329A0 reads it
+// back for 0x81832CC4. The decider walks the 12-slot scenario player array and wrote past the
+// table, and the getter sends racers 12+ to a local player's row, so only about 12 racers got
+// skins. More than 12 racers: both run natively over a per-racer table here (racers 0-11 also
+// written to Retro Rewind's own table); a CPU's pick is PickSkin's.
 
 #include "abi_bridge.h"
 #include "guest_abi/array_overflow.h"
@@ -70,6 +77,24 @@ uint8_t PickSkin(uint32_t racer, uint32_t character) {
     return 0;
 }
 
+constexpr uint32_t kSkinDecided = 0x8189F3EC;     // u8 [12]: Retro Rewind's per-racer race skin
+constexpr uint32_t kSkinInline = 12;
+constexpr uint32_t kSkinRacersMax = 256;
+constexpr uint32_t kSlotCharacter = 0x34;          // Racedata + slot: character id
+constexpr uint32_t kSlotLocal = 0x2D;              // Racedata + slot: local player index (s8)
+constexpr uint32_t kSkinHumanType = 0;
+constexpr uint32_t kSkinNoCpuSkins = 0xB8C;        // Racedata: Retro Rewind's "CPUs stock" flag
+uint8_t g_raceSkin[kSkinRacersMax];
+
+uint32_t RacerCount() {
+    const uint32_t racedata = Memory::Read32(kSkinRacedata);
+    return racedata == 0 ? 0 : Memory::Read8(racedata + 0x24);
+}
+
+bool SkinExists(uint32_t character, uint32_t skin) {
+    return skin <= kSkinMax && Memory::Read8(kSkinAvailable + character * kSkinAvailableStride + skin) != 0;
+}
+
 bool IsCpu(uint32_t racer) {
     const uint32_t racedata = Memory::Read32(kSkinRacedata);
     return racedata != 0 && racer < Memory::Read8(racedata + 0x24) &&
@@ -114,3 +139,41 @@ extern "C" void RR_KartSkinPath_818026fc(CpuContext* ctx) {
     for (uint32_t c = 0; c < kSkinCharacters; ++c) Memory::Write8(borrow + c, saved[c]);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x818026FC, RR_KartSkinPath_818026fc, "RR_KartSkinPath_818026fc");
+
+// 0x81832B74(r3 = race scenario): decides every racer's skin for the race.
+extern "C" void RR_DecideRaceSkins_81832b74(CpuContext* ctx) {
+    const uint32_t count = RacerCount();
+    if (count <= kSkinInline) {
+        MKW_GUEST_NEXT(81832B74)(ctx);
+        return;
+    }
+    const uint32_t racedata = Memory::Read32(kSkinRacedata);
+    for (uint32_t racer = 0; racer < count && racer < kSkinRacersMax; ++racer) {
+        const uint32_t slot = racedata + MKW100_PlayerSlotOffset(racer);
+        const uint32_t character = Memory::Read32(slot + kSlotCharacter);
+        const uint32_t type = Memory::Read32(slot + kSkinPlayerType);
+        uint8_t skin = 0;
+        if (character < kSkinCharacters && type == kSkinHumanType) {
+            const int32_t local = int8_t(Memory::Read8(slot + kSlotLocal));
+            if (local >= 0 && uint32_t(local) < kSkinRows) skin = Memory::Read8(kSkinChosen + local * kSkinCharacters + character);
+        } else if (character < kSkinCharacters && type == kSkinCpuType && Memory::Read8(racedata + kSkinNoCpuSkins) == 0) {
+            skin = kCpuSkins ? PickSkin(racer, character) : 0;
+        }
+        g_raceSkin[racer] = skin;
+        if (racer < kSkinInline) Memory::Write8(kSkinDecided + racer, skin);
+    }
+}
+REGISTER_NATIVE_WRAPPER_AS(0x81832B74, RR_DecideRaceSkins_81832b74, "RR_DecideRaceSkins_81832b74");
+
+// 0x818329A0(racer, character, menu): a racer's skin for character, 0 for the stock look.
+extern "C" void RR_RacerSkin_818329a0(CpuContext* ctx) {
+    const uint32_t racer = ctx->gpr[3];
+    const uint32_t character = ctx->gpr[4];
+    if (racer < kSkinInline || RacerCount() <= kSkinInline || ctx->gpr[5] != 0) {
+        MKW_GUEST_NEXT(818329A0)(ctx);
+        return;
+    }
+    const uint32_t skin = racer < kSkinRacersMax ? g_raceSkin[racer] : 0;
+    ctx->gpr[3] = character < kSkinCharacters && SkinExists(character, skin) ? skin : 0;
+}
+REGISTER_NATIVE_WRAPPER_AS(0x818329A0, RR_RacerSkin_818329a0, "RR_RacerSkin_818329a0");
