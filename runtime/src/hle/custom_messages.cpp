@@ -12,6 +12,7 @@
 #include "memory.h"
 
 #include <array>
+#include <algorithm>
 #include <string>
 
 namespace {
@@ -28,6 +29,10 @@ constexpr const char* kTeamNames[kTeamMessages] = {
     "Red Team", "Orange Team", "Yellow Team", "Green Team", "Blue Team", "Purple Team", "Pink Team", "Cyan Team",
     "Red Team avg", "Orange Team avg", "Yellow Team avg", "Green Team avg",
     "Blue Team avg", "Purple Team avg", "Pink Team avg", "Cyan Team avg"};
+// Runtime labels per colour (the pre-race team screen): text rewritten before each use.
+constexpr uint32_t kTeamLabelBmgBase = kTeamBmgBase + 0x100;
+constexpr uint32_t kTeamLabelIndexBase = 0x7D40;
+constexpr uint32_t kTeamLabelBytes = 48;            // 23 characters
 constexpr uint32_t kPlaceIndexBase = 0x7E00;
 constexpr uint32_t kFirstPlace = 13;
 constexpr uint32_t kLastPlace = PlayerSlots::kMaxPlayers;
@@ -39,10 +44,13 @@ constexpr uint32_t kTeamText = ArrayOverflow::kMenuText + 0x1800;  // 16 x 32 by
 constexpr uint32_t kTeamTextBytes = 32;
 static_assert(kPlaceText + (PlayerSlots::kMaxPlayers - 13 + 1) * 16 <= kTeamText);  // 13th..128th
 static_assert(kPlaceIndexBase + kLastPlace < 0x7FFE);
-static_assert(kTeamText + kTeamMessages * kTeamTextBytes <= ArrayOverflow::kMenuText + 0x2000);  // team_ui strings follow
+static_assert(kTeamText + kTeamMessages * kTeamTextBytes <= ArrayOverflow::kMenuText + 0x1A00);
+constexpr uint32_t kTeamLabelText = ArrayOverflow::kMenuText + 0x1A00;
+static_assert(kTeamLabelText + kTeams * kTeamLabelBytes <= ArrayOverflow::kMenuText + 0x2000);  // team_ui strings follow
 
 std::array<uint32_t, kLastPlace + 1> g_fontIndex{};  // msg index of 1312 in the holder that asked
 std::array<uint32_t, kTeamMessages> g_teamFontIndex{};
+std::array<uint32_t, kTeams> g_teamLabelFontIndex{};
 bool g_written = false;
 
 void WriteTexts() {
@@ -70,11 +78,23 @@ uint32_t PlaceBmg(uint32_t place) {
     return place >= kFirstPlace && place <= kLastPlace ? kPlaceBmgBase + place : 0;
 }
 
+uint32_t TeamLabelBmg(uint32_t colour, const std::string& text) {
+    if (colour >= kTeams) return 0;
+    const uint32_t base = kTeamLabelText + colour * kTeamLabelBytes;
+    const uint32_t length = std::min<uint32_t>(uint32_t(text.size()), kTeamLabelBytes / 2 - 1);
+    for (uint32_t i = 0; i <= length; ++i) Memory::Write16(base + 2 * i, i < length ? uint8_t(text[i]) : 0);
+    return kTeamLabelBmgBase + colour;
+}
+
 uint32_t TeamNameBmg(uint32_t colour, bool average) {
     return colour < kTeams ? kTeamBmgBase + colour + (average ? kTeams : 0) : 0;
 }
 
 bool IsCustom(uint32_t bmgId, uint32_t& fontBmg) {
+    if (bmgId >= kTeamLabelBmgBase && bmgId < kTeamLabelBmgBase + kTeams) {
+        fontBmg = kTeamFontBmg;
+        return true;
+    }
     if (bmgId >= kTeamBmgBase && bmgId < kTeamBmgBase + kTeamMessages) {
         fontBmg = kTeamFontBmg;
         return true;
@@ -86,6 +106,10 @@ bool IsCustom(uint32_t bmgId, uint32_t& fontBmg) {
 
 uint32_t Index(uint32_t bmgId, uint32_t fontMsgIndex) {
     WriteTexts();
+    if (bmgId >= kTeamLabelBmgBase && bmgId < kTeamLabelBmgBase + kTeams) {
+        g_teamLabelFontIndex[bmgId - kTeamLabelBmgBase] = fontMsgIndex;
+        return kTeamLabelIndexBase + (bmgId - kTeamLabelBmgBase);
+    }
     if (bmgId >= kTeamBmgBase && bmgId < kTeamBmgBase + kTeamMessages) {
         g_teamFontIndex[bmgId - kTeamBmgBase] = fontMsgIndex;
         return kTeamIndexBase + (bmgId - kTeamBmgBase);
@@ -96,6 +120,10 @@ uint32_t Index(uint32_t bmgId, uint32_t fontMsgIndex) {
 }
 
 bool Text(uint32_t msgIndex, uint32_t& text) {
+    if (msgIndex >= kTeamLabelIndexBase && msgIndex < kTeamLabelIndexBase + kTeams) {
+        text = kTeamLabelText + (msgIndex - kTeamLabelIndexBase) * kTeamLabelBytes;
+        return true;
+    }
     if (msgIndex >= kTeamIndexBase && msgIndex < kTeamIndexBase + kTeamMessages) {
         text = kTeamText + (msgIndex - kTeamIndexBase) * kTeamTextBytes;
         return true;
@@ -106,6 +134,10 @@ bool Text(uint32_t msgIndex, uint32_t& text) {
 }
 
 bool FontIndex(uint32_t msgIndex, uint32_t& realMsgIndex) {
+    if (msgIndex >= kTeamLabelIndexBase && msgIndex < kTeamLabelIndexBase + kTeams) {
+        realMsgIndex = g_teamLabelFontIndex[msgIndex - kTeamLabelIndexBase];
+        return true;
+    }
     if (msgIndex >= kTeamIndexBase && msgIndex < kTeamIndexBase + kTeamMessages) {
         realMsgIndex = g_teamFontIndex[msgIndex - kTeamIndexBase];
         return true;

@@ -90,6 +90,7 @@ std::vector<uint32_t> TeamsScaleSizes(const std::vector<uint32_t>& weights, uint
     return sizes;
 }
 std::atomic<bool> g_teamVsRace{false};  // OnInitRace: this race is a Team VS race past 12
+std::atomic<bool> g_menuDealt{false};   // DealForMenu dealt the coming series
 std::mutex g_lock;
 std::vector<uint8_t> g_teamOf;                  // per racer
 std::array<uint8_t, Teams::kMaxTeams> g_colour{};  // team -> colour index
@@ -191,7 +192,9 @@ void OnInitRace(uint32_t racedata) {
     bool fresh = Memory::Read8(racedata + kTeamsRaceNumber) == 0;
     {
         std::lock_guard guard(g_lock);
-        fresh = fresh || g_teamOf.size() != local_vs_detail::RaceCount();
+        const bool sized = g_teamOf.size() == local_vs_detail::RaceCount();
+        if (fresh && sized && g_menuDealt.exchange(false)) fresh = false;  // shown on the team screen
+        fresh = fresh || !sized;
     }
     if (fresh) {
         NewSeries(local_vs_detail::RaceCount(), BootRace::Scripted());
@@ -204,6 +207,25 @@ void OnInitRace(uint32_t racedata) {
 }
 
 uint32_t Count() { return g_count.load(); }
+
+void DealForMenu(uint32_t racers) {
+    bool sized;
+    {
+        std::lock_guard guard(g_lock);
+        sized = g_teamOf.size() == racers;
+    }
+    if (g_menuDealt.load() && sized) return;  // already shown for this series
+    NewSeries(racers, BootRace::Scripted());
+    g_menuDealt = true;
+    Log("team screen", {});
+}
+
+uint32_t Members(uint32_t team) {
+    std::lock_guard guard(g_lock);
+    uint32_t n = 0;
+    for (uint8_t t : g_teamOf) n += t == team;
+    return n;
+}
 
 void SetCount(uint32_t teams) {
     g_count = Clamp(teams);
@@ -329,7 +351,7 @@ std::vector<Standing> LastStandings() {
 }
 
 void Log(const char* what, const std::vector<std::pair<uint32_t, uint32_t>>& points) {
-    if (!g_teamVsRace.load()) return;
+    if (!g_teamVsRace.load() && !g_menuDealt.load()) return;
     if (points.empty()) {
         std::array<uint32_t, kMaxTeams> sizes{};
         uint32_t racers = 0;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 // mkw100: messages no BMG file has, answered at the game's three BMG lookups (BMGHolder::GetMsgId,
 // GetMsgByMsgId, GetFontIndex; the hooks live in vs_racers_option.cpp). Each custom message
@@ -15,6 +16,9 @@ uint32_t PlaceBmg(uint32_t place);
 // The message id for team colour `colour` (Teams::ColourIndexOf): "Red Team", ..., in the font of
 // the player name message (Common.bmg 9501). 0 for an unknown colour.
 uint32_t TeamNameBmg(uint32_t colour, bool average);
+// A runtime label in the team-name font for colour `colour` (one slot per colour; the text is
+// rewritten on every call, at most 23 characters).
+uint32_t TeamLabelBmg(uint32_t colour, const std::string& text);
 
 // For BMGHolder::GetMsgId(holder, bmgId): true for a custom id. `fontBmg` is the real message
 // whose INF entry it uses; after the game looks that one up, call Index for the msg index to return.

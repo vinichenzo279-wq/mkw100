@@ -15,11 +15,14 @@
 #include "teams.h"
 
 #include "abi_bridge.h"
+#include "custom_messages.h"
+#include "local_vs.h"
 #include "guest_abi/array_overflow.h"
 #include "guest_function_imports.h"
 #include "memory.h"
 
 #include <cstdint>
+#include <string>
 
 namespace {
 
@@ -205,3 +208,87 @@ extern "C" void TeamUi_PlayAnimation_8063c91c(CpuContext* ctx) {
     MKW_GUEST_NEXT(8063C91C)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8063C91C, TeamUi_PlayAnimation_8063c91c, "TeamUi_PlayAnimation_8063c91c");
+
+// The pre-race team screen (Pages::VSTeamsView): two CtrlMenuTeamConfirmTeam columns of six rows
+// (TeamConfirmBlueRed: a red or blue background, character icon, name), built for six a team.
+// In a Team VS series of more than 12 racers the teams are dealt here (Teams::DealForMenu) and the
+// rows list the teams instead: the first half in the left column, the rest in the right, each
+// "Red Team (13)" in its colour, "You" on the player's; backgrounds and icons are hidden.
+namespace {
+
+constexpr uint32_t kConfirmTeam = 0x174;     // CtrlMenuTeamConfirmTeam: the column's team (0, 1)
+constexpr uint32_t kConfirmRows = 0x178;     // six row controls
+constexpr uint32_t kConfirmRowStride = 0x174;
+constexpr uint32_t kConfirmRowHidden = 0x80; // row: isHidden (InitSelf: 1, then 0 per filled row)
+constexpr uint32_t kSetMessage = 0x8063DCBC; // LayoutUIControl::SetMessage(control, pane, bmg, args)
+constexpr uint32_t kMenuFlags = 0xC10 + 0xB70;    // menu scenario settings modeFlags (bit 2 teams)
+constexpr uint32_t kScreenNames = ArrayOverflow::kMenuText + 0x2040;  // pane name strings
+constexpr uint32_t kMiiNamePane = kScreenNames;           // "mii_name"
+constexpr uint32_t kIconPane = kScreenNames + 0x10;       // "chara_icon"
+constexpr uint32_t kIconShadowPane = kScreenNames + 0x20; // "chara_icon_sha"
+constexpr uint32_t kRedPane = kScreenNames + 0x30;        // "red_null"
+constexpr uint32_t kBluePane = kScreenNames + 0x40;       // "blue_null"
+
+void TeamUiTextColour(CpuContext* ctx, const CpuContext& saved, uint32_t text, const Teams::Colour& c) {
+    for (uint32_t k = 0; k < 2; ++k) {
+        Memory::Write8(text + kTextColour + 4 * k + 0, c.r);
+        Memory::Write8(text + kTextColour + 4 * k + 1, c.g);
+        Memory::Write8(text + kTextColour + 4 * k + 2, c.b);
+        Memory::Write8(text + kTextColour + 4 * k + 3, 255);
+    }
+    const uint32_t material = TeamUiCall(ctx, saved, Memory::Read32(Memory::Read32(text) + kGetMaterial), text);
+    if (TeamUiInRam(material)) {
+        for (uint32_t k = 0; k < 3; ++k) Memory::Write16(material + kTevColours + 8 + k * 2, 255);
+    }
+}
+
+} // namespace
+
+// CtrlMenuTeamConfirmTeam::InitSelf(this)
+extern "C" void TeamUi_ConfirmTeamInit_807e9f5c(CpuContext* ctx) {
+    const uint32_t column = ctx->gpr[3];
+    MKW_GUEST_NEXT(807E9F5C)(ctx);
+    const uint32_t rd = Memory::Read32(kRacedata);
+    const uint32_t racers = uint32_t(LocalVs::DesiredCount());
+    if (rd == 0 || racers <= 12 || (Memory::Read32(rd + kMenuFlags) & 2) == 0) return;
+    static bool named = false;
+    if (!named) {
+        named = true;
+        WriteName(kMiiNamePane, "mii_name");
+        WriteName(kIconPane, "chara_icon");
+        WriteName(kIconShadowPane, "chara_icon_sha");
+        WriteName(kRedPane, "red_null");
+        WriteName(kBluePane, "blue_null");
+    }
+    Teams::DealForMenu(racers);
+    const uint32_t teams = Teams::InPlay();
+    if (teams < 2) return;
+    const uint32_t half = (teams + 1) / 2;
+    const uint32_t side = Memory::Read32(column + kConfirmTeam) == 0 ? 0 : 1;
+    const uint32_t first = side == 0 ? 0 : half, last = side == 0 ? half : teams;
+    const uint32_t mine = Teams::TeamOf(0);
+    const CpuContext saved = *ctx;
+    for (uint32_t k = 0; k < 6; ++k) {
+        const uint32_t row = column + kConfirmRows + k * kConfirmRowStride;
+        const uint32_t team = first + k;
+        if (team >= last) {
+            Memory::Write8(row + kConfirmRowHidden, 1);
+            continue;
+        }
+        Memory::Write8(row + kConfirmRowHidden, 0);
+        for (uint32_t pane : {kIconPane, kIconShadowPane, kRedPane, kBluePane}) TeamUiCall(ctx, saved, kSetPaneVisibility, row, pane, 0);
+        const Teams::Colour& colour = Teams::ColourOf(team);
+        std::string label = std::string(colour.name) + " Team (" + std::to_string(Teams::Members(team)) + ")";
+        if (team == mine) label += " You";
+        *ctx = saved;
+        ctx->gpr[3] = row;
+        ctx->gpr[4] = kMiiNamePane;
+        ctx->gpr[5] = CustomMessages::TeamLabelBmg(Teams::ColourIndexOf(team), label);
+        ctx->gpr[6] = 0;  // no message arguments
+        InvokeIndirectCpu(kSetMessage, ctx);
+        const uint32_t text = TeamUiCall(ctx, saved, kGetPaneByName, row + kLayout, kMiiNamePane);
+        if (TeamUiInRam(text)) TeamUiTextColour(ctx, saved, text, colour);
+    }
+    *ctx = saved;
+}
+REGISTER_NATIVE_WRAPPER_AS(0x807E9F5C, TeamUi_ConfirmTeamInit_807e9f5c, "TeamUi_ConfirmTeamInit_807e9f5c");

@@ -54,6 +54,11 @@ const Colour& ColourByIndex(uint32_t colour);
 // scenario's team flag cleared and becomes a teams race; the first race of a series (and a
 // headless boot) deals new teams.
 void OnInitRace(uint32_t racedata);
+// The pre-race team screen of a Team VS series of `racers` (> 12): deals the series' teams now so
+// the screen and the race agree; OnInitRace keeps them for that series.
+void DealForMenu(uint32_t racers);
+// The colour index of team `team`'s members count, for UIs.
+uint32_t Members(uint32_t team);
 
 // A new series of `racers`: shuffle racers into Count() teams and pick the colour order.
 // `repeatable` uses a fixed seed (test modes).
