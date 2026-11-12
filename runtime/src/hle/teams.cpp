@@ -208,13 +208,14 @@ void OnInitRace(uint32_t racedata) {
 
 uint32_t Count() { return g_count.load(); }
 
-void DealForMenu(uint32_t racers) {
+void DealForMenu(uint32_t racers, bool redeal) {
+    g_teamVsRace = false;  // at the menus now; the last race's flag must not drive TeamOf
     bool sized;
     {
         std::lock_guard guard(g_lock);
         sized = g_teamOf.size() == racers;
     }
-    if (g_menuDealt.load() && sized) return;  // already shown for this series
+    if (!redeal && g_menuDealt.load() && sized) return;  // already shown for this series
     NewSeries(racers, BootRace::Scripted());
     g_menuDealt = true;
     Log("team screen", {});
@@ -295,7 +296,9 @@ uint32_t TeamOf(uint32_t player) {
     bool assign = false;
     {
         std::lock_guard guard(g_lock);
-        assign = g_teamOf.size() != racers;
+        // Lazily (headless boots skip the menus), but only for a race: at the menus the race
+        // scenario still holds the last race's count, and the team screen's teams must stand.
+        assign = g_teamVsRace.load() && g_teamOf.size() != racers;
     }
     if (assign) {
         NewSeries(racers, BootRace::Scripted());

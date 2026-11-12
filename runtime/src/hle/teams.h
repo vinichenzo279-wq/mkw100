@@ -56,7 +56,7 @@ const Colour& ColourByIndex(uint32_t colour);
 void OnInitRace(uint32_t racedata);
 // The pre-race team screen of a Team VS series of `racers` (> 12): deals the series' teams now so
 // the screen and the race agree; OnInitRace keeps them for that series.
-void DealForMenu(uint32_t racers);
+void DealForMenu(uint32_t racers, bool redeal = false);
 // The colour index of team `team`'s members count, for UIs.
 uint32_t Members(uint32_t team);
 
