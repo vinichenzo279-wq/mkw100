@@ -93,6 +93,25 @@ public static class ModFunctionDiscovery
             }
         }
 
+        // Pointers Kamek writes into base-game memory (a vtable slot replaced with a module
+        // method) are only ever reached indirectly. Item Fever's page vtable entry 0x81809920
+        // builds an argument (lis) before its stwu, so it fails the prologue test above.
+        foreach (var command in chunk.Commands)
+        {
+            if (command.AddressIsRelative || command.Arguments.Count == 0 ||
+                command.Id is not (KamekCommandId.Addr32 or KamekCommandId.CondWritePointer))
+            {
+                continue;
+            }
+
+            var target = KamekAddress.Resolve(command.Arguments[0], moduleGuestBase);
+            if (LooksLikeFunctionPointerTarget(target, moduleGuestBase, moduleCodeEnd, relocatedModuleImage) ||
+                OpensStackFrameSoon(target, moduleGuestBase, moduleCodeEnd, relocatedModuleImage))
+            {
+                AddCodeAddress(target, "base pointer write");
+            }
+        }
+
         for (var offset = 0; offset + 4 <= relocatedModuleImage.Length; offset += 4)
         {
             var address = checked(moduleGuestBase + (uint)offset);
@@ -690,6 +709,22 @@ public static class ModFunctionDiscovery
     {
         // mtctr rS is mtspr 9,rS. The split SPR field encodes CTR as 0x120.
         return PpcInstructionPatterns.TryGetMtspr(word, 9, out var source) && source == register;
+    }
+
+    // A stwu r1 among the first four instructions, after a return or at the start of the image.
+    private static bool OpensStackFrameSoon(uint address, uint moduleGuestBase, uint moduleEnd, byte[] image)
+    {
+        if (address < moduleGuestBase || address >= moduleEnd || (address & 0x3u) != 0)
+            return false;
+        var offset = checked((int)(address - moduleGuestBase));
+        if (offset > 0 && !PpcControlFlow.IsReturn(PpcWordFields.ReadBigEndianWord(image, offset - 4)))
+            return false;
+        for (var i = 0; i < 4 && offset + 4 * i + 4 <= image.Length; ++i)
+        {
+            if (IsStackFramePrologue(PpcWordFields.ReadBigEndianWord(image, offset + 4 * i)))
+                return true;
+        }
+        return false;
     }
 
     private static bool IsStackFramePrologue(uint word) =>
