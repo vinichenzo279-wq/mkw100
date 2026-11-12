@@ -21,10 +21,12 @@
 #include "guest_abi/player_slots.h"
 #include "guest_function_imports.h"
 #include "local_vs.h"
+#include "hle/cc200.h"
 #include "hle/custom_messages.h"
 #include "memory.h"
 #include "runtime_log.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -82,8 +84,26 @@ bool gLoadingRow = false;     // game thread only: the row's layout is loading
 uint32_t gLabelMsg = 0;       // BMG msg index of kLabelBmg, for its INF entry
 bool gSettingHelp = false;    // game thread only: the row's help text is being set
 uint32_t gHelpMsgIndex = 0;
-uint32_t gRow = 0;            // the row's UpDownControl on the current page, 0 when none
-uint32_t gRowText = 0;
+// The row built on each rules page (VS and battle pages, single and multiplayer sections all exist
+// at once): handlers get their page in r3 and look its row up here. Game thread only.
+struct RacersRow { uint32_t page, row, text; };
+std::array<RacersRow, 8> gRows{};
+RacersRow* RowOf(uint32_t page) {
+    for (auto& r : gRows) if (r.page == page && page != 0) return &r;
+    return nullptr;
+}
+void ForgetPage(uint32_t page) {
+    for (auto& r : gRows) if (r.page == page) r = {};
+}
+void RememberRow(uint32_t page, uint32_t row, uint32_t text) {
+    ForgetPage(page);
+    for (auto& r : gRows) if (r.page == 0) { r = {page, row, text}; return; }
+    for (size_t i = 1; i < gRows.size(); ++i) gRows[i - 1] = gRows[i];  // full: drop the oldest
+    gRows.back() = {page, row, text};
+}
+bool IsRow(uint32_t page, uint32_t control) { const RacersRow* r = RowOf(page); return r && control == r->row; }
+// The handler gets the value's inner TextControl (text +0x17C), so match the whole object.
+bool IsRowText(uint32_t page, uint32_t control) { const RacersRow* r = RowOf(page); return r && control - r->text < kTextSize; }
 
 void WriteLabel() {
     for (uint32_t i = 0; i < sizeof kLabel; ++i) Memory::Write16(kLabelText + i * 2, uint8_t(kLabel[i]));
@@ -129,8 +149,7 @@ uint32_t BuildRow(CpuContext* ctx, uint32_t page, const RacersPage& kind) {
     *ctx = base; ctx->gpr[3] = row; Call(ctx, kUpDownCtor);
     *ctx = base; ctx->gpr[3] = text; Call(ctx, kTextCtor);
     // Set before Load: Load already fires the change handlers with the initial option.
-    gRow = row;
-    gRowText = text;
+    RememberRow(page, row, text);
 
     const uint32_t index = Memory::Read32(page + kVsControlCursor);
     Memory::Write32(page + kVsControlCursor, index + 1);
@@ -194,14 +213,14 @@ extern "C" void VsSettings_Ctor_806284c8(CpuContext* ctx) {
     const uint32_t page = ctx->gpr[3];
     MKW_GUEST_NEXT(806284C8)(ctx);
     Memory::Write32(page + kVsControlCount, kVsPage.rowId + 1);
-    gRow = gRowText = 0;
+    ForgetPage(page);
 }
 
 extern "C" void BattleSettings_Ctor_80629184(CpuContext* ctx) {
     const uint32_t page = ctx->gpr[3];
     MKW_GUEST_NEXT(80629184)(ctx);
     Memory::Write32(page + kVsControlCount, kBattlePage.rowId + 1);
-    gRow = gRowText = 0;
+    ForgetPage(page);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80629184, BattleSettings_Ctor_80629184, "BattleSettings_Ctor_80629184");
 REGISTER_NATIVE_WRAPPER_AS(0x806284C8, VsSettings_Ctor_806284c8, "VsSettings_Ctor_806284c8");
@@ -253,7 +272,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x80853028, VsSettings_CreateExternalControl_80853028
 // OnUpDownChange(page, control, hudSlot, option): the race count's handler stores the option in
 // the license; the new row's option is the racer count minus one.
 extern "C" void VsSettings_OnUpDownChange_80853998(CpuContext* ctx) {
-    if (gRow != 0 && ctx->gpr[4] == gRow) {
+    if (IsRow(ctx->gpr[3], ctx->gpr[4])) {
         LocalVs::SetDesiredCount(int(ctx->gpr[6]) + 1);
         return;
     }
@@ -263,8 +282,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x80853998, VsSettings_OnUpDownChange_80853998, "VsSe
 
 // OnTextChange(page, textControl, option): the race count's looks the option up in its own table.
 extern "C" void VsSettings_OnTextChange_80853a10(CpuContext* ctx) {
-    // The handler gets the value's inner TextControl (text +0x17C), so match the whole object.
-    if (gRowText != 0 && ctx->gpr[4] - gRowText < kTextSize) {
+    if (IsRowText(ctx->gpr[3], ctx->gpr[4])) {
         SetRowValue(ctx, ctx->gpr[4], ctx->gpr[5]);
         return;
     }
@@ -275,14 +293,22 @@ REGISTER_NATIVE_WRAPPER_AS(0x80853A10, VsSettings_OnTextChange_80853a10, "VsSett
 // OnUpDownSelect(page, control, hudSlot) sets the help bar to message 3465; for the new row that
 // one lookup answers "Set the number of racers.".
 extern "C" void VsSettings_OnUpDownSelect_80853988(CpuContext* ctx) {
-    gSettingHelp = gRow != 0 && ctx->gpr[4] == gRow;
+    gSettingHelp = IsRow(ctx->gpr[3], ctx->gpr[4]);
     gHelpBmg = kVsPage.helpBmg;
     MKW_GUEST_NEXT(80853988)(ctx);
     gSettingHelp = false;
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80853988, VsSettings_OnUpDownSelect_80853988, "VsSettings_OnUpDownSelect_80853988");
 
+// Menu.bmg 3414 "Mirror" and 3418 "150cc class with mirrored courses." when Mirror is 200cc.
+constexpr uint32_t kMirrorBmg = 3414, kMirrorHelpBmg = 3418;
+
 extern "C" void BmgHolder_GetMsgId_805f8c88(CpuContext* ctx) {
+    if (Cc200::ReplacesMirror() && (ctx->gpr[4] == kMirrorBmg || ctx->gpr[4] == kMirrorHelpBmg)) {
+        const bool help = ctx->gpr[4] == kMirrorHelpBmg;
+        ctx->gpr[4] = CustomMessages::LabelBmg(help ? 18 : 17, help ? "200cc class with brake drifting." : "200cc",
+                                               help ? kMirrorHelpBmg : kMirrorBmg);
+    }
     if (uint32_t custom = ctx->gpr[4], fontBmg = 0; CustomMessages::IsCustom(custom, fontBmg)) {  // custom_messages.h
         ctx->gpr[4] = fontBmg;
         MKW_GUEST_NEXT(805F8C88)(ctx);
@@ -338,7 +364,7 @@ extern "C" void BattleSettings_CreateExternalControl_8083bf50(CpuContext* ctx) {
 REGISTER_NATIVE_WRAPPER_AS(0x8083BF50, BattleSettings_CreateExternalControl_8083bf50, "BattleSettings_CreateExternalControl_8083bf50");
 
 extern "C" void BattleSettings_OnUpDownChange_8083c848(CpuContext* ctx) {
-    if (gRow != 0 && ctx->gpr[4] == gRow) {
+    if (IsRow(ctx->gpr[3], ctx->gpr[4])) {
         LocalVs::SetDesiredCount(int(ctx->gpr[6]) + 1);
         return;
     }
@@ -347,7 +373,7 @@ extern "C" void BattleSettings_OnUpDownChange_8083c848(CpuContext* ctx) {
 REGISTER_NATIVE_WRAPPER_AS(0x8083C848, BattleSettings_OnUpDownChange_8083c848, "BattleSettings_OnUpDownChange_8083c848");
 
 extern "C" void BattleSettings_OnTextChange_8083c8c0(CpuContext* ctx) {
-    if (gRowText != 0 && ctx->gpr[4] - gRowText < kTextSize) {
+    if (IsRowText(ctx->gpr[3], ctx->gpr[4])) {
         SetRowValue(ctx, ctx->gpr[4], ctx->gpr[5]);
         return;
     }
@@ -356,7 +382,7 @@ extern "C" void BattleSettings_OnTextChange_8083c8c0(CpuContext* ctx) {
 REGISTER_NATIVE_WRAPPER_AS(0x8083C8C0, BattleSettings_OnTextChange_8083c8c0, "BattleSettings_OnTextChange_8083c8c0");
 
 extern "C" void BattleSettings_OnUpDownSelect_8083c838(CpuContext* ctx) {
-    gSettingHelp = gRow != 0 && ctx->gpr[4] == gRow;
+    gSettingHelp = IsRow(ctx->gpr[3], ctx->gpr[4]);
     gHelpBmg = kBattlePage.helpBmg;
     MKW_GUEST_NEXT(8083C838)(ctx);
     gSettingHelp = false;

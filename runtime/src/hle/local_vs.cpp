@@ -766,7 +766,11 @@ REGISTER_NATIVE_WRAPPER_AS(0x807F4A08, LocalVs_Rank_807f4a08, "LocalVs_Rank_807f
 // Reference: https://mariokartwii.com/showthread.php?tid=2206 (Unnamed, credits Anarion).
 extern "C" void LocalVs_ItemBox_80828cb8(CpuContext* ctx) {
     const uint32_t self=ctx->gpr[3];
-    const bool instant=local_vs_detail::ExpandedOffline() && local_vs_detail::instantBoxes.load();
+    // Expanded offline VS and battle (battle arenas have item boxes too).
+    const uint32_t rd=Memory::Read32(MKW_GADDR(809BD728));
+    const uint32_t mode=rd ? Memory::Read32(rd+0x20+0xB50) : 0;
+    const bool expanded=rd && local_vs_detail::RaceCount()>12 && (mode==1 || mode==3) && Memory::Read32(rd+0x20+0xB54)==0;
+    const bool instant=expanded && local_vs_detail::instantBoxes.load();
     const uint32_t active=Memory::Read32(self+0xB0);
     MKW_GUEST_NEXT(80828CB8)(ctx);
     if (instant && active==1) Memory::Write32(self+0xB0,1);

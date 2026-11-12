@@ -127,6 +127,8 @@ void OnInitRace(uint32_t racedata) {
 
 bool Active() { return g_ccis200; }
 
+bool ReplacesMirror() { return kMirrorIs200cc; }
+
 } // namespace Cc200
 
 extern "C" void Cc200_ComputeStats_80591fa4(CpuContext* ctx) {

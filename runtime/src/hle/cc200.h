@@ -12,4 +12,7 @@ void OnInitRace(uint32_t racedata);
 // True while the current race is 200cc.
 bool Active();
 
+// Mirror is 200cc (the build toggle): menus say "200cc" for Mirror.
+bool ReplacesMirror();
+
 } // namespace Cc200
