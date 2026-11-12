@@ -831,3 +831,8 @@
 0x80881E8C  # race
 0x80887E24  # race
 0x80888C94  # race
+0x81852B10  # race (added by hand: Retro Rewind character icon loader, Code.pul)
+0x81852BC4  # race (added by hand: Retro Rewind character icon loader, Code.pul)
+0x81852C6C  # race (added by hand: Retro Rewind character icon loader, Code.pul)
+0x81852D10  # menu (added by hand: Retro Rewind character icon loader, Code.pul)
+0x81852EF0  # race (added by hand: Retro Rewind minimap icon, Code.pul)

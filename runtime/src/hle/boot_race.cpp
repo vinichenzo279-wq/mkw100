@@ -108,6 +108,14 @@ uint32_t g_players = kPlayerCount;
 bool g_cpuDriven = false;
 bool g_teams = false;  // --race-teams: the game's own red/blue team mode
 bool g_mirror = false; // --race-mirror: the Mirror flag, a 200cc race with cc200.cpp's toggle on
+// --race-battle[=coin]: a balloon (or coin) battle on Block Plaza (or the --race=0x20..0x29 arena);
+// battles are always red / blue teams.
+bool g_battle = false;
+uint32_t g_battleType = 0;  // 0 balloon, 1 coin
+constexpr uint32_t kSectionP1Battle = 0x28;
+constexpr uint32_t kBlockPlaza = 0x21;
+constexpr uint32_t kLastArena = 0x29;
+constexpr uint32_t kGameModeBattle = 3;
 bool g_autoDriven = false;
 bool g_lockstep = false;
 bool g_heapCheck = false;
@@ -132,13 +140,14 @@ uint32_t ParseCourse(std::string_view text) {
     }
     uint32_t course = 0;
     const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), course, base);
-    if (text.empty() || ec != std::errc{} || end != text.data() + text.size() || course > kLastRaceCourse) {
-        throw std::invalid_argument("--race expects a race course id from 0 to 0x1F");
+    if (text.empty() || ec != std::errc{} || end != text.data() + text.size() || course > kLastArena) {
+        throw std::invalid_argument("--race expects a course id from 0 to 0x1F, or an arena 0x20 to 0x29 with --race-battle");
     }
     return course;
 }
 
 void SetUpMenuScenario(uint32_t course) {
+    if (g_battle && course <= kLastRaceCourse) course = kBlockPlaza;  // --race-cpu may have picked Luigi Circuit
     const uint32_t racedata = Memory::Read32(MKW_GADDR(809BD728));
     if (racedata == 0) {
         throw std::runtime_error("--race: Racedata does not exist yet at SectionMgr::Init");
@@ -152,18 +161,19 @@ void SetUpMenuScenario(uint32_t course) {
         Memory::Write32(player + kPlayerCharacterOffset, racer.character);
         Memory::Write32(player + kPlayerTypeOffset,
                         i >= g_players ? kPlayerNone : i == 0 ? kPlayerRealLocal : kPlayerCpu);
-        Memory::Write32(player + kPlayerTeamOffset, g_teams ? i % 2 : 0);
+        Memory::Write32(player + kPlayerTeamOffset, g_teams || g_battle ? i % 2 : 0);
     }
     const uint32_t settings = scenario + kSettingsOffset;
     Memory::Write32(settings + 0x00, course);
-    Memory::Write32(settings + 0x04, kCc150);
-    Memory::Write32(settings + 0x08, kGameModeVs);
+    Memory::Write32(settings + 0x04, g_battle ? 0 : kCc150);  // battle sets 50cc, which battle code ignores
+    Memory::Write32(settings + 0x08, g_battle ? kGameModeBattle : kGameModeVs);
     Memory::Write32(settings + 0x0C, 0);
+    Memory::Write32(settings + 0x10, g_battleType);
     Memory::Write32(settings + 0x14, kCpuHard);
     Memory::Write32(settings + 0x18, kItemsBalanced);
     Memory::Write8(settings + 0x24, 0);
     Memory::Write8(settings + 0x25, 3);
-    Memory::Write32(settings + kSettingsModeFlags, (g_teams ? 2 : 0) | (g_mirror ? 1 : 0));
+    Memory::Write32(settings + kSettingsModeFlags, (g_teams || g_battle ? 2 : 0) | (g_mirror ? 1 : 0));
 }
 
 } // namespace
@@ -193,6 +203,12 @@ bool ParseArgument(std::string_view arg) {
     }
     if (arg == "--race-mirror") {
         g_mirror = true;
+        return true;
+    }
+    if (arg == "--race-battle" || arg == "--race-battle=coin") {
+        g_battle = true;
+        g_battleType = arg.ends_with("coin") ? 1 : 0;
+        if (!g_course) g_course = kBlockPlaza;
         return true;
     }
     if (arg == "--race-teams") {
@@ -301,11 +317,12 @@ extern "C" void ArgumentParser_Parse_805b9344(CpuContext* ctx) {
                 inputMgr ? Memory::Read32(inputMgr + 8) : 0);
     }
 
-    RT_LOGF("boot-race", "booting into 1P VS on course 0x%02X with %u racers%s\n", *g_course, g_players,
+    RT_LOGF("boot-race", "booting into 1P %s on course 0x%02X with %u racers%s\n", g_battle ? "battle" : "VS",
+            g_battle && *g_course <= kLastRaceCourse ? kBlockPlaza : *g_course, g_players,
             g_cpuDriven ? " (CPU driven)" : g_autoDriven ? " (scripted human)" : "");
     if (g_teams) RT_LOGF("boot-race", "team mode: racers alternate red / blue\n");
     g_raceSectionPicked = true;
-    ctx->gpr[3] = g_teams ? kSectionP1TeamVs : kSectionP1Vs;
+    ctx->gpr[3] = g_battle ? kSectionP1Battle : g_teams ? kSectionP1TeamVs : kSectionP1Vs;
 }
 REGISTER_NATIVE_FUNCTION_AS(0x805B9344, ArgumentParser_Parse_805b9344, "ArgumentParser_Parse_805b9344");
 
@@ -317,7 +334,7 @@ extern "C" void Pulsar_BootSection_8184ec74(CpuContext* ctx) {
     MKW_GUEST_NEXT(8184EC74)(ctx);
     if (g_raceSectionPicked) {
         g_raceSectionPicked = false;
-        ctx->gpr[3] = g_teams ? kSectionP1TeamVs : kSectionP1Vs;
+        ctx->gpr[3] = g_battle ? kSectionP1Battle : g_teams ? kSectionP1TeamVs : kSectionP1Vs;
     }
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8184EC74, Pulsar_BootSection_8184ec74, "Pulsar_BootSection_8184ec74");

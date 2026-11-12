@@ -80,3 +80,25 @@
 0x81837DE8  10  scale  56  0x0  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
 0x81838350  10  scale  56  0x0  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
 0x818383E4  10  scale  56  0x0  # rr_racer_state 0x0 (added by hand: Retro Rewind module, array_overflow.h)
+0x80538E38  11  scale  24  0x0  # balloon_manager 0x3C4
+0x8053BDC0  11  scale  24  0x0  # balloon_manager 0x3C4
+0x8053CC0C  11  scale  24  0x0  # balloon_manager 0x3C4
+0x8053CE54  11  scale  24  0x0  # balloon_manager 0x3C4
+0x8053CF18  11  scale  24  0x0  # balloon_manager 0x3C4
+0x8053D0A0  11  scale  24  0x0  # balloon_manager 0x3C4
+0x8053D1E4  11  scale  24  0x0  # balloon_manager 0x3C4
+0x8053D2A0  11  scale  24  0x0  # balloon_manager 0x3C4
+0x8053D3D0  11  scale  24  0x0  # balloon_manager 0x3C4
+0x80579AE4  11  scale  24  0x0  # balloon_manager 0x3C4
+0x80869A08  11  scale  24  0x0  # balloon_manager 0x3C4
+0x80869BEC  11  scale  24  0x0  # balloon_manager 0x3C4
+0x8086F4A4  11  scale  24  0x0  # balloon_manager 0x3C4
+0x8087036C  11  scale  24  0x0  # balloon_manager 0x3C4
+0x805387A8  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
+0x805389CC  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
+0x80538A78  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
+0x80538BF4  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
+0x80538D14  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
+0x8053C440  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
+0x807AC2C4  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
+0x80870194  11  scale  24  0x0  # balloon_manager 0x3C4 (added by hand: product reused for later reads of the same array, balloon_battle.cpp)
