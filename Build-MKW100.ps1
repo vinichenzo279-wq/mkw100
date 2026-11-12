@@ -6,7 +6,10 @@ param(
     [switch]$AllowSourceDependencies,
     # A Retro Rewind release folder (RetroRewind6, holding Binaries\Code.pul): also builds the
     # RetroRewind product, offline (no Retro-WFC payload), as scripts/mkw100/build_rr.sh does on
-    # macOS. Retro-aware shards change every base shard, so build it in its own worktree.
+    # macOS. Both executables come from one set of shards, but RR-aware shards differ from
+    # base-only ones: switching -RetroRewind on or off recompiles everything, so keep passing it
+    # for a checkout once you use it (Install-MKW100.ps1 remembers it). Another mod product
+    # (Item Fever) builds the same RetroRewind target, so it needs its own checkout.
     [string]$RetroRewind
 )
 # Standalone, isolated Windows fork build. Never calls LocalBuild.ps1, never
@@ -86,7 +89,7 @@ function SyncPatchedAurora([string]$Shared, [string]$Private, [object[]]$Patches
         Record ('Patched aurora up to date: ' + $Private)
         return
     }
-    & robocopy.exe $Shared $Private /MIR /XD .git /NFL /NDL /NJH /NJS /NP | Out-Null
+    & robocopy.exe $Shared $Private /MIR /XD .git /XF .git /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw ('robocopy of shared aurora failed with exit ' + $LASTEXITCODE) }
     $git = Get-Command git.exe -ErrorAction SilentlyContinue
     if (-not $git) { throw 'git.exe is needed to apply patches\aurora\*.patch' }
@@ -103,7 +106,15 @@ try {
     ('MKW100 BUILD ATTEMPT: ' + (Get-Date -Format o)) | Set-Content -LiteralPath $BuildLog -Encoding UTF8
     if (Test-Path $BuildMarker) { Remove-Item $BuildMarker -Force }
     if (Test-Path (Join-Path $Logs 'build_failure.txt')) { Remove-Item (Join-Path $Logs 'build_failure.txt') -Force }
-    Require (Join-Path $OriginalWorkspace 'aurora-main\CMakeLists.txt') 'original Aurora source'
+    # Aurora: the repo's aurora-main submodule (git clone --recurse-submodules) when it is checked
+    # out, else a junction to the WiiCompiled install's BuildWorkspace\aurora-main (older checkouts).
+    $repoAurora = Join-Path $Repo 'aurora-main'
+    $repoAuroraItem = Get-Item -LiteralPath $repoAurora -Force -ErrorAction SilentlyContinue
+    $useSubmodule = ($null -ne $repoAuroraItem) -and ($repoAuroraItem.LinkType -ne 'Junction') -and
+        (Test-Path -LiteralPath (Join-Path $repoAurora 'CMakeLists.txt'))
+    if (-not $useSubmodule) {
+        Require (Join-Path $OriginalWorkspace 'aurora-main\CMakeLists.txt') 'Aurora source (run "git submodule update --init" in the repo, or keep the install''s BuildWorkspace)'
+    }
     Require (Join-Path $OriginalWorkspace 'Assets\main.dol') 'user-owned main.dol'
     Require (Join-Path $OriginalWorkspace 'Assets\StaticR.rel') 'user-owned StaticR.rel'
     Require (Join-Path $OriginalWorkspace 'Dependencies') 'original cached dependencies'
@@ -129,9 +140,14 @@ try {
         (Get-FileHash $rel -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedRel) {
         throw 'Clean PAL RMCP01 DOL/REL checksum mismatch; refusing translation.'
     }
-    MakeJunction (Join-Path $OriginalWorkspace 'aurora-main') (Join-Path $Repo 'aurora-main')
+    if ($useSubmodule) {
+        Record 'Aurora: the repo''s aurora-main submodule'
+    } else {
+        MakeJunction (Join-Path $OriginalWorkspace 'aurora-main') $repoAurora
+        Record 'Aurora: junction to the install''s BuildWorkspace aurora-main'
+    }
     MakeJunction (Join-Path $OriginalWorkspace 'Dependencies') (Join-Path $Repo 'Dependencies')
-    Record 'Clean PAL inputs validated; shared Aurora/Dependencies are junctions (not copied).'
+    Record 'Clean PAL inputs validated; shared Dependencies are a junction (not copied).'
     if ($RetroRewind) {
         $RetroRewind = [IO.Path]::GetFullPath($RetroRewind)
         $retroPul = Join-Path $RetroRewind 'Binaries\Code.pul'
@@ -155,7 +171,7 @@ try {
     $auroraPatches = @(Get-ChildItem -LiteralPath (Join-Path $Repo 'patches\aurora') -Filter '*.patch' -File -ErrorAction SilentlyContinue | Sort-Object Name)
     if ($auroraPatches.Count -gt 0) {
         $auroraDir = Join-Path $Repo 'aurora-mkw100'
-        SyncPatchedAurora (Join-Path $OriginalWorkspace 'aurora-main') $auroraDir $auroraPatches
+        SyncPatchedAurora $repoAurora $auroraDir $auroraPatches
     }
     $prebuilt = Resolve-MkwNativePrebuiltDirectory (Join-Path $Repo 'Dependencies') $bin `
         $auroraDir (Join-Path $Repo 'runtime\third_party')

@@ -83,3 +83,6 @@ output.txt
 /build-logs/
 /play/
 /UserData/
+/play-rr/
+/play-if/
+/install-options.json
