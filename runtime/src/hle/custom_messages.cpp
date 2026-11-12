@@ -52,6 +52,7 @@ static_assert(kTeamLabelText + kTeamLabelSlots * kTeamLabelBytes <= ArrayOverflo
 std::array<uint32_t, kLastPlace + 1> g_fontIndex{};  // msg index of 1312 in the holder that asked
 std::array<uint32_t, kTeamMessages> g_teamFontIndex{};
 std::array<uint32_t, kTeamLabelSlots> g_teamLabelFontIndex{};
+std::array<uint32_t, kTeamLabelSlots> g_teamLabelFont{};  // font BMG per slot (0: kTeamFontBmg)
 bool g_written = false;
 
 void WriteTexts() {
@@ -79,8 +80,9 @@ uint32_t PlaceBmg(uint32_t place) {
     return place >= kFirstPlace && place <= kLastPlace ? kPlaceBmgBase + place : 0;
 }
 
-uint32_t LabelBmg(uint32_t slot, const std::string& text) {
+uint32_t LabelBmg(uint32_t slot, const std::string& text, uint32_t fontBmg) {
     if (slot >= kTeamLabelSlots) return 0;
+    g_teamLabelFont[slot] = fontBmg;
     const uint32_t base = kTeamLabelText + slot * kTeamLabelBytes;
     const uint32_t length = std::min<uint32_t>(uint32_t(text.size()), kTeamLabelBytes / 2 - 1);
     for (uint32_t i = 0; i <= length; ++i) Memory::Write16(base + 2 * i, i < length ? uint8_t(text[i]) : 0);
@@ -95,7 +97,8 @@ uint32_t TeamNameBmg(uint32_t colour, bool average) {
 
 bool IsCustom(uint32_t bmgId, uint32_t& fontBmg) {
     if (bmgId >= kTeamLabelBmgBase && bmgId < kTeamLabelBmgBase + kTeamLabelSlots) {
-        fontBmg = kTeamFontBmg;
+        const uint32_t font = g_teamLabelFont[bmgId - kTeamLabelBmgBase];
+        fontBmg = font ? font : kTeamFontBmg;
         return true;
     }
     if (bmgId >= kTeamBmgBase && bmgId < kTeamBmgBase + kTeamMessages) {

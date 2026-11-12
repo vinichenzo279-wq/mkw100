@@ -417,7 +417,9 @@ void PrepareRace(uint32_t rd) {
     for (uint32_t i=1;i<12;++i) solo = solo && Memory::Read32(Player(menu,i)+0x10) != 0;
     // Offline VS, solo or Team VS (past 12 racers teams.cpp takes it over after InitRace).
     const bool teamVs = (Memory::Read32(menu+0xB70)&2)!=0;
-    const bool eligible = solo && Memory::Read32(menu+0xB50)==1 && (gameType==0 || preview);
+    // Offline VS or battle (gameMode 1, 3: battles are always red/blue teams; balloon_battle.cpp).
+    const uint32_t mode = Memory::Read32(menu+0xB50);
+    const bool eligible = solo && (mode==1 || mode==3) && (gameType==0 || preview);
     if (!eligible) {
         for (uint32_t i=12;i<PlayerSlots::kMaxPlayers;++i) Memory::Write32(Player(menu,i)+0x10,5);
         seriesCount=0;
@@ -434,7 +436,10 @@ void PrepareRace(uint32_t rd) {
         Memory::Write32(p+0x10, i>=seriesCount ? 5 : i==0 ? firstType : 1);
         if (i && i<seriesCount && (diversity.load() || i>=12)) {
             const uint32_t character=(humanCharacter+ i)%24;
-            const uint32_t vehicle=weights[character]+3*((i/3)%12);
+            // Battles load red/blue kart models (%s_red/_blue.brres), which only the standard kart
+            // and bike have (S/M/L_Kart_Red ...): there the CPUs take one of those two.
+            const uint32_t vehicle = mode==3 ? weights[character] + ((i/3)%2 ? 18u : 0u)
+                                             : weights[character]+3*((i/3)%12);
             Memory::Write32(p+0xC,character); Memory::Write32(p+8,vehicle);
         }
         if (first) {

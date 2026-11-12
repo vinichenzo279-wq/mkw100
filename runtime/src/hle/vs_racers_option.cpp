@@ -1,4 +1,7 @@
-// mkw100: a "Racers" row on the VS rules page, below "Number of Races".
+// mkw100: a "Racers" row on the VS rules page, below "Number of Races", and the same on the battle
+// rules page (Pages::BattleSettings, ctor 0x80629184, the same base with its own copies of the
+// handlers, string table and layout names "BattleSetting...": 4 radio rows and the round count at
+// id 4, so the new row is id 5; its help line is message 3466).
 //
 // Pages::VSSettings (page 0x73, ctor 0x806284C8) builds 6 controls through CreateControl
 // (0x808530B8): 5 radio rows and, for id 5, the race count UpDownControl. Its count lives at
@@ -29,11 +32,6 @@ namespace {
 
 constexpr uint32_t kVsControlCount = 0x3D8;      // page: internal control count, 6
 constexpr uint32_t kVsControlCursor = 0x654;     // page: next control index for AddControl
-constexpr uint32_t kVsRacersId = 6;
-constexpr uint32_t kVsUpDownHandlers = 0x1E00;   // page: change, click, select handler pointers
-constexpr uint32_t kVsTextHandler = 0x1E0C;
-constexpr uint32_t kVsStrings = 0x808AE874;      // StaticR strings used by CreateControl id 5
-constexpr uint32_t kVsVariants = 0x808AE7E8;     // +0x80: "RaceNum"
 
 constexpr uint32_t kOperatorNew = 0x80229DCC;
 constexpr uint32_t kAddControl = 0x8060246C;     // MenuInteractable: page, index, control, 0
@@ -55,7 +53,6 @@ constexpr uint32_t kLabelBmg = 3450;             // "Number of Races"
 constexpr uint32_t kValueBmg = 3451;             // the number in Text::Info intToPass[0]
 constexpr uint32_t kRacersValueSlot = 16;        // CustomMessages::LabelBmg slot
 constexpr uint32_t kInjectedMsg = 0x7FFF;        // msg index no BMG file reaches
-constexpr uint32_t kHelpBmg = 3465;              // "Set the number of races."
 constexpr uint32_t kHelpMsg = 0x7FFE;
 constexpr float kRowStep = 20.0f;                // measured: 40 put the row two rows below Races
 constexpr float kOkDrop = 12.0f;
@@ -67,6 +64,19 @@ constexpr uint32_t kLabelText = ArrayOverflow::kMenuText;
 constexpr char kLabel[] = "Racers";
 constexpr uint32_t kHelpText = kLabelText + 0x40;
 constexpr char kHelp[] = "Set the number of racers.";
+
+// The page the row goes on; the two rules pages differ only in these.
+struct RacersPage {
+    uint32_t ctor, strings, variants, variantOffset, upDownHandlers, textHandler, rowId, helpBmg;
+};
+constexpr RacersPage kVsPage{0x806284C8, 0x808AE874, 0x808AE7E8, 128, 0x1E00, 0x1E0C, 6, 3465};
+constexpr RacersPage kBattlePage{0x80629184, 0x808ACE44, 0x808ACDD8, 96, 0x1B68, 0x1B74, 5, 3466};
+// String offsets in each table (the same names, "VSSetting..." / "BattleSetting...").
+struct RacersStrings { uint32_t format, control, base, buttonR, right, buttonL, left, textControl, value, valueName, text, textName; };
+constexpr RacersStrings kVsStringsAt{93, 102, 110, 130, 153, 165, 188, 199, 207, 228, 234, 254};
+constexpr RacersStrings kBattleStringsAt{105, 114, 122, 146, 173, 185, 212, 223, 231, 256, 262, 286};
+
+uint32_t gHelpBmg = 3465;
 
 bool gLoadingRow = false;     // game thread only: the row's layout is loading
 uint32_t gLabelMsg = 0;       // BMG msg index of kLabelBmg, for its INF entry
@@ -104,7 +114,9 @@ void ShiftTree(uint32_t control, float dy) {
     }
 }
 
-uint32_t BuildRow(CpuContext* ctx, uint32_t page) {
+uint32_t BuildRow(CpuContext* ctx, uint32_t page, const RacersPage& kind) {
+    const RacersStrings& at = &kind == &kBattlePage ? kBattleStringsAt : kVsStringsAt;
+    const uint32_t strings = kind.strings;
     const CpuContext entry = *ctx;
     const uint32_t sp = entry.gpr[1] - 0x80;
     Memory::Write32(sp, entry.gpr[1]);
@@ -127,16 +139,16 @@ uint32_t BuildRow(CpuContext* ctx, uint32_t page) {
 
     // Variant name "UpDownRaceNum" in the frame's scratch area.
     const uint32_t variant = sp + 0x40;
-    *ctx = base; ctx->gpr[3] = variant; ctx->gpr[4] = 16; ctx->gpr[5] = kVsStrings + 93;
-    ctx->gpr[6] = Memory::Read32(kVsVariants + 128); ctx->cr &= ~(1u << (31 - 6));
+    *ctx = base; ctx->gpr[3] = variant; ctx->gpr[4] = 16; ctx->gpr[5] = strings + at.format;
+    ctx->gpr[6] = Memory::Read32(kind.variants + kind.variantOffset); ctx->cr &= ~(1u << (31 - 6));
     Call(ctx, kSprintf);
 
     const uint32_t count = uint32_t(LocalVs::MaxRacers());
     *ctx = base;
     ctx->gpr[3] = row; ctx->gpr[4] = count; ctx->gpr[5] = uint32_t(LocalVs::DesiredCount() - 1);
-    ctx->gpr[6] = kVsStrings + 102; ctx->gpr[7] = kVsStrings + 110; ctx->gpr[8] = variant;
-    ctx->gpr[9] = kVsStrings + 130; ctx->gpr[10] = kVsStrings + 153;
-    Memory::Write32(sp + 8, kVsStrings + 165); Memory::Write32(sp + 12, kVsStrings + 188);
+    ctx->gpr[6] = strings + at.control; ctx->gpr[7] = strings + at.base; ctx->gpr[8] = variant;
+    ctx->gpr[9] = strings + at.buttonR; ctx->gpr[10] = strings + at.right;
+    Memory::Write32(sp + 8, strings + at.buttonL); Memory::Write32(sp + 12, strings + at.left);
     Memory::Write32(sp + 16, text + kTextInner); Memory::Write32(sp + 20, 1);
     Memory::Write32(sp + 24, 0); Memory::Write32(sp + 28, 0);
     Memory::Write32(sp + 32, 1); Memory::Write32(sp + 36, 1);
@@ -145,15 +157,15 @@ uint32_t BuildRow(CpuContext* ctx, uint32_t page) {
     Call(ctx, kUpDownLoad);
     gLoadingRow = false;
     for (uint32_t k = 0; k < 3; ++k) {
-        Memory::Write32(row + kUpDownHandlerFields + k * 4, Memory::Read32(page + kVsUpDownHandlers + k * 4));
+        Memory::Write32(row + kUpDownHandlerFields + k * 4, Memory::Read32(page + kind.upDownHandlers + k * 4));
     }
     Memory::Write32(row + kUpDownId, 1);
 
     *ctx = base;
-    ctx->gpr[3] = text; ctx->gpr[4] = kVsStrings + 199; ctx->gpr[5] = kVsStrings + 207;
-    ctx->gpr[6] = kVsStrings + 228; ctx->gpr[7] = kVsStrings + 234; ctx->gpr[8] = kVsStrings + 254;
+    ctx->gpr[3] = text; ctx->gpr[4] = strings + at.textControl; ctx->gpr[5] = strings + at.value;
+    ctx->gpr[6] = strings + at.valueName; ctx->gpr[7] = strings + at.text; ctx->gpr[8] = strings + at.textName;
     Call(ctx, kTextLoad);
-    Memory::Write32(text + kTextHandlerField, Memory::Read32(page + kVsTextHandler));
+    Memory::Write32(text + kTextHandlerField, Memory::Read32(page + kind.textHandler));
 
     ShiftTree(row, -kRowStep);
     RT_LOGF("vs-racers", "racers row built: control %08X, %u options, value %d\n", row, count, LocalVs::DesiredCount());
@@ -170,7 +182,7 @@ void SetRowValue(CpuContext* ctx, uint32_t textControl, uint32_t option) {
     ctx->gpr[3] = info; Call(ctx, kTextInfoInit);
     Memory::Write32(info, option + 1);
     // The race count's value message reads "Races: N"; this row says "Racers: N" (a runtime label).
-    const uint32_t value = CustomMessages::LabelBmg(kRacersValueSlot, "Racers: " + std::to_string(option + 1));
+    const uint32_t value = CustomMessages::LabelBmg(kRacersValueSlot, "Racers: " + std::to_string(option + 1), kValueBmg);
     ctx->gpr[1] = sp; ctx->gpr[3] = textControl; ctx->gpr[4] = value ? value : kValueBmg; ctx->gpr[5] = info;
     Call(ctx, kSetMessage);
     *ctx = entry;
@@ -181,18 +193,48 @@ void SetRowValue(CpuContext* ctx, uint32_t textControl, uint32_t option) {
 extern "C" void VsSettings_Ctor_806284c8(CpuContext* ctx) {
     const uint32_t page = ctx->gpr[3];
     MKW_GUEST_NEXT(806284C8)(ctx);
-    Memory::Write32(page + kVsControlCount, kVsRacersId + 1);
+    Memory::Write32(page + kVsControlCount, kVsPage.rowId + 1);
     gRow = gRowText = 0;
 }
+
+extern "C" void BattleSettings_Ctor_80629184(CpuContext* ctx) {
+    const uint32_t page = ctx->gpr[3];
+    MKW_GUEST_NEXT(80629184)(ctx);
+    Memory::Write32(page + kVsControlCount, kBattlePage.rowId + 1);
+    gRow = gRowText = 0;
+}
+REGISTER_NATIVE_WRAPPER_AS(0x80629184, BattleSettings_Ctor_80629184, "BattleSettings_Ctor_80629184");
 REGISTER_NATIVE_WRAPPER_AS(0x806284C8, VsSettings_Ctor_806284c8, "VsSettings_Ctor_806284c8");
 
+// The Class row offers Mirror only when the license's completion bit 52 is set (an inlined
+// RKSYS::LicenseCompletion::IsCompleted). With the unlocks setting it is set for the row's build
+// and put back after, so nothing reaches the save.
+constexpr uint32_t kSaveManager = 0x809BD748;  // SaveDataManager instance (current license +0x36)
+constexpr uint32_t kLicenseBase = 0x38, kLicenseSize = 0x93F0, kMirrorWord = 0x9000, kMirrorBit = 1u << 20;
+
 extern "C" void VsSettings_CreateControl_808530b8(CpuContext* ctx) {
-    if (ctx->gpr[4] != kVsRacersId) {
+    if (ctx->gpr[4] != kVsPage.rowId) {
+        const uint32_t sdm = Memory::Read32(kSaveManager);
+        const int16_t license = sdm ? int16_t(Memory::Read16(sdm + 0x36)) : -1;
+        const uint32_t word = license >= 0 ? sdm + kLicenseBase + uint32_t(license) * kLicenseSize + kMirrorWord : 0;
+        const uint32_t saved = word ? Memory::Read32(word) : 0;
+        const bool unlock = word != 0 && LocalVs::UnlocksEnabled();
+        if (unlock) Memory::Write32(word, saved | kMirrorBit);
         MKW_GUEST_NEXT(808530B8)(ctx);
+        if (unlock) Memory::Write32(word, saved);
         return;
     }
-    ctx->gpr[3] = BuildRow(ctx, ctx->gpr[3]);
+    ctx->gpr[3] = BuildRow(ctx, ctx->gpr[3], kVsPage);
 }
+
+extern "C" void BattleSettings_CreateControl_8083bfe0(CpuContext* ctx) {
+    if (ctx->gpr[4] != kBattlePage.rowId) {
+        MKW_GUEST_NEXT(8083BFE0)(ctx);
+        return;
+    }
+    ctx->gpr[3] = BuildRow(ctx, ctx->gpr[3], kBattlePage);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8083BFE0, BattleSettings_CreateControl_8083bfe0, "BattleSettings_CreateControl_8083bfe0");
 REGISTER_NATIVE_WRAPPER_AS(0x808530B8, VsSettings_CreateControl_808530b8, "VsSettings_CreateControl_808530b8");
 
 // The OK button, the page's only external control, moves below the new row.
@@ -234,6 +276,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x80853A10, VsSettings_OnTextChange_80853a10, "VsSett
 // one lookup answers "Set the number of racers.".
 extern "C" void VsSettings_OnUpDownSelect_80853988(CpuContext* ctx) {
     gSettingHelp = gRow != 0 && ctx->gpr[4] == gRow;
+    gHelpBmg = kVsPage.helpBmg;
     MKW_GUEST_NEXT(80853988)(ctx);
     gSettingHelp = false;
 }
@@ -247,7 +290,7 @@ extern "C" void BmgHolder_GetMsgId_805f8c88(CpuContext* ctx) {
         if (ctx->gpr[3] != 0xFFFFFFFFu) ctx->gpr[3] = CustomMessages::Index(custom, ctx->gpr[3]);
         return;
     }
-    if (gSettingHelp && ctx->gpr[4] == kHelpBmg) {
+    if (gSettingHelp && ctx->gpr[4] == gHelpBmg) {
         MKW_GUEST_NEXT(805F8C88)(ctx);
         gHelpMsgIndex = ctx->gpr[3];
         ctx->gpr[3] = kHelpMsg;
@@ -280,3 +323,42 @@ extern "C" void BmgHolder_GetFontIndex_805f8d2c(CpuContext* ctx) {
     MKW_GUEST_NEXT(805F8D2C)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x805F8D2C, BmgHolder_GetFontIndex_805f8d2c, "BmgHolder_GetFontIndex_805f8d2c");
+
+// The battle rules page's handlers, as the VS page's above.
+extern "C" void BattleSettings_CreateExternalControl_8083bf50(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8083BF50)(ctx);
+    const uint32_t ok = ctx->gpr[3];
+    if (ok == 0) return;
+    ShiftY(ok, -kOkDrop);
+    for (uint32_t i = 0; i < 4; ++i) {
+        const uint32_t scaleY = ok + 4 + i * 0x18 + 0x10;
+        Memory::WriteFloat32(scaleY, Memory::ReadFloat32(scaleY) * kOkScaleY);
+    }
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8083BF50, BattleSettings_CreateExternalControl_8083bf50, "BattleSettings_CreateExternalControl_8083bf50");
+
+extern "C" void BattleSettings_OnUpDownChange_8083c848(CpuContext* ctx) {
+    if (gRow != 0 && ctx->gpr[4] == gRow) {
+        LocalVs::SetDesiredCount(int(ctx->gpr[6]) + 1);
+        return;
+    }
+    MKW_GUEST_NEXT(8083C848)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8083C848, BattleSettings_OnUpDownChange_8083c848, "BattleSettings_OnUpDownChange_8083c848");
+
+extern "C" void BattleSettings_OnTextChange_8083c8c0(CpuContext* ctx) {
+    if (gRowText != 0 && ctx->gpr[4] - gRowText < kTextSize) {
+        SetRowValue(ctx, ctx->gpr[4], ctx->gpr[5]);
+        return;
+    }
+    MKW_GUEST_NEXT(8083C8C0)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8083C8C0, BattleSettings_OnTextChange_8083c8c0, "BattleSettings_OnTextChange_8083c8c0");
+
+extern "C" void BattleSettings_OnUpDownSelect_8083c838(CpuContext* ctx) {
+    gSettingHelp = gRow != 0 && ctx->gpr[4] == gRow;
+    gHelpBmg = kBattlePage.helpBmg;
+    MKW_GUEST_NEXT(8083C838)(ctx);
+    gSettingHelp = false;
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8083C838, BattleSettings_OnUpDownSelect_8083c838, "BattleSettings_OnUpDownSelect_8083c838");
