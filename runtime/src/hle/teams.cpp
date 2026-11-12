@@ -41,6 +41,10 @@ constexpr std::array<Teams::Colour, Teams::kMaxTeams> kColours{{
     {160, 60, 220, "Purple"},
     {255, 110, 180, "Pink"},
     {0, 210, 220, "Cyan"},
+    {140, 230, 0, "Lime"},
+    {150, 95, 45, "Brown"},
+    {240, 240, 240, "White"},
+    {230, 0, 200, "Magenta"},
 }};
 constexpr Teams::Colour kNoColour{255, 255, 255, "None"};
 
@@ -55,7 +59,8 @@ std::atomic<uint32_t> g_battleRed{0};
 std::atomic<uint32_t> g_battleTeam{0};
 std::array<std::atomic<uint32_t>, Teams::kMaxTeams> g_colourSize{};
 
-const char* const kTeamsColourKeys[Teams::kMaxTeams] = {"red", "orange", "yellow", "green", "blue", "purple", "pink", "cyan"};
+const char* const kTeamsColourKeys[Teams::kMaxTeams] = {"red", "orange", "yellow", "green", "blue", "purple", "pink", "cyan",
+                                                        "lime", "brown", "white", "magenta"};
 
 void TeamsSaveColourSizes() {
     std::string text;

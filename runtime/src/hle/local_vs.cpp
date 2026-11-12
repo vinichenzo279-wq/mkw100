@@ -229,7 +229,8 @@ void DrawSettings() {
     ImGui::TextUnformatted("Offline only. Y + D-pad left/right picks an item (D-pad alone on a Nunchuk). By _Ro.");
     ImGui::Separator();
     {
-        static constexpr std::array<const char*, 7> teamNames{{"2 teams","3 teams","4 teams","5 teams","6 teams","7 teams","8 teams"}};
+        static constexpr std::array<const char*, Teams::kMaxTeams - 1> teamNames{{"2 teams","3 teams","4 teams","5 teams","6 teams",
+            "7 teams","8 teams","9 teams","10 teams","11 teams","12 teams"}};
         int teams = int(Teams::Count()) - 2;
         ImGui::SetNextItemWidth(280);
         int size = int(Teams::TeamSize());
@@ -263,7 +264,7 @@ void DrawSettings() {
         }
         {
             static constexpr std::array<const char*, Teams::kMaxTeams + 1> colourNames{{
-                "Random", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Cyan"}};
+                "Random", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Cyan", "Lime", "Brown", "White", "Magenta"}};
             int colour = Teams::PlayerColour() < Teams::kMaxTeams ? int(Teams::PlayerColour()) + 1 : 0;
             ImGui::SetNextItemWidth(280);
             if (ImGui::Combo("Your team colour", &colour, colourNames.data(), int(colourNames.size())))

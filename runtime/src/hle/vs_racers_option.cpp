@@ -53,7 +53,7 @@ constexpr uint32_t kSetMessage = 0x8063DDB4;     // LayoutUIControl: control, bm
 
 constexpr uint32_t kLabelBmg = 3450;             // "Number of Races"
 constexpr uint32_t kValueBmg = 3451;             // the number in Text::Info intToPass[0]
-constexpr uint32_t kRacersValueSlot = 16;        // CustomMessages::LabelBmg slot
+constexpr uint32_t kRacersValueSlot = 20;        // CustomMessages::LabelBmg slot
 constexpr uint32_t kInjectedMsg = 0x7FFF;        // msg index no BMG file reaches
 constexpr uint32_t kHelpMsg = 0x7FFE;
 constexpr float kRowStep = 20.0f;                // measured: 40 put the row two rows below Races
@@ -331,7 +331,7 @@ extern "C" void BmgHolder_GetMsgId_805f8c88(CpuContext* ctx) {
     const bool single = SectionLocalPlayers() <= 1;
     if (id == kCpuOffBmg || id == kCpuOffHelpBmg || (single && id == kCpuHardBmg) || (single && id == kCpuHardHelpBmg)) {
         const bool help = id == kCpuOffHelpBmg || id == kCpuHardHelpBmg;
-        ctx->gpr[4] = CustomMessages::LabelBmg(help ? 20 : 19, help ? "CPU players are much faster." : "Impossible", id);
+        ctx->gpr[4] = CustomMessages::LabelBmg(help ? 24 : 23, help ? "CPU players are much faster." : "Impossible", id);
     } else if (single && id >= kCpuEasyBmg && id < kCpuHardBmg) {
         ctx->gpr[4] = id + 1;  // Easy -> Normal, Normal -> Hard
     } else if (single && id >= kCpuEasyHelpBmg && id < kCpuHardHelpBmg) {
@@ -339,7 +339,7 @@ extern "C" void BmgHolder_GetMsgId_805f8c88(CpuContext* ctx) {
     }
     if (Cc200::ReplacesMirror() && (ctx->gpr[4] == kMirrorBmg || ctx->gpr[4] == kMirrorHelpBmg)) {
         const bool help = ctx->gpr[4] == kMirrorHelpBmg;
-        ctx->gpr[4] = CustomMessages::LabelBmg(help ? 18 : 17, help ? "200cc class with brake drifting." : "200cc",
+        ctx->gpr[4] = CustomMessages::LabelBmg(help ? 22 : 21, help ? "200cc class with brake drifting." : "200cc",
                                                help ? kMirrorHelpBmg : kMirrorBmg);
     }
     if (uint32_t custom = ctx->gpr[4], fontBmg = 0; CustomMessages::IsCustom(custom, fontBmg)) {  // custom_messages.h

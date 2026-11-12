@@ -6,7 +6,7 @@ struct CpuContext;
 #include <utility>
 #include <vector>
 
-// mkw100 teams for offline Team VS of more than 12 racers (runtime/src/hle/teams.cpp): 2..8 teams
+// mkw100 teams for offline Team VS of more than 12 racers (runtime/src/hle/teams.cpp): 2..12 teams
 // of near-equal size (differing by at most one), kept for a series, scored by the average points
 // per member so uneven sizes stay fair. As Retro Rewind's extended teams do, the race runs with the
 // game's red/blue team flag cleared (plain karts, items hit everyone) and team colours tint
@@ -14,7 +14,7 @@ struct CpuContext;
 // with team rows on top. Solo VS never has teams; up to 12 racers Team VS is the game's own.
 namespace Teams {
 
-inline constexpr uint32_t kMaxTeams = 8;
+inline constexpr uint32_t kMaxTeams = 12;
 inline constexpr uint32_t kNoTeam = 0xFF;
 
 struct Colour {
@@ -27,7 +27,7 @@ void Initialize(uint32_t teamsFromConfig);
 uint32_t Count();
 void SetCount(uint32_t teams);  // F10; writes Config.toml
 // Racers per team instead (local_vs.team_size): 0 = use Count(). The teams are then
-// racers / size rounded up, 2..kMaxTeams (only 8 colours: past that the teams grow).
+// racers / size rounded up, 2..kMaxTeams (only 12 colours: past that the teams grow).
 uint32_t TeamSize();
 void SetTeamSize(uint32_t racers);
 // Team score: the members' average (local_vs.team_scoring "average", default) or their total.

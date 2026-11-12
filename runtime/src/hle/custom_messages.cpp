@@ -19,19 +19,21 @@ namespace {
 
 constexpr uint32_t kPlaceBmgBase = 0x00FF0000;
 constexpr uint32_t kTeamBmgBase = 0x00FE0000;   // + colour index
-constexpr uint32_t kTeamIndexBase = 0x7D00;     // msg indices 0x7D00..0x7D0F
+constexpr uint32_t kTeamIndexBase = 0x7D00;     // msg indices 0x7D00..0x7D17
 constexpr uint32_t kTeamFontBmg = 9501;         // Common.bmg: the player name
-constexpr uint32_t kTeams = 8;
+constexpr uint32_t kTeams = 12;
 // Per colour, the plain name (total scoring) then the "avg" one (average scoring); at most 15
 // characters (kTeamTextBytes).
 constexpr uint32_t kTeamMessages = 2 * kTeams;
 constexpr const char* kTeamNames[kTeamMessages] = {
     "Red Team", "Orange Team", "Yellow Team", "Green Team", "Blue Team", "Purple Team", "Pink Team", "Cyan Team",
+    "Lime Team", "Brown Team", "White Team", "Magenta Team",
     "Red Team avg", "Orange Team avg", "Yellow Team avg", "Green Team avg",
-    "Blue Team avg", "Purple Team avg", "Pink Team avg", "Cyan Team avg"};
+    "Blue Team avg", "Purple Team avg", "Pink Team avg", "Cyan Team avg",
+    "Lime Team avg", "Brown Team avg", "White Team avg", "Magenta Tm avg"};
 // Runtime labels per colour (the pre-race team screen): text rewritten before each use.
 constexpr uint32_t kTeamLabelBmgBase = kTeamBmgBase + 0x100;
-constexpr uint32_t kTeamLabelIndexBase = 0x7D40;
+constexpr uint32_t kTeamLabelIndexBase = 0x7D40;  // ..0x7D58, below the places (0x7E0D+)
 constexpr uint32_t kTeamLabelBytes = 48;            // 23 characters
 constexpr uint32_t kPlaceIndexBase = 0x7E00;
 constexpr uint32_t kFirstPlace = 13;
@@ -40,13 +42,13 @@ constexpr uint32_t kPlaceFontBmg = 1312;      // Race.bmg "12th"
 constexpr uint32_t kTextBytes = 16;           // per place, UTF-16BE with terminator
 // After vs_racers_option.cpp's label and help strings at kMenuText.
 constexpr uint32_t kPlaceText = ArrayOverflow::kMenuText + 0x1000;
-constexpr uint32_t kTeamText = ArrayOverflow::kMenuText + 0x1800;  // 16 x 32 bytes
+constexpr uint32_t kTeamText = ArrayOverflow::kMenuText + 0x1800;  // 24 x 32 bytes
 constexpr uint32_t kTeamTextBytes = 32;
 static_assert(kPlaceText + (PlayerSlots::kMaxPlayers - 13 + 1) * 16 <= kTeamText);  // 13th..128th
 static_assert(kPlaceIndexBase + kLastPlace < 0x7FFE);
-static_assert(kTeamText + kTeamMessages * kTeamTextBytes <= ArrayOverflow::kMenuText + 0x1A00);
-constexpr uint32_t kTeamLabelText = ArrayOverflow::kMenuText + 0x1A00;
-constexpr uint32_t kTeamLabelSlots = 21;  // 16: racers value; 17, 18: "200cc" for Mirror; 19, 20: "Impossible"
+static_assert(kTeamText + kTeamMessages * kTeamTextBytes <= ArrayOverflow::kMenuText + 0x1B00);
+constexpr uint32_t kTeamLabelText = ArrayOverflow::kMenuText + 0x1B00;
+constexpr uint32_t kTeamLabelSlots = 25;  // 0-11 teams; 12-19 team screen; 20 racers value; 21-22 Mirror; 23-24 Impossible
 static_assert(kTeamLabelText + kTeamLabelSlots * kTeamLabelBytes <= ArrayOverflow::kMenuText + 0x2000);  // team_ui strings follow
 
 std::array<uint32_t, kLastPlace + 1> g_fontIndex{};  // msg index of 1312 in the holder that asked

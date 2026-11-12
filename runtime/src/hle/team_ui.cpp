@@ -237,8 +237,8 @@ constexpr uint32_t kIconPane = kScreenNames + 0x10;       // "chara_icon"
 constexpr uint32_t kIconShadowPane = kScreenNames + 0x20; // "chara_icon_sha"
 constexpr uint32_t kRedPane = kScreenNames + 0x30;        // "red_null"
 constexpr uint32_t kBluePane = kScreenNames + 0x40;       // "blue_null"
-constexpr uint32_t kSettingSlot = 8;                      // CustomMessages::LabelBmg slots 8..13
-constexpr uint32_t kPairSlot = 14;                        // ..14, 15: rows holding two teams
+constexpr uint32_t kSettingSlot = 12;                     // CustomMessages::LabelBmg slots 12..17
+constexpr uint32_t kPairSlot = 18;                        // 18, 19: rows holding two teams
 constexpr Teams::Colour kWhite{255, 255, 255, "White"};
 constexpr Teams::Colour kPicked{255, 225, 60, "Picked"};
 
@@ -251,7 +251,7 @@ uint32_t gScreenRacers = 0;
 uint32_t gScreenCustomColour = 0;  // the colour "Size of" edits
 uint32_t gScreenHeld = 0;          // frames left/right has been held (repeat)
 
-// Which settings the screen shows: Team VS (2-8 teams) or battle (red/blue sizes).
+// Which settings the screen shows: Team VS (2-12 teams) or battle (red/blue sizes).
 enum class TeamScreen { kNone, kVs, kBattle };
 TeamScreen gScreenKind = TeamScreen::kNone;
 
@@ -345,7 +345,20 @@ std::string TeamUiSettingText(uint32_t setting) {
         return std::string(Teams::ColourByIndex(gScreenCustomColour).name) + " racers: " +
                std::to_string(Teams::ColourSize(gScreenCustomColour));
     default: {
-        if (LocalVs::LocalPlayers() > 1) return "Colour: on your pad";  // each player's own left/right
+        if (const uint32_t humans = std::min<uint32_t>(LocalVs::LocalPlayers(), 4); humans > 1) {
+            // Each player's colour as a short code, P1 first ("Red Blu Rnd Pnk"); each player
+            // changes theirs with their own pad on this row.
+            std::string codes;
+            for (uint32_t q = 0; q < humans; ++q) {
+                const uint32_t c = Teams::PlayerColour(q);
+                const std::string name = c < Teams::kMaxTeams ? Teams::ColourByIndex(c).name : "Random";
+                codes += (q ? " " : "") + (name == "Random" ? std::string("Rnd") : name == "Purple" ? std::string("Pur")
+                          : name == "Pink" ? std::string("Pnk") : name == "Cyan" ? std::string("Cyn") : name == "Green" ? std::string("Grn")
+                          : name == "Yellow" ? std::string("Yel") : name == "Orange" ? std::string("Org") : name == "Blue" ? std::string("Blu")
+                          : name.substr(0, 3));
+            }
+            return codes;
+        }
         const uint32_t mine = Teams::PlayerColour();
         return std::string("Your colour: ") + (mine < Teams::kMaxTeams ? Teams::ColourByIndex(mine).name : "Random");
     }
@@ -509,8 +522,9 @@ extern "C" void TeamUi_ControlUpdate_8063db00(CpuContext* ctx) {
     const bool repeat = sizeRow && gScreenHeld > 18 && gScreenHeld % 3 == 0;
     // Split screen, colour row: every local player changes their own colour with their own pad.
     const uint32_t humans = gScreenKind == TeamScreen::kVs ? LocalVs::LocalPlayers() : 1;
-    if (humans > 1 && gScreenPick == kSettingColour) {
-        for (uint32_t p = 1; p < humans && p < 4; ++p) {
+    const bool padColours = humans > 1 && gScreenPick == kSettingColour;
+    if (padColours) {
+        for (uint32_t p = 0; p < humans && p < 4; ++p) {
             const uint32_t pad = TeamUiCall(ctx, saved, kGetControllerHolder, p);
             *ctx = saved;
             if (!TeamUiInRam(pad)) continue;
@@ -525,7 +539,7 @@ extern "C" void TeamUi_ControlUpdate_8063db00(CpuContext* ctx) {
     }
     if (pressed(0x8)) { gScreenPick = (gScreenPick + rows - 1) % rows; redraw = true; }
     else if (pressed(0x10)) { gScreenPick = (gScreenPick + 1) % rows; redraw = true; }
-    else if (pressed(0x20) || pressed(0x40) || repeat) {
+    else if (!padColours && (pressed(0x20) || pressed(0x40) || repeat)) {
         const int step = (now & 0x40) != 0 ? 1 : -1;
         redraw = true;
         if (gScreenKind == TeamScreen::kBattle) {
@@ -544,3 +558,24 @@ extern "C" void TeamUi_ControlUpdate_8063db00(CpuContext* ctx) {
     *ctx = saved;
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8063DB00, TeamUi_ControlUpdate_8063db00, "TeamUi_ControlUpdate_8063db00");
+
+// 2-4 players: the game's own team page (PAGE_MULTIPLAYER_TEAM_SELECT 0x83, red or blue for each
+// player) comes before the team screen (0x74). Past 12 racers in Team VS our teams decide, so the
+// menus go straight to 0x74 (Pages::Menu::LoadNextPageWithDelayById 0x8083761C, LoadNextPageById
+// 0x80837720: page, id). Battle keeps it: its players' red/blue picks still count.
+namespace {
+constexpr uint32_t kPageMultiTeamSelect = 0x83;
+constexpr uint32_t kPageVsTeamsView = 0x74;
+} // namespace
+
+extern "C" void TeamUi_LoadNextPageDelay_8083761c(CpuContext* ctx) {
+    if (ctx->gpr[4] == kPageMultiTeamSelect && TeamUiScreenKind() == TeamScreen::kVs) ctx->gpr[4] = kPageVsTeamsView;
+    MKW_GUEST_NEXT(8083761C)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8083761C, TeamUi_LoadNextPageDelay_8083761c, "TeamUi_LoadNextPageDelay_8083761c");
+
+extern "C" void TeamUi_LoadNextPage_80837720(CpuContext* ctx) {
+    if (ctx->gpr[4] == kPageMultiTeamSelect && TeamUiScreenKind() == TeamScreen::kVs) ctx->gpr[4] = kPageVsTeamsView;
+    MKW_GUEST_NEXT(80837720)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x80837720, TeamUi_LoadNextPage_80837720, "TeamUi_LoadNextPage_80837720");
