@@ -11,7 +11,7 @@ A fork of the WiiCompiled Mario Kart Wii (PAL) recompiler for big offline races:
 - **Split screen**: 2 to 4 local players, with CPUs filling the rest of the field.
 - **200cc** in place of Mirror. Choosing Mirror runs the race unmirrored at 200cc, with brake drifting.
 - **Impossible CPUs**: a fourth CPU difficulty after Hard on the rules page.
-- Position icons 13th to 128th, a speedometer, instant item boxes, scoring and item-distribution options for big fields, all characters/vehicles/cups unlocked, and optional 30 FPS rendering.
+- Position icons 13th to 128th, a speedometer in the race HUD (Pulsar's, as Retro Rewind shows it), instant item boxes, scoring and item-distribution options for big fields, all characters/vehicles/cups unlocked, and optional 30 FPS rendering.
 - **Debug item cycler**: a port of _Ro's code. In a race, hold Y and press D-pad left/right to pick an item. It is off by default.
 - **F10** opens the settings overlay. The Local VS tab holds the options above. They are saved to `UserData/Config.toml` in the play folder.
 
@@ -19,7 +19,7 @@ Online play is not supported: the installer turns networking off.
 
 ### Retro Rewind
 
-The same checkout can also build a Retro Rewind version from your Retro Rewind 6 pack (offline, no Retro WFC). It is capped at **100 racers**, because each racer loads its own kart archive with Retro Rewind's per-racer skins, and 128 of them don't fit in memory. CPUs get varied skins.
+The same checkout can also build a Retro Rewind version from your Retro Rewind 6 pack (offline, no Retro WFC). It runs up to **128 racers**. CPUs get varied skins up to racer 64; past that they keep the stock look, because every skin loads a large kart archive and 128 of them don't fit in memory. The racer fixes are measured on the WheelWizard RetroRewind6 `Code.pul`; with another build they switch themselves off (and the build warns).
 
 ## Installing on Windows
 
@@ -83,4 +83,4 @@ Before sending a change, test menu entry, a full race and the next race at 12 ra
 
 ## Attribution
 
-A fork of WiiCompiled; the upstream documentation is in `README-UPSTREAM.md`. GPLv3, like upstream: keep `LICENSE`, upstream attribution and dependency licences (`THIRD-PARTY-NOTICES.md`). Instant item boxes follow Anarion's inactive-store approach, also documented by Unnamed at https://mariokartwii.com/showthread.php?tid=2206. 200cc follows Pulsar (MelgMKW, MIT). The item cycler is _Ro's (https://mariokartwii.com/showthread.php?tid=2674). Position icon credits are in `runtime/assets/rank_icons/README.md`. Never publish game files or built game executables with this source.
+A fork of WiiCompiled; the upstream documentation is in `README-UPSTREAM.md`. GPLv3, like upstream: keep `LICENSE`, upstream attribution and dependency licences (`THIRD-PARTY-NOTICES.md`). Instant item boxes follow Anarion's inactive-store approach, also documented by Unnamed at https://mariokartwii.com/showthread.php?tid=2206. 200cc follows Pulsar (MelgMKW, MIT), and so does the HUD speedometer: its layout and digit pictures are Pulsar's (`runtime/assets/mkw100/README.md`). The item cycler is _Ro's (https://mariokartwii.com/showthread.php?tid=2674). Position icon credits are in `runtime/assets/rank_icons/README.md`. Never publish game files or built game executables with this source.

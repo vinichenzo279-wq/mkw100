@@ -171,7 +171,14 @@ try {
         New-Item -ItemType Directory -Path $stagedPulDir -Force | Out-Null
         $stagedPul = Join-Path $stagedPulDir 'Code.pul'
         if ([IO.Path]::GetFullPath($stagedPul) -ne $retroPul) { Copy-Item -LiteralPath $retroPul -Destination $stagedPul -Force }
-        Record ($ModName + ' Code.pul staged, SHA256 ' + (Get-FileHash -LiteralPath $retroPul -Algorithm SHA256).Hash.ToLowerInvariant())
+        $pulSha = (Get-FileHash -LiteralPath $retroPul -Algorithm SHA256).Hash.ToLowerInvariant()
+        Record ($ModName + ' Code.pul staged, SHA256 ' + $pulSha)
+        # The 12-racer fixes for a pack are measured on one Code.pul; another build still runs, without them.
+        $knownPul = @{ 'retro-rewind' = 'd68778e9e126ebd80d45fd4ad57882e269a4b99d121b066910ef04e0a9a4360d' }
+        if ($knownPul.ContainsKey($ModProfile) -and $knownPul[$ModProfile] -ne $pulSha) {
+            Write-Warning ($ModName + ' Code.pul is not the build MKW100 was measured on (' + $knownPul[$ModProfile].Substring(0, 8) +
+                '...). Its racer fixes past 12 are switched off at run time, and translate-mod may stop on its array sites.')
+        }
     }
     Record ('Incremental fork cache: ' + $NativeBuild)
     if ($PreflightOnly) {

@@ -25,16 +25,37 @@
 // table, and the getter sends racers 12+ to a local player's row, so only about 12 racers got
 // skins. More than 12 racers: both run natively over a per-racer table here (racers 0-11 also
 // written to Retro Rewind's own table); a CPU's pick is PickSkin's.
+//
+// Every address here belongs to one Retro Rewind build: the WheelWizard RetroRewind6 Code.pul,
+// SHA-256 d68778e9..., whose PAL Kamek code has the SHA-1 below. The loader writes that SHA-1 to
+// 0x800017B0. Any other build has other code at these addresses, so then every hook here runs
+// Retro Rewind's own code and a warning is logged once.
 
 #include "abi_bridge.h"
 #include "guest_abi/array_overflow.h"
 #include "guest_abi/player_slots.h"
 #include "guest_function_imports.h"
 #include "memory.h"
+#include "runtime_log.h"
 
 #include <cstdint>
 
 namespace {
+
+constexpr uint32_t kKamekCodeSha1 = 0x800017B0;  // 20 bytes, written by the mod loader
+constexpr uint8_t kKnownRrCodeSha1[20] = {0x50, 0x61, 0x37, 0x4C, 0x93, 0x7B, 0x8E, 0xBE, 0x70, 0xFA,
+                                          0x67, 0xBE, 0xF7, 0xF3, 0x5B, 0x16, 0xF6, 0xE9, 0x22, 0x8B};
+
+// True for the Retro Rewind build these addresses were measured on (checked once, after boot).
+bool KnownRrBuild() {
+    static int known = -1;
+    if (known < 0) {
+        known = 1;
+        for (uint32_t i = 0; i < 20; ++i) known &= Memory::Read8(kKamekCodeSha1 + i) == kKnownRrCodeSha1[i];
+        if (!known) RT_LOGF("rr-skins", "WARNING: unknown Retro Rewind Code.pul; its 12-racer fixes are off\n");
+    }
+    return known == 1;
+}
 
 // Toggle: off gives CPUs the stock look, as Retro Rewind itself does. The index fixes stay on.
 constexpr bool kCpuSkins = true;
@@ -65,7 +86,14 @@ uint32_t SkinHash(uint32_t racer, uint32_t character) {
     return x;
 }
 
+// Skin budget: a skin loads one of Retro Rewind's large kart archives (about 4.9 MB to decompress),
+// and at 128 racers they no longer fit (ArchiveFile::Decompress failed, then ARCInitHandle panicked).
+// 100 fully skinned racers fit, so CPU racers from index 64 on keep the stock look and its small
+// archive. Local players' own picks are not budgeted.
+constexpr uint32_t kSkinnedRacers = 64;
+
 uint8_t PickSkin(uint32_t racer, uint32_t character) {
+    if (racer >= kSkinnedRacers) return 0;
     const uint32_t row = kSkinAvailable + character * kSkinAvailableStride;
     uint32_t count = 0;
     for (uint32_t n = 1; n <= kSkinMax; ++n) count += Memory::Read8(row + n) != 0;
@@ -113,17 +141,23 @@ void ArchiveStub(CpuContext* ctx, uint32_t origin) {
 
 } // namespace
 
-extern "C" void RR_ArchiveModels_81832dfc(CpuContext* ctx) { ArchiveStub(ctx, kArchiveModels); }
-REGISTER_NATIVE_REPLACEMENT_AS(0x81832DFC, RR_ArchiveModels_81832dfc, "RR_ArchiveModels_81832dfc");
+extern "C" void RR_ArchiveModels_81832dfc(CpuContext* ctx) {
+    if (!KnownRrBuild()) { MKW_GUEST_NEXT(81832DFC)(ctx); return; }
+    ArchiveStub(ctx, kArchiveModels);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x81832DFC, RR_ArchiveModels_81832dfc, "RR_ArchiveModels_81832dfc");
 
-extern "C" void RR_ArchiveModels2_81832e24(CpuContext* ctx) { ArchiveStub(ctx, kArchiveModels2); }
-REGISTER_NATIVE_REPLACEMENT_AS(0x81832E24, RR_ArchiveModels2_81832e24, "RR_ArchiveModels2_81832e24");
+extern "C" void RR_ArchiveModels2_81832e24(CpuContext* ctx) {
+    if (!KnownRrBuild()) { MKW_GUEST_NEXT(81832E24)(ctx); return; }
+    ArchiveStub(ctx, kArchiveModels2);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x81832E24, RR_ArchiveModels2_81832e24, "RR_ArchiveModels2_81832e24");
 
 // The kart path builder; r7 is the racer's kartModelsHolders element.
 extern "C" void RR_KartSkinPath_818026fc(CpuContext* ctx) {
     const uint32_t racer = ArchiveRacer(ctx->gpr[7], kArchiveModels);
     const bool cpu = racer != ArrayOverflow::kNoArray && IsCpu(racer);
-    if (racer == ArrayOverflow::kNoArray || (racer < kSkinRows && !cpu)) {
+    if (!KnownRrBuild() || racer == ArrayOverflow::kNoArray || (racer < kSkinRows && !cpu)) {
         MKW_GUEST_NEXT(818026FC)(ctx);
         return;
     }
@@ -143,7 +177,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x818026FC, RR_KartSkinPath_818026fc, "RR_KartSkinPat
 // 0x81832B74(r3 = race scenario): decides every racer's skin for the race.
 extern "C" void RR_DecideRaceSkins_81832b74(CpuContext* ctx) {
     const uint32_t count = RacerCount();
-    if (count <= kSkinInline) {
+    if (count <= kSkinInline || !KnownRrBuild()) {
         MKW_GUEST_NEXT(81832B74)(ctx);
         return;
     }
@@ -169,7 +203,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x81832B74, RR_DecideRaceSkins_81832b74, "RR_DecideRa
 extern "C" void RR_RacerSkin_818329a0(CpuContext* ctx) {
     const uint32_t racer = ctx->gpr[3];
     const uint32_t character = ctx->gpr[4];
-    if (racer < kSkinInline || RacerCount() <= kSkinInline || ctx->gpr[5] != 0) {
+    if (racer < kSkinInline || RacerCount() <= kSkinInline || ctx->gpr[5] != 0 || !KnownRrBuild()) {
         MKW_GUEST_NEXT(818329A0)(ctx);
         return;
     }
