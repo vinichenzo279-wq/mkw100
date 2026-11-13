@@ -251,17 +251,41 @@ bool ResultsTrace() {
 }
 } // namespace
 
-// Page::Activate(this). Also: past 12 racers the battle results activated a page the battle section
-// (0x28) never builds, so `this` was null and the game called through address 0's bytes. A null page
-// is skipped (the base game never activates one) and the caller is logged.
+// Page::Activate(this). A page that cannot be activated (null, or its vtable or input manager's not
+// code) is skipped and the caller logged. (The 120-racer battle crash here was a clobbered r29 from
+// the vanilla UpdatePoints' stack array, fixed in local_vs.cpp; this check catches such a page only
+// when it is already broken on entry.)
+namespace {
+bool GuestCode(uint32_t a) { return a >= 0x80000000 && a < 0x81800000; }
+bool GuestData(uint32_t a) {
+    return (a >= 0x80000000 && a < 0x81800000) || (a >= 0x90000000 && a < 0x98000000);
+}
+// A page Activate can run: its vtable and its input manager's vtable (called at +0x28) are code.
+bool ActivatablePage(uint32_t page) {
+    if (!GuestData(page) || !GuestCode(Memory::Read32(page))) return false;
+    const uint32_t input = Memory::Read32(page + 0x38);
+    if (input == 0) return true;
+    if (!GuestData(input)) return false;
+    const uint32_t vt = Memory::Read32(input);
+    return GuestCode(vt) && GuestCode(Memory::Read32(vt + 0x28));
+}
+} // namespace
+
 extern "C" void RaceOracle_PageActivate_80601aec(CpuContext* ctx) {
-    if (ctx->gpr[3] == 0) {
+    if (!ActivatablePage(ctx->gpr[3])) {
         static uint32_t logged = 0;
-        if (logged++ < 8) RT_LOGF("pages", "skipped activating a page that was never built (lr=0x%08X)\n", ctx->lr);
+        const uint32_t page = ctx->gpr[3];
+        if (logged++ < 8) {
+            RT_LOGF("pages", "skipped activating a broken page 0x%08X (id 0x%X, input 0x%08X, lr=0x%08X)\n", page,
+                    GuestData(page) ? Memory::Read32(page + 4) : 0, GuestData(page) ? Memory::Read32(page + 0x38) : 0,
+                    ctx->lr);
+        }
         return;
     }
     if (ResultsTrace()) {
-        std::printf("[race-oracle] page 0x%02X activated\n", Memory::Read32(ctx->gpr[3] + 4));
+        std::printf("[race-oracle] page 0x%02X activated (0x%08X, input 0x%08X, lr 0x%08X)\n",
+                    Memory::Read32(ctx->gpr[3] + 4), ctx->gpr[3], Memory::Read32(ctx->gpr[3] + 0x38), ctx->lr);
+        std::fflush(stdout);
     } else if (const uint32_t rd = Memory::Read32(0x809BD728); rd != 0 && Memory::Read8(rd + 0x24) > 12) {
         // Past 12 racers every page change is logged, to place a stuck screen (battle results).
         RT_LOGF("pages", "page 0x%02X activated\n", Memory::Read32(ctx->gpr[3] + 4));

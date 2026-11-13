@@ -582,8 +582,38 @@ void AfterInitRace(uint32_t rd) {
 
 // The vanilla function has a 12-entry stack array and indexes pointsRoom[12][12].
 // Never call it for expanded offline VS, even to repair the result afterward.
+// Offline battle (mode 3) past 12 racers went to the vanilla function too: its u16 array of 12 at
+// sp+8 ran over the saved r14-r31 (120 racers: BattleLeaderboardTotal::FillRows returned with r29 = 0
+// and Page::Activate called through *(0 + 0x38), right after the battle totals page). Done here as
+// the vanilla battle path: total = previous + battle score, the place kept, the rating clamped.
+namespace {
+bool ExpandedOfflineBattle() {
+    using namespace local_vs_detail;
+    const auto rd = Memory::Read32(MKW_GADDR(809BD728));
+    return rd && RaceCount() > 12 && RaceCount() <= PlayerSlots::kMaxPlayers &&
+           Memory::Read32(rd + 0x20 + 0xB50) == 3 && Memory::Read32(rd + 0x20 + 0xB54) == 0;
+}
+} // namespace
+
 extern "C" void LocalVs_UpdatePoints_8052e950(CpuContext* ctx) {
     using namespace local_vs_detail;
+    if (ExpandedOfflineBattle() && Memory::Read32(ctx->gpr[3] + 0xB54) == 0) {
+        const uint32_t menu = ctx->gpr[3];
+        const uint32_t infos = Memory::Read32(Memory::Read32(MKW_GADDR(809BD730)) + 0xC);
+        const uint32_t count = RaceCount();
+        for (uint32_t i = 0; i < count; ++i) {
+            const uint32_t p = Player(menu, i), info = Memory::Read32(infos + 4 * i);
+            const uint32_t place = Memory::Read8(info + 0x20);
+            if (place != 0) {
+                Memory::Write8(p + 0xE2, uint8_t(place));
+                Memory::Write16(p + 0xDA, uint16_t(Memory::Read16(p + 0xD8) + Memory::Read16(info + 0x22)));
+            }
+            const uint32_t rating = Memory::Read16(p + 0xE8);  // RKSYS::Rating::AddPoints(+0xE4, 0)
+            Memory::Write16(p + 0xE8, uint16_t(std::clamp(rating, 1u, 9999u)));
+        }
+        RT_LOGF("local-vs", "battle: scored %u racers without the vanilla 12-entry array\n", count);
+        return;
+    }
     if (!ExpandedOffline()) { MKW_GUEST_NEXT(8052E950)(ctx); return; }
     const uint32_t menu=ctx->gpr[3], rd=Memory::Read32(MKW_GADDR(809BD728));
     const uint32_t info=Memory::Read32(MKW_GADDR(809BD730));
