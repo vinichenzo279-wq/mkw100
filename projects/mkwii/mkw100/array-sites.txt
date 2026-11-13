@@ -109,3 +109,10 @@
 0x81816D58  0  index  1  0x818A2D34  0x82D00000  profile=item-fever  # lbzx flag
 0x818177E8  0  index  1  0x818A2D34  0x82D00000  profile=item-fever  # lbzx flag
 0x8181724C  0  index  1  0x818A2D34  0x82D00000  profile=item-fever  # stbx flag = 0
+# RaceBalloons (name tags, one object per race HUD screen): Vec3 positions[12] at +0x20, element i at
+# object + i*12 + 0x20, and the class's own fields right after it. Players 12+ use a per-object shadow
+# (0x82D10000, 0x1000 each) so RaceBalloons::Update can walk every racer (race_balloons.cpp).
+0x807F1128  0  objadd  12  0x20  0x82D10000  # add r6, r4, r0: positions[r27] (+0x17C object)
+0x807F1758  0  objadd  12  0x20  0x82D10000  # add r16, r30, r0: Update stores positions[i]
+0x807F1AD8  0  objadd  12  0x20  0x82D10000  # add r4, r30, r0: positions[shown]
+0x807F1DA8  0  objadd  12  0x20  0x82D10000  # add r3, r3, r0: &positions[i]

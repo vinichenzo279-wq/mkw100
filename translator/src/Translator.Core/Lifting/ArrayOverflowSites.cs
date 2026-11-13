@@ -28,8 +28,9 @@ public sealed class ArrayOverflowSites
     public const string ArrayStepHelper = "MKW100_ArrayStep";
     public const string IndexedBaseHelper = "MKW100_IndexedBase";
     public const string IndexedRestoreHelper = "MKW100_IndexedRestore";
+    public const string ObjectAddHelper = "MKW100_ObjectArrayAdd";
 
-    public enum SiteKind { Scale, Step, Index }
+    public enum SiteKind { Scale, Step, Index, ObjAdd }
 
     /// <param name="Offset">scale/step: byte offset from the instance. index: the table's address.</param>
     /// <param name="Shadow">index only: where elements 12.. of the table live.</param>
@@ -67,6 +68,8 @@ public sealed class ArrayOverflowSites
 
         if (site.Kind == SiteKind.Index)
             return RewriteIndexed(ins, ir, site, Fail);
+        if (site.Kind == SiteKind.ObjAdd)
+            return RewriteObjectAdd(ins, site, Fail);
 
         if (site.Kind == SiteKind.Scale)
         {
@@ -138,6 +141,29 @@ public sealed class ArrayOverflowSites
     }
 
     /// <summary>
+    /// objadd: `add rD, rObj, rScaled` forming the address of element rScaled / stride of a [12] array
+    /// at +offset inside a (non-singleton) object. For elements 12+ rD becomes that object's shadow
+    /// table (MKW100_ObjectArrayAdd) minus offset, so the following +offset access lands there.
+    /// </summary>
+    private static IReadOnlyList<IrInstruction> RewriteObjectAdd(PpcInstruction ins, Site site, Func<string, string> fail)
+    {
+        var word = ins.Word;
+        var rd = (int)((word >> 21) & 31);
+        var ra = (int)((word >> 16) & 31);
+        var rb = (int)((word >> 11) & 31);
+        if (word >> 26 != 31 || ((word >> 1) & 0x1FF) != 266 || (word & 1) != 0 || ((word >> 10) & 1) != 0)
+            fail("not `add rD, rObj, rScaled`");
+        return new IrInstruction[]
+        {
+            new IrCall($"r{rd}", ObjectAddHelper, new[]
+            {
+                IrValue.Register($"r{ra}"), IrValue.Register($"r{rb}"), IrValue.Imm(site.Stride),
+                IrValue.Imm(site.Offset), IrValue.Imm(unchecked((int)site.Shadow))
+            })
+        };
+    }
+
+    /// <summary>
     /// One site per line: `0xADDRESS class-id kind stride offset [0xSHADOW] [profile=NAME]`, kind
     /// `scale`, `step` or `index`; offset a 0x-prefixed byte offset from the instance (index: the
     /// table's address, stride its element size, SHADOW required); `#` starts a comment. A site with
@@ -163,15 +189,17 @@ public sealed class ArrayOverflowSites
                 "scale" => SiteKind.Scale,
                 "step" => SiteKind.Step,
                 "index" => SiteKind.Index,
-                _ => throw Bad("kind must be scale, step or index")
+                "objadd" => SiteKind.ObjAdd,
+                _ => throw Bad("kind must be scale, step, index or objadd")
             };
-            if (fields.Length != (kind == SiteKind.Index ? 6 : 5))
-                throw Bad(kind == SiteKind.Index ? "index sites need a shadow address" : "too many fields");
+            var shadowed = kind is SiteKind.Index or SiteKind.ObjAdd;
+            if (fields.Length != (shadowed ? 6 : 5))
+                throw Bad(shadowed ? "index and objadd sites need a shadow address" : "too many fields");
             sites.Add(new Site(Hex(fields[0]) ?? throw Bad("bad address"),
                 int.Parse(fields[1], CultureInfo.InvariantCulture), kind,
                 int.Parse(fields[3], CultureInfo.InvariantCulture),
                 unchecked((int)(Hex(fields[4]) ?? throw Bad("bad offset"))),
-                kind == SiteKind.Index ? Hex(fields[5]) ?? throw Bad("bad shadow") : 0,
+                shadowed ? Hex(fields[5]) ?? throw Bad("bad shadow") : 0,
                 profile));
         }
         return new ArrayOverflowSites(sites);

@@ -602,8 +602,8 @@ REGISTER_NATIVE_WRAPPER_AS(0x80837720, TeamUi_LoadNextPage_80837720, "TeamUi_Loa
 // (+0x1EC) is added, with no limit, so past 12 racers a team of 60 wrote over the control (its team
 // at +0x1EC, then other objects; 120 racers: a jump through a Mii-name pointer). Past 12 racers
 // only the team's six shown ones keep their team while InitSelf runs: the local players, then the
-// highest battle scores (Raceinfo player +0x22, the value the rows sort by). The team total it adds
-// up (+0xB74) is put back to the whole team's.
+// highest battle scores (Raceinfo player +0x22, the value the rows sort by). On the results page
+// (0x33) the team total it adds up (+0xB74) is put back to the whole team's.
 namespace {
 constexpr uint32_t kResultTeamOf = 0x1EC;      // CtrlRaceResultTeam: u32 team
 constexpr uint32_t kResultTeamTotal = 0xB74;   // u32, the team's score sum
@@ -647,7 +647,10 @@ extern "C" void TeamUi_ResultTeamInit_807f69e4(CpuContext* ctx) {
     MKW_GUEST_NEXT(807F69E4)(ctx);
     for (const uint32_t racer : hidden)
         Memory::Write32(rd + MKW100_PlayerSlotOffset(racer) + kRaceScenarioPlayers + kRacedataTeam, team);
-    if (Memory::Read32(control + kResultTeamTotal) != 0 || total != 0) Memory::Write32(control + kResultTeamTotal, total);
+    // Only the battle results page (0x33) sums a team total; on the totals page (0x34) the field stays
+    // 0, and a total written there kept that page waiting forever once racers had scored.
+    const uint32_t pageId = Memory::Read32(Memory::Read32(Memory::Read32(control + 0x64) + 0xC) + 0x4);
+    if (pageId == 0x33) Memory::Write32(control + kResultTeamTotal, total);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x807F69E4, TeamUi_ResultTeamInit_807f69e4, "TeamUi_ResultTeamInit_807f69e4");
 

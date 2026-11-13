@@ -145,3 +145,8 @@ extern "C" uint32_t MKW100_ArrayStep(uint32_t pointer, uint32_t classId, uint32_
 // shadow + (i - 12) * size; afterwards it is put back.
 extern "C" uint32_t MKW100_IndexedBase(uint32_t base, uint32_t offset, uint32_t table, uint32_t size, uint32_t shadow);
 extern "C" uint32_t MKW100_IndexedRestore(uint32_t base, uint32_t table, uint32_t size, uint32_t shadow);
+// objadd sites (a [12] array at +offset in an object that has several instances): `object + scaled`,
+// or for element 12+ that object's shadow table (one of 8 per site shadow base, 0x1000 apart, given
+// out per object on first use) minus offset.
+extern "C" uint32_t MKW100_ObjectArrayAdd(uint32_t object, uint32_t scaled, uint32_t stride, uint32_t offset,
+                                          uint32_t shadow);
