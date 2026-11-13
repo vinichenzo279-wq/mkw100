@@ -202,7 +202,11 @@ bool ParseArgument(std::string_view arg) {
         return true;
     }
     if (arg == "--race-impossible") {
-        LocalVs::SetImpossibleCpus(true);
+        LocalVs::SetCpuTier(2);
+        return true;
+    }
+    if (arg == "--race-very-hard") {
+        LocalVs::SetCpuTier(1);
         return true;
     }
     if (arg == "--race-mirror") {

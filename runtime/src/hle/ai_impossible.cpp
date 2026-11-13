@@ -12,7 +12,8 @@
 //
 // With the setting on and the race on Hard, after the game's Load the first speed float gets
 // kSpeedStep added and every non-zero chance becomes 100 (zero stays zero: those actions are off
-// for Hard too). Measured, headless all-CPU 12-racer VS race (oracle seed): winner 1:27.464
+// for Hard too). Measured, headless all-CPU 12-racer VS race (oracle seed): Very Hard (+10) 1:27.464,
+// Impossible (+40) 1:09.099,
 // against 1:38.440 on Hard, race over at frame 5,530 against 6,255.
 
 #include "abi_bridge.h"
@@ -21,14 +22,17 @@
 #include "memory.h"
 
 #include <cstdint>
+#include <cstdlib>
 
 namespace {
 
 constexpr uint32_t kImpossibleRacedata = 0x809BD728;  // RaceConfig::spInstance
 constexpr uint32_t kImpossibleCpuMode = 0x20 + 0xB48 + 0x14;  // races scenario settings cpuMode
 constexpr uint32_t kImpossibleHard = 2;
-// Hard - Normal is 3 to 10 across the tables; Impossible is 10 above Hard.
-constexpr float kImpossibleSpeedStep = 10.0f;
+// Hard - Normal is 3 to 10 across the tables. Very Hard is 10 above Hard; Impossible, MKW100_TEST_CPU_STEP
+// for tuning, is kImpossibleSpeedStep above.
+constexpr float kVeryHardSpeedStep = 10.0f;
+constexpr float kImpossibleSpeedStep = 40.0f;
 constexpr uint32_t kImpossibleActionBytes = 12 * 8;
 
 } // namespace
@@ -39,8 +43,10 @@ extern "C" void AIParams_Load_8073aca8(CpuContext* ctx) {
     if (!LocalVs::ImpossibleCpus() || params == 0) return;
     const uint32_t racedata = Memory::Read32(kImpossibleRacedata);
     if (racedata == 0 || Memory::Read32(racedata + kImpossibleCpuMode) != kImpossibleHard) return;
+    static const char* const tuned = std::getenv("MKW100_TEST_CPU_STEP");
+    const float step = LocalVs::CpuTier() >= 2 ? (tuned ? float(std::atof(tuned)) : kImpossibleSpeedStep) : kVeryHardSpeedStep;
     const uint32_t speed = Memory::Read32(params + 0x4);
-    if (speed != 0) Memory::WriteFloat32(speed, Memory::ReadFloat32(speed) + kImpossibleSpeedStep);
+    if (speed != 0) Memory::WriteFloat32(speed, Memory::ReadFloat32(speed) + step);
     const uint32_t actions = Memory::Read32(params + 0x8);
     if (actions == 0) return;
     for (uint32_t i = 0; i < kImpossibleActionBytes; ++i) {

@@ -42,13 +42,13 @@ constexpr uint32_t kPlaceFontBmg = 1312;      // Race.bmg "12th"
 constexpr uint32_t kTextBytes = 16;           // per place, UTF-16BE with terminator
 // After vs_racers_option.cpp's label and help strings at kMenuText.
 constexpr uint32_t kPlaceText = ArrayOverflow::kMenuText + 0x1000;
-constexpr uint32_t kTeamText = ArrayOverflow::kMenuText + 0x1800;  // 24 x 32 bytes
+constexpr uint32_t kTeamText = ArrayOverflow::kMenuText + 0x1740;  // 24 x 32 bytes, right after the places
 constexpr uint32_t kTeamTextBytes = 32;
 static_assert(kPlaceText + (PlayerSlots::kMaxPlayers - 13 + 1) * 16 <= kTeamText);  // 13th..128th
 static_assert(kPlaceIndexBase + kLastPlace < 0x7FFE);
-static_assert(kTeamText + kTeamMessages * kTeamTextBytes <= ArrayOverflow::kMenuText + 0x1B00);
-constexpr uint32_t kTeamLabelText = ArrayOverflow::kMenuText + 0x1B00;
-constexpr uint32_t kTeamLabelSlots = 25;  // 0-11 teams; 12-19 team screen; 20 racers value; 21-22 Mirror; 23-24 Impossible
+static_assert(kTeamText + kTeamMessages * kTeamTextBytes <= ArrayOverflow::kMenuText + 0x1A40);
+constexpr uint32_t kTeamLabelText = ArrayOverflow::kMenuText + 0x1A40;
+constexpr uint32_t kTeamLabelSlots = 27;  // 0-11 teams; 12-19 team screen; 20 racers value; 21-22 Mirror; 23-24 Impossible; 25-26 Very Hard
 static_assert(kTeamLabelText + kTeamLabelSlots * kTeamLabelBytes <= ArrayOverflow::kMenuText + 0x2000);  // team_ui strings follow
 
 std::array<uint32_t, kLastPlace + 1> g_fontIndex{};  // msg index of 1312 in the holder that asked

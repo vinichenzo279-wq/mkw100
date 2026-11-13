@@ -312,11 +312,10 @@ REGISTER_NATIVE_WRAPPER_AS(0x80853988, VsSettings_OnUpDownSelect_80853988, "VsSe
 // Menu.bmg 3414 "Mirror" and 3418 "150cc class with mirrored courses." when Mirror is 200cc.
 constexpr uint32_t kMirrorBmg = 3414, kMirrorHelpBmg = 3418;
 
-// Impossible CPUs on the CPU row (local_vs.cpp turns the choice into Hard CPUs with
-// ai_impossible.cpp's tables):
-//   2-4P: the 4th option, Menu.bmg 3424 "Off" / help 3428, reads Impossible.
-//   1P, which has only 3 buttons (Off exists with 2+ local players only): Easy is dropped and the
-//   buttons read Normal, Hard, Impossible (labels 3421-3423, help 3425-3427, each one along).
+// The CPU row (local_vs.cpp PrepareRace turns the choice into Hard CPUs with ai_impossible.cpp's
+// tables for Very Hard and Impossible). Labels 3421-3424 Easy, Normal, Hard, Off; help 3425-3428.
+//   2-4P (4 options): Normal, Hard, Very Hard, Impossible (each stock label one along).
+//   1P (3 buttons; Off exists with 2+ local players only): Hard, Very Hard, Impossible.
 // The section's local player count: SectionMgr (0x809C1E38) +0x98 -> +0x124, low byte.
 constexpr uint32_t kCpuEasyBmg = 3421, kCpuHardBmg = 3423, kCpuOffBmg = 3424;
 constexpr uint32_t kCpuEasyHelpBmg = 3425, kCpuHardHelpBmg = 3427, kCpuOffHelpBmg = 3428;
@@ -328,14 +327,18 @@ uint32_t SectionLocalPlayers() {
 
 extern "C" void BmgHolder_GetMsgId_805f8c88(CpuContext* ctx) {
     const uint32_t id = ctx->gpr[4];
-    const bool single = SectionLocalPlayers() <= 1;
-    if (id == kCpuOffBmg || id == kCpuOffHelpBmg || (single && id == kCpuHardBmg) || (single && id == kCpuHardHelpBmg)) {
-        const bool help = id == kCpuOffHelpBmg || id == kCpuHardHelpBmg;
-        ctx->gpr[4] = CustomMessages::LabelBmg(help ? 24 : 23, help ? "CPU players are much faster." : "Impossible", id);
-    } else if (single && id >= kCpuEasyBmg && id < kCpuHardBmg) {
-        ctx->gpr[4] = id + 1;  // Easy -> Normal, Normal -> Hard
-    } else if (single && id >= kCpuEasyHelpBmg && id < kCpuHardHelpBmg) {
-        ctx->gpr[4] = id + 1;
+    const bool help = id >= kCpuEasyHelpBmg && id <= kCpuOffHelpBmg;
+    if ((id >= kCpuEasyBmg && id <= kCpuOffBmg) || help) {
+        // shown: 0 Normal, 1 Hard, 2 Very Hard, 3 Impossible
+        const uint32_t option = id - (help ? kCpuEasyHelpBmg : kCpuEasyBmg);
+        const uint32_t shown = SectionLocalPlayers() <= 1 ? option + 1 : option;
+        if (shown == 3) {
+            ctx->gpr[4] = CustomMessages::LabelBmg(help ? 24 : 23, help ? "CPU players are much faster." : "Impossible", id);
+        } else if (shown == 2) {
+            ctx->gpr[4] = CustomMessages::LabelBmg(help ? 26 : 25, help ? "CPU players are faster." : "Very Hard", id);
+        } else {
+            ctx->gpr[4] = (help ? kCpuEasyHelpBmg : kCpuEasyBmg) + shown + 1;  // Normal or Hard
+        }
     }
     if (Cc200::ReplacesMirror() && (ctx->gpr[4] == kMirrorBmg || ctx->gpr[4] == kMirrorHelpBmg)) {
         const bool help = ctx->gpr[4] == kMirrorHelpBmg;
