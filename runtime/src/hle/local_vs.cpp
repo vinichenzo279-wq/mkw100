@@ -28,6 +28,8 @@
 #include <cstring>
 #include <string>
 
+bool HudSpeedometerNative();  // hud_speedometer.cpp
+
 namespace local_vs_detail {
 std::atomic<int> desiredCount{100};
 std::atomic<bool> unlocks{true};
@@ -138,7 +140,10 @@ uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows) {
 // Retro Rewind is capped at 100 for now: its per-racer skins (rr_skins.cpp) give every racer its
 // own kart archive, and at 128 one no longer fits in memory (Pulsar ArchiveFile::Decompress fails,
 // then ARCInitHandle panics).
-int MaxRacers() { return RuntimeProduct::IsRetroRewind() ? 100 : int(PlayerSlots::kMaxPlayers); }
+// The mod product once stopped at 100 (Retro Rewind's per-racer skin archives ran out of memory at
+// 128); rr_skins.cpp now budgets the skins, so every product goes to 128.
+int MaxRacers() { return int(PlayerSlots::kMaxPlayers); }
+bool SpeedometerEnabled() { return local_vs_detail::speedometer.load(); }
 uint32_t LocalPlayers() {
     const uint32_t rd = Memory::Read32(MKW_GADDR(809BD728));
     if (!rd) return 1;
@@ -349,6 +354,7 @@ float DrawSegmentNumber(ImDrawList* list, ImVec2 origin, float height, uint32_t 
 
 void DrawSpeedometer() {
     using namespace local_vs_detail;
+    if (::HudSpeedometerNative()) return;  // the base game draws it in its own HUD (hud_speedometer.cpp)
     if (!speedometer.load() || NowMs() - hudSpeedTime.load() > 250) return;
     const auto* vp = ImGui::GetMainViewport();
     ImDrawList* list = ImGui::GetForegroundDrawList();
@@ -511,7 +517,13 @@ void PrepareRace(uint32_t rd) {
             Memory::Write8(p+0xE2, i<seriesCount ? seriesCount-i : 0);
         }
     }
-    if (teamVs && mode==3 && seriesCount>12 && first) {
+    // The course preview (gameType 5) and the battle after it are both race 0: the preview's deal
+    // stands, or karts (loaded with the preview's colours) and balloons (the battle's) disagreed.
+    static bool battleDealtInPreview = false;
+    const bool keepPreviewDeal = battleDealtInPreview && !preview;
+    battleDealtInPreview = false;
+    if (teamVs && mode==3 && seriesCount>12 && first && !keepPreviewDeal) {
+        battleDealtInPreview = preview;
         // Battle past 12: red/blue by the battle settings (Teams::BattleRedFor, BattleTeamChoice).
         const uint32_t choice=Teams::BattleTeamChoice();
         const uint32_t dealt=Memory::Read32(Player(menu,0)+0xCC);
@@ -530,7 +542,7 @@ void PrepareRace(uint32_t rd) {
         RT_LOGF("local-vs", "battle teams: red %u blue %u (you %s)\n", redCpus+redHumans, seriesCount-redCpus-redHumans,
                 mine==0 ? "red" : "blue");
     } else if (teamVs && mode==3 && seriesCount>12) {
-        // Later battles of the series keep the teams dealt at the first.
+        // Later battles of the series, and the battle after its preview, keep the teams dealt first.
     } else if (teamVs) {
         // The team page assigns the first 12; the rest join whichever team is smaller.
         uint32_t size[2] = {0, 0};

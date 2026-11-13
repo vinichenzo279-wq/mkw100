@@ -15,10 +15,12 @@ bool ImpossibleCpus();
 void SetImpossibleCpus(bool on);  // --race-impossible, for this run only
 // Racers for the next single-player VS series, 1..PlayerSlots::kMaxPlayers (F10 and the VS rules page).
 int DesiredCount();
-// The most racers this product runs (128; Retro Rewind 100 for now).
+// The most racers any product runs (128).
 int MaxRacers();
 // Local players in the menu scenario (slots 0-3 of type 0), for split screen.
 uint32_t LocalPlayers();
+// [local_vs] speedometer (F10): the race HUD speedometer (hud_speedometer.cpp; ImGui in mod products).
+bool SpeedometerEnabled();
 void SetDesiredCount(int count);
 // Expanded (13+) offline VS balancing, F10 and Config.toml [local_vs] scoring / item_distribution.
 enum class Scoring : uint32_t { ClassicSpread, ClassicTop12, Linear };
