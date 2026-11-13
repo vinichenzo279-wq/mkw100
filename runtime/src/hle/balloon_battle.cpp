@@ -448,3 +448,44 @@ extern "C" void GMDataBattle_HandlePositionTracking_80538418(CpuContext* ctx) {
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80538418, GMDataBattle_HandlePositionTracking_80538418,
                            "GMDataBattle_HandlePositionTracking_80538418");
+
+// Raceinfo::__ct (0x805327A0) takes a battle's length from minigame.kmg: s16 seconds per arena
+// and player count, a row of 11 for 2..12 players (22 bytes per arena; balloon battle at +0x10,
+// coin runners at +0x1DC). More players index past the arena's row, into the next arenas' rows
+// and then other tables: on Block Plaza 120 players got 30 s, 128 got 20 s and 200 got 10 s.
+// More than 12 players get the 12-player length, stored the way the constructor stores it.
+// (Raceinfo::GetBattleDuration, 0x805326EC, has the same lookup and is only called online.)
+namespace {
+constexpr uint32_t kRaceinfoTimers = 0x14;
+constexpr uint32_t kRaceinfoKmgHolder = 0x3C;    // null outside battles
+constexpr uint32_t kRacedataCourse = 0xB68;
+constexpr uint32_t kRacedataBattleType = 0xB78;  // 0: balloon battle, else coin runners
+constexpr uint32_t kKmgArenaIndex = 0x80538344;  // KMGHolder::ConvertArenaIdToIdx(holder, course)
+constexpr uint32_t kKmgArenaRow = 22;
+constexpr uint32_t kKmgBalloonSeconds = 0x10;
+constexpr uint32_t kKmgCoinSeconds = 0x1DC;
+constexpr uint32_t kTimerLimitMs = 0x44;
+}
+
+extern "C" void Raceinfo_ct_805327a0(CpuContext* ctx) {
+    MKW_GUEST_NEXT(805327A0)(ctx);
+    const uint32_t raceinfo = ctx->gpr[3];
+    const uint32_t racedata = Memory::Read32(kBalloonRacedata);
+    const uint32_t holder = raceinfo == 0 ? 0 : Memory::Read32(raceinfo + kRaceinfoKmgHolder);
+    if (racedata == 0 || holder == 0 || Memory::Read8(racedata + 0x24) <= kBalloonInline) return;
+    Saved s(ctx);
+    const int32_t arena = int16_t(Guest(ctx, kKmgArenaIndex, {holder, Memory::Read32(racedata + kRacedataCourse)}));
+    const uint32_t table =
+        Memory::Read32(racedata + kRacedataBattleType) == 0 ? kKmgBalloonSeconds : kKmgCoinSeconds;
+    const uint32_t row = Memory::Read32(holder + 4) + uint32_t(arena * int32_t(kKmgArenaRow)) + table;
+    const uint32_t seconds = Memory::Read16(row + (kBalloonInline - 2) * 2);
+    const uint32_t timers = Memory::Read32(raceinfo + kRaceinfoTimers);
+    for (const uint32_t timer : {timers + 0x14, timers + 0x20}) {  // minutes, seconds, ms
+        Memory::Write16(timer, uint16_t(seconds / 60));
+        Memory::Write8(timer + 2, uint8_t(seconds % 60));
+        Memory::Write16(timer + 4, 0);
+    }
+    Memory::Write32(timers + kTimerLimitMs, seconds * 1000);
+    s.Done(raceinfo);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x805327A0, Raceinfo_ct_805327a0, "Raceinfo_ct_805327a0");

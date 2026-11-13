@@ -2,7 +2,8 @@
 
 Status 13.11.2026 (branch `racers-255`): the base game runs headless races with 255 racers: VS,
 VS with the item exercise, Team VS, Grand Prix (two races and the results pages), balloon battle
-and a diverse roster. Retro Rewind and Item Fever stay at 128 until their own tables are checked.
+(the full three minutes) and a diverse roster. Retro Rewind and Item Fever stay at 128 until
+their own tables are checked.
 
 255 is the end of the road. The racer count and racer ids are `u8` throughout the game (Racedata
 +0x24, Raceinfo player ids and positions, item owners) and 0xFF means "none"; going further means
@@ -21,7 +22,8 @@ widening those everywhere.
 | Signed racer bytes | game code: `extsb` on racer indices and places | translator site kind `sbyte`, 18 sites | done, see below |
 | DriverMgr positions | game code: `u8 racePositions[]` at +0x161 indexed by racer in a 0x1F0-byte object: the ctor and Update write past it from 144 racers (200: the next heap block's header) | longer allocation (`driver_manager.cpp`) | done |
 | Archives | the scene's MEM2 archive heap (46 MB) holds about 200 KB of kart archive per racer: 212 fit | overflow arena (`race_heap.cpp`) | done, see Memory |
-| Battle ranking | our own `balloon_battle.cpp` read the position byte as `int8_t` | `int32_t` | done |
+| Battle ranking | our own `balloon_battle.cpp` read the position byte as `int8_t`: place 128 and up was skipped (128 racers already) | `int32_t` | done |
+| Battle length | game code: `Raceinfo::__ct` reads the seconds from `minigame.kmg` by arena and player count, a row for 2..12 players | the 12-player length for more players (`balloon_battle.cpp`) | done, see Battle length |
 | F10 slider, VS and battle rules row, `--race-players` | `LocalVs::MaxRacers()` | per product | base 255, mod product 128 |
 | Position icons | `runtime/assets/rank_icons`: rank013..rank128.tpl | assets | 129..255 missing: the HUD uses the overlay digits |
 | Item Fever | `item_fever.cpp` (`kFeverShadowRacers = 128 - 12`, shadows 0x100..0x200 apart), `cmpimm 128` guards in array-sites.txt | resize the shadows, guards to 255, retest | not done |
@@ -88,7 +90,8 @@ Two overflows therefore end in the debug heap:
 
 Measured peaks of the arena (the log prints `[race-heap] arena: N of 40 MiB in use`):
 24 MiB in a 255-racer Grand Prix on course 0x08 with the default roster, 32 MiB with a diverse
-roster on course 0x01, each on top of a full structsDebug. That is about 52 to 54 MB of the 62,
+roster on course 0x01 and in a 255-racer battle on Block Plaza, each on top of a full
+structsDebug. That is about 52 to 54 MB of the 62,
 so roughly 8 MB of headroom in the worst case measured; a larger course or pack content can
 exceed it (`[race-heap] out of memory` in the log, usually followed by a crash).
 
@@ -105,50 +108,61 @@ Things the arena has to get right, each found as a crash:
 - A new scene object is built at the old one's address and its heap fields hold the destroyed
   heaps until `GameScene::enter` stores the new ones; destroyed heaps are remembered.
 
+## Battle length
+
+`Raceinfo::__ct` (0x805327A0) reads a battle's length from `minigame.kmg`: `s16` seconds per
+arena and player count, a row of 11 entries for 2..12 players (22 bytes per arena; balloon battle
+at +0x10, coin runners at +0x1DC; the lookups are at 0x80532BCC and 0x80532C04). More players
+index past the arena's row: the next arenas' rows first (40 racers on Block Plaza still got three
+minutes), then other tables. There, 120 racers got 30 s, 128 got 20 s, 200 got 10 s, and 255
+happened to get three minutes again. Main has this as well (seen at 120 and 128 racers).
+
+More than 12 players now get the 12-player length: a hook after the constructor stores it in the
+timer manager the way the constructor does (`Raceinfo_ct_805327a0` in `balloon_battle.cpp`).
+`Raceinfo::GetBattleDuration` (0x805326EC) has the same lookup and is only called online.
+
+Not fixed, the same row lookup: the object that `ObjectsMgr::CreateInstance` creates at 0x8087B3DC
+reads four byte parameters per arena and player count in its init (0x8087B4D0; tables at +0x394,
++0x470, +0x54C and +0x628 of the file). Battles of more than 12 players get out-of-row values.
+
 ## Results
 
 Headless, `build-logs/pr-integration/run-case.ps1` (30 minute timeout for battle: a 255-racer
-battle takes about 12 minutes).
-
-Final build, all 16 cases passed (no `[race-heap] out of memory`, no unmapped guest access):
+battle takes about 12 minutes). No case logged `[race-heap] out of memory` or an unmapped guest
+access. "Same before" compares with the executable that was in the play folder before this branch.
 
 | Case | Result | Notes |
 |---|---|---|
 | `-Players 12` | `fa906b50b69477e8` | the baseline, unchanged |
-| `-Players 24` | `924b7ee927786e20` | |
-| `-Players 100` | `1f3f3b405973409f` | |
-| `-Players 128` | `5576bba5f6e7ecec` | same on the executable from before this branch |
-| `-Players 128 -Items` | `82a35cdb20a4e222` | same on the executable from before this branch |
-| `-Players 128 -Diverse -Course 0x01` | `bc372e33fee410c5` | |
+| `-Players 24` | `924b7ee927786e20` | same before |
+| `-Players 100` | `1f3f3b405973409f` | same before |
+| `-Players 128` | `5576bba5f6e7ecec` | same before |
+| `-Players 128 -Items` | `82a35cdb20a4e222` | same before |
+| `-Players 128 -Diverse -Course 0x01` | `bc372e33fee410c5` | same before |
+| `-Players 128 -Teams -FinishAt 1500 -Final -Results 60` | `ccd4a5746c111d7c` | same before; results pages survived |
 | `-Players 200` | `8ea9cefaca6e9646` | arena 8 MiB |
 | `-Players 255` | `66c77c1700c4cbee` | arena 24 MiB |
 | `-Players 255 -Items` | `a971d5d0e5d1b82e` | arena 24 MiB |
 | `-Players 255 -Teams` | `20a863a3280fa205` | arena 24 MiB |
 | `-Players 255 -Gp` | `dd29fa54501fffba` | arena 24 MiB |
 | `-Players 255 -Diverse -Course 0x01` | `80f79988a2054f1b` | arena 32 MiB |
-| `-Players 255 -Battle` | `61dae2f9e336ba47` | full three minutes, arena 32 MiB |
-| `-Players 200 -Battle` | `df225855f2f732d9` | ends at race frame 841, see Open |
 | `-Players 255 -Auto -FinishAt 1500 -Results 60` | `3ea8b49d1e1aff6a` | results pages survived 60 s |
 | `-Players 255 -Gp -Auto -FinishAt 1500 -Final -Results 90` | `aacd34b2ed9372f2` | results pages survived 90 s |
+| `-Players 255 -Teams -FinishAt 1500 -Final -Results 60` | `dd7094538d4ddfa2` | results pages survived 60 s |
 
-Not yet compared with the executable from before this branch when this was written: 24, 100,
-128 diverse, and the battle cases at 120 and 128.
+Battle (Block Plaza), with the battle length fix:
 
-## Open: battles of 128 and 200 racers end early
-
-A 200-racer battle ends 10 s after the start (race frame 841) and a 128-racer battle with the
-scripted human 20 s after it (frame 1440); 255 racers and 24 to 100 racers run the full three
-minutes. The game ends a battle from `GMDataBalloonBattle::Update` (0x80539574) when the timer
-manager's flag at +0x40 is set (or, online, when players are gone). Whether 128 also ends early
-on the executable from before this branch was not checked yet.
-
-Suspected cause, not verified: `GMDataBattle` keeps `s16 respawnTime[12]` at +0x1C. The function
-at 0x80538EB4 reads and writes `this + 0x1C + 2 * racer` without a bound (sites 0x80538EEC and
-0x80538F2C; `GMDataBattle::Init` fills 12 entries, 0x805390A8). Racer 12 writes the flag at +0x34,
-racers 13 and up write past the object, up to +0x218 for racer 254. Nothing in mkw100 handles this
-array (no hook, no site in array-sites.txt), so it is a heap overrun in every battle of more than
-12 racers, and what it hits depends on the racer count. A fix would be overflow class windows for
-this array or a longer allocation, as for DriverMgr.
+| Case | Result | Notes |
+|---|---|---|
+| `-Players 12 -Battle` | `b43215ff343ca601` | the game's own path |
+| `-Players 40 -Battle` | `83c7644623a18375` | as in earlier runs on main |
+| `-Players 40 -Battle -FinishAt 900 -Final -Results 60` | `68a9afa37ab3dab5` | as in earlier runs on main |
+| `-Players 120 -Battle` | `728317b1d71abb09` | three minutes; before: over after 30 s (`f18e059d01e0735d`) |
+| `-Players 128 -Battle` | `001c9682280d5d09` | three minutes; before: over after 20 s, ranking incomplete |
+| `-Players 128 -Battle -FinishAt 1500 -Final -Results 60` | `2666bd09779d8f80` | results pages survived 60 s |
+| `-Players 200 -Battle` | `a3bc071b83058535` | three minutes, arena 12 MiB |
+| `-Players 255 -Battle` | `61dae2f9e336ba47` | three minutes, arena 32 MiB; same without the fix |
+| `-Players 255 -Battle -FinishAt 1500 -Final -Results 60` | `380664ae768c22fe` | results pages survived 60 s (run before the fix) |
 
 ## Not done
 
@@ -157,9 +171,20 @@ this array or a longer allocation, as for DriverMgr.
   this branch.
 - Anything a headless race does not reach: the menus with 255 (F10 slider, rules row, team
   screen, scrolling results), split screen, the award ceremony, online.
-- Team VS and battle finals from the scripted human (`-Teams`/`-Battle -Auto -Final -Results`)
-  crash in `Pages::AwardResults::PrepareResultItems` at 128 racers on this branch. Whether the
-  executable from before this branch does the same was not checked yet.
-- The early end of 128- and 200-racer battles (see Open).
 - Speed: 255 racers simulate well below real time (a 3-lap race on course 0x08 takes about six
   minutes headless).
+
+Found on the way and not fixed here (none of them comes from this branch):
+
+- Team VS and battle finals with the scripted human (`-Teams` or `-Battle` with
+  `-Auto -Final -Results`) crash when the award results open (section 0x37 / 0x38):
+  `Pages::AwardResults::PrepareResultItems` -> `AwardDemoResultItem::SetValues` ->
+  `LayoutUIControl::SetTextBoxMessage` reads text as a pointer (0x756D6265). The executable from
+  before this branch crashes the same way at 128 racers. Team VS crashes this way from 13
+  racers (13, 40 and 128 tried; 12 racers pass). Battle: seen at 128 racers after the battle
+  ended on its own; at 40 racers with a forced finish the game went on to section 0x4C and
+  survived. CPU-driven finals pass at 40, 128 and 255 racers.
+- Coin runners (`--race-battle=coin`) crashes at load with 13, 24 and 128 racers (12 works), on
+  the executable from before this branch as well; with 24 racers in the code of the 0x8087B3DC
+  object (lr 0x8087C488).
+- The four per-player-count battle parameters (see Battle length).
