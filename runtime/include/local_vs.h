@@ -8,6 +8,8 @@ void DrawHud();
 void TestItems(CpuContext* ctx, uint32_t raceinfo);
 // F10 "Finish race / battle now" and MKW100_TEST_FINISH, polled every race frame.
 void PollFinishNow(CpuContext* ctx);
+// Adaptive frame skip past 12 racers: 30 FPS rendering while the race cannot keep 60, every race frame.
+void AdaptiveFramerate(CpuContext* ctx);
 void PrepareRace(uint32_t racedata);
 // After RaceConfig::InitRace: past 12 racers in GP, every racer's start position from the cup standings.
 void AfterInitRace(uint32_t racedata);

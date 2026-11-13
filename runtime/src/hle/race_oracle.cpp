@@ -28,6 +28,9 @@
 #include <chrono>
 #include <thread>
 
+void TestProfiler_Start();  // test_profiler.cpp
+void TestProfiler_Dump();
+
 namespace {
 
 // Raceinfo (sInstance 809bd730), size 0x4c
@@ -165,6 +168,7 @@ extern "C" void Raceinfo_Update_805331b4(CpuContext* ctx) {
     MKW_GUEST_NEXT(805331B4)(ctx);
     LocalVs::TestItems(ctx, raceinfo);
     LocalVs::PollFinishNow(ctx);
+    LocalVs::AdaptiveFramerate(ctx);
     if (!BootRace::Scripted() || g_done) {
         return;
     }
@@ -215,7 +219,9 @@ extern "C" void Raceinfo_Update_805331b4(CpuContext* ctx) {
                     Memory::Read32(raceinfo + kRaceinfoFrames), stage);
     }
     ++g_framesSeen;
+    if (performanceTest && g_framesSeen == 120) TestProfiler_Start();  // past the race start
     if (performanceTest && g_framesSeen==1200) {
+        TestProfiler_Dump();
         const double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-performanceStart).count();
         std::printf("[race-perf] frames=%u seconds=%.3f simulation_hz=%.2f trajectory=%016llx\n",
             g_framesSeen,seconds,g_framesSeen/seconds,static_cast<unsigned long long>(g_trajectory));

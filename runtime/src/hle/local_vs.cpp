@@ -35,6 +35,7 @@ std::atomic<int> desiredCount{100};
 std::atomic<bool> unlocks{true};
 std::atomic<bool> diversity{true};
 std::atomic<bool> thirtyFps{false};
+std::atomic<bool> adaptiveFps{true};
 std::atomic<bool> instantBoxes{true};
 std::atomic<bool> impossibleCpus{false};  // this race: the CPU row's 4th option (PrepareRace)
 std::atomic<bool> impossibleBoot{false};  // --race-impossible; Initialize runs after arguments and must not clear it
@@ -93,6 +94,7 @@ void Initialize() {
     local_vs_detail::unlocks = c.localVsUnlocks.value_or(true);
     local_vs_detail::diversity = c.localVsDiversity.value_or(true);
     local_vs_detail::thirtyFps = c.localVsThirtyFps.value_or(false);
+    local_vs_detail::adaptiveFps = c.localVsAdaptiveFps.value_or(true);
     local_vs_detail::instantBoxes = c.localVsInstantBoxes.value_or(true);
     local_vs_detail::speedometer = c.localVsSpeedometer.value_or(true);
     local_vs_detail::scoring = local_vs_detail::ParseKey(c.localVsScoring, local_vs_detail::scoringKeys);
@@ -181,6 +183,11 @@ void DrawSettings() {
     if (ImGui::Checkbox("30 FPS rendering (experimental, next race)", &half)) {
         thirtyFps = half;
         RuntimeConfigFile::WriteSetting("local_vs", "render_30fps", half ? "true" : "false");
+    }
+    bool adaptive = adaptiveFps.load();
+    if (ImGui::Checkbox("Adaptive 30 FPS rendering when a big race slows down", &adaptive)) {
+        adaptiveFps = adaptive;
+        RuntimeConfigFile::WriteSetting("local_vs", "adaptive_30fps", adaptive ? "true" : "false");
     }
     if (ImGui::Button("Finish race / battle now (debug)")) finishRaceNow = true;
     ImGui::SameLine();
@@ -1099,13 +1106,78 @@ REGISTER_NATIVE_WRAPPER_AS(0x80580438, LocalVs_Lightning_80580438, "LocalVs_Ligh
 
 // RKSystem's existing half-rate path alternates a simulation-only iteration
 // with a rendered iteration. Menus and the deterministic CPU oracle stay default.
+namespace {
+uint32_t g_framerateScene = 0;    // GameScene::SetFramerate's `this` for the running race
+bool g_framerateHalf = false;     // as last set
+bool g_framerateAdapting = false; // AdaptiveFramerate's own call
+} // namespace
+
 extern "C" void LocalVs_Framerate_8051af84(CpuContext* ctx) {
+    if (g_framerateAdapting) { MKW_GUEST_NEXT(8051AF84)(ctx); return; }
     const bool test30=BootRace::Scripted() && std::getenv("MKW100_TEST_30FPS")!=nullptr;
     if (local_vs_detail::ExpandedOffline() && (test30 || (!BootRace::Scripted() && local_vs_detail::thirtyFps.load()))) {
         ctx->gpr[4]=1;
         RT_LOGF("local-vs", "alternate-frame rendering enabled\n");
     }
+    g_framerateScene = ctx->gpr[3];
+    g_framerateHalf = ctx->gpr[4] != 0;
     MKW_GUEST_NEXT(8051AF84)(ctx);
+}
+
+uint64_t GameThreadCpuNanos();  // thread_cpu_time.cpp
+
+// Adaptive frame skip (F10 / [local_vs] adaptive_30fps, on by default) in races of more than 12: once
+// the race has run under 56 frames a second for two seconds, the game's own half-rate path takes over
+// (GameScene::SetFramerate(scene, 1): one simulation-only frame, then a simulated and rendered one;
+// the simulation itself is unchanged). It goes back to 60 once the game has been busy (not waiting in
+// game thread's CPU time) under 45% of the time for three seconds: full rate then needs at most twice that.
+// Off with the fixed 30 FPS option, and in headless test races unless MKW100_TEST_ADAPTIVE is set.
+void LocalVs::AdaptiveFramerate(CpuContext* ctx) {
+    using namespace local_vs_detail;
+    using Clock = std::chrono::steady_clock;
+    static uint32_t scene = 0, frames = 0, slow = 0, fast = 0;
+    static Clock::time_point start;
+    static uint64_t cpuStart = 0;
+    static const bool test = std::getenv("MKW100_TEST_ADAPTIVE") != nullptr;
+    if (!adaptiveFps.load() || (BootRace::Scripted() ? !test : thirtyFps.load()) || RaceCount() <= 12 ||
+        g_framerateScene == 0)
+        return;
+    const auto now = Clock::now();
+    if (scene != g_framerateScene) {  // a new race
+        scene = g_framerateScene;
+        frames = slow = fast = 0;
+        start = now;
+        cpuStart = GameThreadCpuNanos();
+        return;
+    }
+    ++frames;
+    const double seconds = std::chrono::duration<double>(now - start).count();
+    if (seconds < 1.0) return;
+    const double rate = frames / seconds;
+    const double busy = double(GameThreadCpuNanos() - cpuStart) * 1e-9 / seconds;
+    frames = 0;
+    start = now;
+    cpuStart = GameThreadCpuNanos();
+    bool half = g_framerateHalf;
+    if (!half) {
+        slow = rate < 56.0 ? slow + 1 : 0;
+        if (slow >= 2) half = true;
+    } else {
+        fast = busy < 0.45 ? fast + 1 : 0;
+        if (fast >= 3) half = false;
+    }
+    if (half == g_framerateHalf) return;
+    slow = fast = 0;
+    RT_LOGF("local-vs", "adaptive frame skip: %s (%.1f frames/s, busy %.0f%%)\n",
+            half ? "30 FPS rendering" : "back to 60", rate, busy * 100.0);
+    const CpuContext saved = *ctx;
+    ctx->gpr[3] = g_framerateScene;
+    ctx->gpr[4] = half ? 1 : 0;
+    g_framerateAdapting = true;
+    InvokeIndirectCpu(MKW_GADDR(8051AF84), ctx);
+    g_framerateAdapting = false;
+    *ctx = saved;
+    g_framerateHalf = half;
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8051AF84, LocalVs_Framerate_8051af84, "LocalVs_Framerate_8051af84");
 
