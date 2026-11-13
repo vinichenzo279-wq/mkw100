@@ -990,6 +990,22 @@ void PollFinishNow(CpuContext* ctx) {
     if (testFinish > 0 && BootRace::Scripted() && info >= 0x80000000u && Memory::Read32(info + 0x20) == uint32_t(testFinish))
         local_vs_detail::finishRaceNow = true;
     if (local_vs_detail::finishRaceNow.exchange(false)) LocalVsFinishRaceNow(ctx);
+    // Tests: MKW100_TEST_FINAL makes this race the series' last (scripted runs only). The menu's
+    // global context (SectionMgr +0x98) counts it: VS ends when +0x60 equals +0x64 (Pages::Leaderboard
+    // 0x8085BC10), battle when a team's wins (+0x68, +0x6C) reach +0x64.
+    static const bool testFinal = std::getenv("MKW100_TEST_FINAL") != nullptr;
+    if (testFinal && BootRace::Scripted() && info >= 0x80000000u && Memory::Read32(info + 0x20) == 1) {
+        const uint32_t mgr = Memory::Read32(0x809C1E38);
+        const uint32_t global = mgr != 0 ? Memory::Read32(mgr + 0x98) : 0;
+        if (global != 0) {
+            const bool battle = Memory::Read32(Memory::Read32(MKW_GADDR(809BD728)) + 0x20 + 0xB50) == 3;
+            if (battle) Memory::Write32(global + 0x64, 1);
+            else Memory::Write32(global + 0x60, Memory::Read32(global + 0x64));
+            RT_LOGF("local-vs", "test: last race of the series (+0x60 %u +0x64 %u +0x68 %u +0x6C %u)\n",
+                    Memory::Read32(global + 0x60), Memory::Read32(global + 0x64), Memory::Read32(global + 0x68),
+                    Memory::Read32(global + 0x6C));
+        }
+    }
 }
 } // namespace LocalVs
 
