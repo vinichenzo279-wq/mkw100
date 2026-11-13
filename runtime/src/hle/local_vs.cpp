@@ -1198,3 +1198,26 @@ extern "C" void LocalVs_BattleKartArchive2_80540f90(CpuContext* ctx) {
     MKW_GUEST_NEXT(80540F90)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80540F90, LocalVs_BattleKartArchive2_80540f90, "LocalVs_BattleKartArchive2_80540f90");
+
+// The vehicle menus in a battle: the preview models came from Scene/Model/Kart/<char>-allkart_BT.szs
+// (red and blue standard kart and bike only) as <kart>_red/_blue.brres, so every other vehicle
+// showed a "?", and MultiKartSelect listed only the standard kart and bike. IsBattle (0x80860A8C)
+// reads false for exactly those callers in an offline battle: the menus load the normal allkart
+// archive and offer every vehicle. (The race itself still loads team colours where they exist.)
+extern "C" void LocalVs_IsBattle_80860a8c(CpuContext* ctx) {
+    switch (ctx->lr) {
+    case 0x805F55A0: case 0x805F563C:  // Pages::ModelRenderer::OnActivate: team colour, archive colour
+    case 0x805F5778: case 0x805F5834:  // LoadKartModelsByCharacter and its twin: archive colour
+    case 0x8081E594: case 0x8081EDF8:  // MenuModelBRRESHandle::BindKartBRRES / LoadKartModel: names
+    case 0x8084A46C: case 0x8084A618:  // MultiKartSelect::FillPossibleKarts and its count
+        if (const uint32_t rd = Memory::Read32(MKW_GADDR(809BD728)); rd != 0 && Memory::Read32(rd + 0x1760) == 3) {
+            ctx->gpr[3] = 0;
+            ctx->cr = (ctx->cr & 0x0FFFFFFFu) | 0x20000000u;  // cr0 = eq, as the vanilla cmpwi r0, 0
+            return;
+        }
+        break;
+    default: break;
+    }
+    MKW_GUEST_NEXT(80860A8C)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x80860A8C, LocalVs_IsBattle_80860a8c, "LocalVs_IsBattle_80860a8c");
