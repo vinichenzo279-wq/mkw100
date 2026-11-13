@@ -308,3 +308,8 @@
 0x8184B3C8  0  cmpimm  128  0x0  profile=item-fever  # loop i < 12 && i < racers
 0x8184B548  0  cmpimm  128  0x0  profile=item-fever  # count = min(racers, 12)
 0x8184B814  0  cmpimm  128  0x0  profile=item-fever  # count = min(racers, 12)
+
+# 200cc (cc200.cpp): Audio::EngineMgr::Update reads the kart status flags (+0x4) once and takes
+# its three engine-sound bits from them; while brake drifting they read 2 (Pulsar's
+# BrakeDriftingSoundWrapper at 0x806FAFF8). loadhook: stride = hook id.
+0x806FAFEC  0  loadhook  1  0x0  # lwz r0, 0x4(r4): status flags
