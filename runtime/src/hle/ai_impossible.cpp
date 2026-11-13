@@ -12,8 +12,8 @@
 //
 // With the setting on and the race on Hard, after the game's Load the first speed float gets
 // kSpeedStep added and every non-zero chance becomes 100 (zero stays zero: those actions are off
-// for Hard too). Measured, headless all-CPU 12-racer VS race (oracle seed): Very Hard (+10) 1:27.464,
-// Impossible (+40) 1:09.099,
+// for Hard too). Measured, headless all-CPU 12-racer VS race (oracle seed): +10 1:27.464, +40 1:09.099,
+// +80 1:05.896 (Very Hard is +40, Impossible +80; above +40 single runs vary, +60 gave 1:11.837),
 // against 1:38.440 on Hard, race over at frame 5,530 against 6,255.
 
 #include "abi_bridge.h"
@@ -29,10 +29,10 @@ namespace {
 constexpr uint32_t kImpossibleRacedata = 0x809BD728;  // RaceConfig::spInstance
 constexpr uint32_t kImpossibleCpuMode = 0x20 + 0xB48 + 0x14;  // races scenario settings cpuMode
 constexpr uint32_t kImpossibleHard = 2;
-// Hard - Normal is 3 to 10 across the tables. Very Hard is 10 above Hard; Impossible, MKW100_TEST_CPU_STEP
+// Hard - Normal is 3 to 10 across the tables. Very Hard is 40 above Hard; Impossible, MKW100_TEST_CPU_STEP
 // for tuning, is kImpossibleSpeedStep above.
-constexpr float kVeryHardSpeedStep = 10.0f;
-constexpr float kImpossibleSpeedStep = 40.0f;
+constexpr float kVeryHardSpeedStep = 40.0f;
+constexpr float kImpossibleSpeedStep = 80.0f;
 constexpr uint32_t kImpossibleActionBytes = 12 * 8;
 
 } // namespace

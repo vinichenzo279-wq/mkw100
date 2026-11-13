@@ -19,9 +19,14 @@
 //  - Status::UpdateFromInput (0x8059487C) from Kart::Sub (0x805967A4): fast falling, airborne
 //    gravity -= 2 * stick up * 0.39.
 //
+//  - Kart::Movement::UpdateCannon (0x80584D58): each flight frame the game sets engineSpeed (+0x20)
+//    to baseSpeed (+0x14) and then lowers it to the cannon's deceleration curve near the end;
+//    Pulsar starts from baseSpeed x2/3 instead (its store at 0x805850C8). As min(base, curve) is
+//    what the game leaves, min(that, base x2/3) afterwards gives Pulsar's value on every path.
+//
 // Not ported (deliberate; each is a mid-function patch, not a call, upgrade path is a translator
-// patch site): cannon exit speed x2/3, the brake-drift sound and sparks, fast falling on the
-// wheels, the ghost writer fix (TT has no mirror), and the menu label still says "Mirror".
+// patch site): the brake-drift sound and sparks, fast falling on the wheels, the ghost writer fix
+// (TT has no mirror).
 
 #include "abi_bridge.h"
 #include "hle/cc200.h"
@@ -48,6 +53,7 @@ constexpr float kCcStatFactor = 1.5f;                // 0.9 * 5/3 over the 150cc
 constexpr float kCcGlobalFactor = 5.0f / 3.0f;       // Pulsar's speedFactor
 constexpr float kCcBrakeDriftAccel = -1.5f;
 constexpr float kCcFastFallGravity = 0.39f;
+constexpr float kCcCannonExit = 2.0f / 3.0f;         // Pulsar's cannonExit
 
 struct Cc200SpeedGlobal { uint32_t addr; float vanilla; };
 constexpr Cc200SpeedGlobal kCcSpeedGlobals[] = {
@@ -179,3 +185,13 @@ extern "C" void Cc200_StatusUpdateFromInput_8059487c(CpuContext* ctx) {
     MKW_GUEST_NEXT(8059487C)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8059487C, Cc200_StatusUpdateFromInput_8059487c, "Cc200_StatusUpdateFromInput_8059487c");
+
+// Cannon flight in 200cc: Pulsar's exit speed (see the header).
+extern "C" void Cc200_UpdateCannon_80584d58(CpuContext* ctx) {
+    const uint32_t movement = ctx->gpr[3];
+    MKW_GUEST_NEXT(80584D58)(ctx);
+    if (!g_ccis200 || movement == 0) return;
+    const float cap = Memory::ReadFloat32(movement + 0x14) * kCcCannonExit;
+    if (Memory::ReadFloat32(movement + 0x20) > cap) Memory::WriteFloat32(movement + 0x20, cap);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x80584D58, Cc200_UpdateCannon_80584d58, "Cc200_UpdateCannon_80584d58");
