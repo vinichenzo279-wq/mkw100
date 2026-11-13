@@ -52,7 +52,7 @@ constexpr uint32_t kActivityListOffset = 0x14;          // both lists link throu
 
 // Fixed tables in the native span.
 constexpr uint32_t kSlotTable = ArrayOverflow::kNativeTables;
-constexpr uint32_t kActivityTable = kSlotTable + 0x400;  // room for 256 group slots
+constexpr uint32_t kActivityTable = kSlotTable + 0x800;  // room for 512 group slots
 static_assert(kMaxGroups * 4 <= kActivityTable - kSlotTable);
 static_assert(kActivityTable + kMaxGroups * kNw4rPerGroup * kActivitySize <= ArrayOverflow::kMenuText);
 

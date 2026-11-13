@@ -145,7 +145,11 @@ uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows) {
 // then ARCInitHandle panics).
 // The mod product once stopped at 100 (Retro Rewind's per-racer skin archives ran out of memory at
 // 128); rr_skins.cpp now budgets the skins, so every product goes to 128.
-int MaxRacers() { return int(PlayerSlots::kMaxPlayers); }
+// The base game goes to 255 (docs/mkw100/255-racers.md). The mod product (Retro Rewind, Item
+// Fever) stays at 128 until its own per-racer tables are checked past that: their shadows and the
+// Item Fever `cmpimm 128` guards (array-sites.txt, item_fever.cpp) are sized for racers 0..127.
+constexpr int kModProductMaxRacers = 128;
+int MaxRacers() { return RuntimeProduct::IsRetroRewind() ? kModProductMaxRacers : int(PlayerSlots::kMaxPlayers); }
 bool SpeedometerEnabled() { return local_vs_detail::speedometer.load(); }
 uint32_t LocalPlayers() {
     const uint32_t rd = Memory::Read32(MKW_GADDR(809BD728));

@@ -129,9 +129,9 @@ constexpr std::string_view kPlayersOption = "--race-players=";
 uint32_t ParsePlayers(std::string_view text) {
     uint32_t players = 0;
     const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), players);
-    if (text.empty() || ec != std::errc{} || end != text.data() + text.size() || players < 1 ||
-        players > PlayerSlots::kMaxPlayers) {
-        throw std::invalid_argument("--race-players expects 1 to " + std::to_string(PlayerSlots::kMaxPlayers));
+    const uint32_t most = static_cast<uint32_t>(LocalVs::MaxRacers());
+    if (text.empty() || ec != std::errc{} || end != text.data() + text.size() || players < 1 || players > most) {
+        throw std::invalid_argument("--race-players expects 1 to " + std::to_string(most));
     }
     return players;
 }

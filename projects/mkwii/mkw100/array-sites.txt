@@ -308,3 +308,29 @@
 0x8184B3C8  0  cmpimm  128  0x0  profile=item-fever  # loop i < 12 && i < racers
 0x8184B548  0  cmpimm  128  0x0  profile=item-fever  # count = min(racers, 12)
 0x8184B814  0  cmpimm  128  0x0  profile=item-fever  # count = min(racers, 12)
+
+# Racer indices and places kept in signed bytes (kind sbyte: the extsb result stays positive for
+# 0x80..0xFE, racers 128..254; 0xFF is still -1). Found with the `!trace-sbyte` diagnostic build
+# (docs/mkw100/255-racers.md): sites that sign-extend a byte of 0x80..0xFE only past 128 racers.
+# Effects::Mgr: s8 loop counters over the racers, used as indices into Sub9d8's tables.
+0x8067CEFC  0  sbyte  0  0x0  # extsb r3, r27: racer counter indexing Sub9d8 rank bytes
+0x8067D620  0  sbyte  0  0x0  # extsb r4, r19: racer counter indexing Sub9d8 rank bytes
+# Effects::Sub9d8::Update (0x8067DE14) and its rank fix-up (0x8067E0BC): s8 rank[racer] at *(this+0)
+# and s8 racer[rank] at *(this+4), read back sign-extended as indices (134 racers crashed here).
+0x8067DE98  0  sbyte  0  0x0  # extsb r0, r0
+0x8067DF9C  0  sbyte  0  0x0  # extsb r6, r0
+0x8067DFD0  0  sbyte  0  0x0  # extsb r6, r3
+0x8067DFEC  0  sbyte  0  0x0  # extsb r0, r7
+0x8067E044  0  sbyte  0  0x0  # extsb r4, r7
+0x8067E0E4  0  sbyte  0  0x0  # extsb. r4, r4
+0x8067E18C  0  sbyte  0  0x0  # extsb r8, r6
+0x8067E19C  0  sbyte  0  0x0  # extsb r7, r7
+0x8067E1A8  0  sbyte  0  0x0  # extsb r11, r6
+0x8067E1B4  0  sbyte  0  0x0  # extsb r10, r10
+0x8067E1C0  0  sbyte  0  0x0  # extsb r9, r9
+0x8067E1C8  0  sbyte  0  0x0  # extsb r8, r8
+0x8067E1D0  0  sbyte  0  0x0  # extsb r7, r7
+0x8067E1D8  0  sbyte  0  0x0  # extsb r6, r6
+0x8067E208  0  sbyte  0  0x0  # extsb r6, r6
+# Raceinfo player position (u8 at +0x20) read as s8: 12 - position.
+0x8071674C  0  sbyte  0  0x0  # extsb r0, r0: position

@@ -41,10 +41,10 @@ constexpr uint32_t kLastPlace = PlayerSlots::kMaxPlayers;
 constexpr uint32_t kPlaceFontBmg = 1312;      // Race.bmg "12th"
 constexpr uint32_t kTextBytes = 16;           // per place, UTF-16BE with terminator
 // After vs_racers_option.cpp's label and help strings at kMenuText.
-constexpr uint32_t kPlaceText = ArrayOverflow::kMenuText + 0x1000;
-constexpr uint32_t kTeamText = ArrayOverflow::kMenuText + 0x1740;  // 24 x 32 bytes, right after the places
+constexpr uint32_t kPlaceText = ArrayOverflow::kMenuText + 0x10000;  // 243 x 16 bytes, past every other user of the span
+constexpr uint32_t kTeamText = ArrayOverflow::kMenuText + 0x1740;  // 24 x 32 bytes
 constexpr uint32_t kTeamTextBytes = 32;
-static_assert(kPlaceText + (PlayerSlots::kMaxPlayers - 13 + 1) * 16 <= kTeamText);  // 13th..128th
+static_assert(kPlaceText + (PlayerSlots::kMaxPlayers - 13 + 1) * 16 <= ArrayOverflow::kMenuText + 0x11000);  // 13th..255th
 static_assert(kPlaceIndexBase + kLastPlace < 0x7FFE);
 static_assert(kTeamText + kTeamMessages * kTeamTextBytes <= ArrayOverflow::kMenuText + 0x1A40);
 // 0-11 teams; 12-19 team screen; 20 racers value; 21-22 Mirror (200cc); 23-24 Impossible; 25-26 Very Hard;

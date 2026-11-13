@@ -22,10 +22,9 @@ namespace PlayerSlots {
 inline constexpr uint32_t kInlineSlots = 12;
 inline constexpr uint32_t kStride = 0xF0;
 // Capacity, not the race size: the race uses as many slots as have a player type set.
-// 128: the game keeps racer indices in signed bytes in places (Effects::Sub9d8::Update 0x8067DE14
-// sign-extends them and indexes arrays with the result), so racer 128+ reads and writes before
-// those arrays. Indices 0..127 stay in range; 134 and 141 racers crashed there, 128 and 130 did not.
-inline constexpr uint32_t kMaxPlayers = 128;
+// 255: racer counts and ids are u8 in the game, and 0xFF means "none". Past 127 the game's signed
+// racer bytes are rewritten sites (array-sites.txt, kind sbyte); docs/mkw100/255-racers.md.
+inline constexpr uint32_t kMaxPlayers = 255;
 // One window per overflow player; must cover Racedata's three scenarios (Racedata + 0x23F0; the
 // last player field ends at 0x18F8). 16 KiB windows leave room for every overflow player.
 inline constexpr uint32_t kWindow = 0x4000;

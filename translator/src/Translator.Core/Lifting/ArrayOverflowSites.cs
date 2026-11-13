@@ -29,8 +29,10 @@ public sealed class ArrayOverflowSites
     public const string IndexedBaseHelper = "MKW100_IndexedBase";
     public const string IndexedRestoreHelper = "MKW100_IndexedRestore";
     public const string ObjectAddHelper = "MKW100_ObjectArrayAdd";
+    public const string RacerByteHelper = "MKW100_RacerByte";
+    public const string TraceSignedByteHelper = "MKW100_TraceSignedByte";
 
-    public enum SiteKind { Scale, Step, Index, ObjAdd, CmpImm }
+    public enum SiteKind { Scale, Step, Index, ObjAdd, CmpImm, SByte }
 
     /// <param name="Offset">scale/step: byte offset from the instance. index: the table's address.</param>
     /// <param name="Shadow">index only: where elements 12.. of the table live.</param>
@@ -42,21 +44,42 @@ public sealed class ArrayOverflowSites
 
     private readonly FrozenDictionary<uint, Site> _sites;
 
-    public ArrayOverflowSites(IEnumerable<Site> sites) => _sites = sites.ToFrozenDictionary(s => s.Address);
+    public ArrayOverflowSites(IEnumerable<Site> sites, bool traceSignedBytes = false)
+    {
+        _sites = sites.ToFrozenDictionary(s => s.Address);
+        TraceSignedBytes = traceSignedBytes;
+    }
 
     public int Count => _sites.Count;
 
+    /// <summary>
+    /// Diagnostic build (a `!trace-sbyte` line in the site list): every `extsb` that is not an
+    /// sbyte site reports its result to <see cref="TraceSignedByteHelper"/>, which lists the sites
+    /// that saw a byte of 0x80..0xFE. Run with 12 racers and with more than 128: the sites only the
+    /// second run lists are racer indices kept in signed bytes (docs/mkw100/255-racers.md).
+    /// </summary>
+    public bool TraceSignedBytes { get; }
+
     /// <summary>The sites <paramref name="keep"/> accepts.</summary>
-    public ArrayOverflowSites Where(Func<Site, bool> keep) => new(_sites.Values.Where(keep));
+    public ArrayOverflowSites Where(Func<Site, bool> keep) => new(_sites.Values.Where(keep), TraceSignedBytes);
 
     public bool TryGet(uint address, out Site site) => _sites.TryGetValue(address, out site!);
 
     /// <summary>The lifted IR of <paramref name="ins"/>, rewritten when it is a listed site.</summary>
     public IReadOnlyList<IrInstruction> Rewrite(PpcInstruction ins, IReadOnlyList<IrInstruction> ir)
     {
-        if (!_sites.TryGetValue(ins.Address, out var site))
-            return ir;
         var word = ins.Word;
+        var isExtsb = word >> 26 == 31 && ((word >> 1) & 0x3FF) == 954 && ((word >> 11) & 31) == 0;
+        if (!_sites.TryGetValue(ins.Address, out var site))
+        {
+            if (!TraceSignedBytes || !isExtsb)
+                return ir;
+            var traced = $"r{(word >> 16) & 31}";
+            return ir.Append(new IrCall(traced, TraceSignedByteHelper, new[]
+            {
+                IrValue.Register(traced), IrValue.Imm(unchecked((int)ins.Address))
+            })).ToArray();
+        }
         var op = (int)(word >> 26);
         var rd = (int)((word >> 21) & 31);
         var ra = (int)((word >> 16) & 31);
@@ -66,6 +89,20 @@ public sealed class ArrayOverflowSites
         string Fail(string why) =>
             throw new InvalidOperationException($"array site 0x{ins.Address:X8} ({ins.Mnemonic}): {why}");
 
+        if (site.Kind == SiteKind.SByte)
+        {
+            // sbyte: `extsb rA, rS` of a racer index or place the game keeps in a signed byte. Past
+            // 127 racers the byte is 0x80..0xFE and must stay positive; 0xFF is still -1 ("none").
+            if (!isExtsb)
+                Fail("not an extsb");
+            var result = new List<IrInstruction>
+            {
+                new IrCall($"r{ra}", RacerByteHelper, new[] { IrValue.Register($"r{rd}") })
+            };
+            if ((word & 1) != 0)
+                result.Add(new IrSetCrField(0, IrValue.Register($"r{ra}"), IrValue.Imm(0), false));
+            return result;
+        }
         if (site.Kind == SiteKind.Index)
             return RewriteIndexed(ins, ir, site, Fail);
         if (site.Kind == SiteKind.ObjAdd)
@@ -198,11 +235,17 @@ public sealed class ArrayOverflowSites
     public static ArrayOverflowSites Load(string path)
     {
         var sites = new List<Site>();
+        var traceSignedBytes = false;
         foreach (var (raw, index) in File.ReadLines(path).Select((line, i) => (line, i)))
         {
             var text = raw.Split('#', 2)[0].Trim();
             if (text.Length == 0)
                 continue;
+            if (text == "!trace-sbyte")
+            {
+                traceSignedBytes = true;
+                continue;
+            }
             var all = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             FormatException Bad(string why) => new($"{path}:{index + 1}: {why}: '{text}'");
             var profile = all.Where(f => f.StartsWith("profile=", StringComparison.Ordinal))
@@ -217,7 +260,8 @@ public sealed class ArrayOverflowSites
                 "index" => SiteKind.Index,
                 "objadd" => SiteKind.ObjAdd,
                 "cmpimm" => SiteKind.CmpImm,
-                _ => throw Bad("kind must be scale, step, index, objadd or cmpimm")
+                "sbyte" => SiteKind.SByte,
+                _ => throw Bad("kind must be scale, step, index, objadd, cmpimm or sbyte")
             };
             var shadowed = kind is SiteKind.Index or SiteKind.ObjAdd;
             if (fields.Length != (shadowed ? 6 : 5))
@@ -229,7 +273,7 @@ public sealed class ArrayOverflowSites
                 shadowed ? Hex(fields[5]) ?? throw Bad("bad shadow") : 0,
                 profile));
         }
-        return new ArrayOverflowSites(sites);
+        return new ArrayOverflowSites(sites, traceSignedBytes);
     }
 
     private static uint? Hex(string text) =>

@@ -30,7 +30,7 @@ struct CpuContext;
 namespace ArrayOverflow {
 
 inline constexpr uint32_t kInlineSlots = 12;
-inline constexpr uint32_t kMaxPlayers = 128;  // PlayerSlots::kMaxPlayers
+inline constexpr uint32_t kMaxPlayers = 255;  // PlayerSlots::kMaxPlayers
 inline constexpr uint32_t kWindows = kMaxPlayers - kInlineSlots;
 // Above the player slot overflow (0x81A00000..0x82000000), below MEM2.
 inline constexpr uint32_t kShadowBase = 0x82000000;
@@ -150,3 +150,9 @@ extern "C" uint32_t MKW100_IndexedRestore(uint32_t base, uint32_t table, uint32_
 // out per object on first use) minus offset.
 extern "C" uint32_t MKW100_ObjectArrayAdd(uint32_t object, uint32_t scaled, uint32_t stride, uint32_t offset,
                                           uint32_t shadow);
+// sbyte sites: the result of an `extsb` on a racer index or place the game keeps in a signed byte.
+// 0x80..0xFE stay positive (racers 128..254); 0xFF is -1, the game's "none".
+extern "C" uint32_t MKW100_RacerByte(uint32_t value);
+// Diagnostic builds only (`!trace-sbyte` in array-sites.txt): called after every other extsb with
+// its result and address; lists the sites that produced -128..-2 in the file MKW100_TRACE_SBYTE names.
+extern "C" uint32_t MKW100_TraceSignedByte(uint32_t value, uint32_t address);

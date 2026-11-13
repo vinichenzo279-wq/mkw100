@@ -30,7 +30,7 @@ constexpr uint32_t kPositionsRacedataGlobal = 0x809BD728;  // RaceConfig::spInst
 constexpr uint32_t kPositionsRaceinfoGlobal = 0x809BD730;
 constexpr uint32_t kRacePlayerCount = 0x24;       // u8, race scenario settings
 constexpr uint32_t kPositionsStackSlots = 12;          // the stack arrays' size
-constexpr uint32_t kPositionsMaxRacers = 128;  // PlayerSlots::kMaxPlayers
+constexpr uint32_t kPositionsMaxRacers = 255;  // PlayerSlots::kMaxPlayers
 // The function's double constants (lfd 0x160/0x168/0x170 off 0x80890000).
 constexpr uint32_t kTieBreak = 0x80890160;   // k1
 constexpr uint32_t kTimeBase = 0x80890168;   // k2

@@ -423,7 +423,7 @@ extern "C" void GMDataBattle_HandlePositionTracking_80538418(CpuContext* ctx) {
     std::vector<float> score(count, 0.0f);
     for (uint32_t i = 0; i < count; ++i) {
         const uint32_t pl = Memory::Read32(players + 4 * i);
-        const int32_t pos = int8_t(Memory::Read8(pl + kPlayerPosition)) - 1;
+        const int32_t pos = int32_t(Memory::Read8(pl + kPlayerPosition)) - 1;
         if (pos < 0 || uint32_t(pos) >= count) continue;
         idx[pos] = uint8_t(i);
         score[pos] = float(Memory::Read16(pl + kPlayerBattleScore));

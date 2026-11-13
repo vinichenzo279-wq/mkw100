@@ -60,6 +60,15 @@ constexpr uint32_t kDriverMgrSize = 0x1F0;
 constexpr uint32_t kRacePositionsBegin = 0x161;  // u8 racePositions[12]
 constexpr uint32_t kTop5 = 0x1B0;                // Timer top5[5], 0xC each
 constexpr uint32_t kTop5End = 0x1EC;
+constexpr uint32_t kSavedEnd = kDriverMgrSize;   // saved with top5: the object's last word too
+// From 144 racers the position loops (ctor and Update, `this + 0x161 + i`) run past the object's
+// 0x1F0 bytes into the next heap block (200 racers: its header, a broken free list). The object
+// is then allocated with room for them behind it; nothing reads that tail.
+constexpr uint32_t kPositionsTail = 0x161 + ArrayOverflow::kMaxPlayers > kDriverMgrSize
+                                        ? ((0x161 + ArrayOverflow::kMaxPlayers - kDriverMgrSize + 3) & ~3u)
+                                        : 0;
+constexpr uint32_t kDriverNew = 0x80229DCC;      // operator new(size), the current heap
+constexpr uint32_t kDriverCtor = 0x8078CA5C;
 constexpr uint32_t kTimerSize = 0xC;
 constexpr uint32_t kTop5HasRecord = 0x1A8;       // bool[5], the ctor fills the timer when set
 
@@ -99,11 +108,14 @@ uint32_t DriverRaceCount() {
 
 uint32_t g_constructing = 0;  // the DriverMgr whose ctor is running
 bool g_top5Saved = false;
-std::array<uint8_t, kTop5End - kTop5> g_top5{};
+std::array<uint8_t, kSavedEnd - kTop5> g_top5{};
 
 // Timer bytes the ctor writes after its position loop for a top-5 slot with a record: min (u16),
 // sec (u8), ms (u16), active (bool) at +4, +6, +8, +0xA.
 bool WrittenAfterLoop(uint32_t self, uint32_t offset) {
+    if (offset >= kTop5End) {
+        return false;
+    }
     const uint32_t slot = (offset - kTop5) / kTimerSize;
     const uint32_t field = (offset - kTop5) % kTimerSize;
     return Memory::Read8(self + kTop5HasRecord + slot) != 0 &&
@@ -122,7 +134,7 @@ extern "C" void DriverMgr_Ctor_8078ca5c(CpuContext* ctx) {
     if (!g_top5Saved || loopEnd <= kTop5) {
         return;
     }
-    for (uint32_t offset = kTop5; offset < loopEnd && offset < kTop5End; ++offset) {
+    for (uint32_t offset = kTop5; offset < loopEnd && offset < kSavedEnd; ++offset) {
         if (!WrittenAfterLoop(self, offset)) {
             Memory::Write8(self + offset, g_top5[offset - kTop5]);
         }
@@ -133,7 +145,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x8078CA5C, DriverMgr_Ctor_8078ca5c, "DriverMgr_Ctor_
 // DriverMgr::SetParams: the ctor calls it after building top5 and before its position loop.
 extern "C" void DriverMgr_SetParams_807bd1d0(CpuContext* ctx) {
     if (g_constructing != 0) {
-        for (uint32_t offset = kTop5; offset < kTop5End; ++offset) {
+        for (uint32_t offset = kTop5; offset < kSavedEnd; ++offset) {
             g_top5[offset - kTop5] = Memory::Read8(g_constructing + offset);
         }
         g_top5Saved = true;
@@ -145,7 +157,17 @@ REGISTER_NATIVE_WRAPPER_AS(0x807BD1D0, DriverMgr_SetParams_807bd1d0, "DriverMgr_
 extern "C" void DriverMgr_CreateInstance_8078c9e8(CpuContext* ctx) {
     const ArrayOverflow::ArrayClass& c = ArrayOverflow::Class(kDriverClass);
     const uint32_t before = Memory::Read32(c.instanceGlobal);
-    MKW_GUEST_NEXT(8078C9E8)(ctx);
+    if (before == 0 && kRacePositionsBegin + DriverRaceCount() > kDriverMgrSize) {
+        // The game's CreateInstance with a longer allocation: new, __ct, store.
+        ctx->gpr[3] = kDriverMgrSize + kPositionsTail;
+        InvokeIndirectCpu(kDriverNew, ctx);
+        if (ctx->gpr[3] != 0) {
+            InvokeIndirectCpu(kDriverCtor, ctx);
+        }
+        Memory::Write32(c.instanceGlobal, ctx->gpr[3]);
+    } else {
+        MKW_GUEST_NEXT(8078C9E8)(ctx);
+    }
     if (before != 0 || Memory::Read32(c.instanceGlobal) == 0) {
         return;
     }

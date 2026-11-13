@@ -7,6 +7,7 @@
 // texture pattern animation (see Show). Textures must sit in MEM1/MEM2: the GX layer rejects
 // texture data outside them (a fixed runtime span gave "GXLoadTexObj rejected data-out-of-range").
 // When the files are missing the HUD overlay's vector digits are used instead.
+// (129th..255th have no files yet.)
 
 #include "rank_icons.h"
 

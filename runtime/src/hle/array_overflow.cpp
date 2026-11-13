@@ -8,7 +8,12 @@
 #include "guest_function_imports.h"
 #include "memory.h"
 
+#include <cstdio>
+#include <algorithm>
+#include <cstdlib>
 #include <iterator>
+#include <map>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 
@@ -153,6 +158,41 @@ extern "C" uint32_t MKW100_ObjectArrayAdd(uint32_t object, uint32_t scaled, uint
         base->objects[slot] = object;
     }
     return shadow + slot * 0x1000 + (scaled - kInlineSlots * stride) - offset;
+}
+
+extern "C" uint32_t MKW100_RacerByte(uint32_t value) {
+    const uint32_t byte = value & 0xFF;
+    return byte == 0xFF ? 0xFFFFFFFF : byte;
+}
+
+extern "C" uint32_t MKW100_TraceSignedByte(uint32_t value, uint32_t address) {
+    const int32_t signedValue = static_cast<int32_t>(value);
+    if (signedValue >= -1) {
+        return value;
+    }
+    struct Seen { uint32_t count = 0; int32_t low = 0, high = -128; };
+    static std::mutex mutex;
+    static std::map<uint32_t, Seen> sites;
+    static const char* const path = std::getenv("MKW100_TRACE_SBYTE");
+    if (path == nullptr) {
+        return value;
+    }
+    const std::lock_guard lock(mutex);
+    Seen& seen = sites[address];
+    const bool changed = seen.count == 0 || signedValue < seen.low || signedValue > seen.high;
+    ++seen.count;
+    seen.low = std::min(seen.low, signedValue);
+    seen.high = std::max(seen.high, signedValue);
+    // Rewritten whenever a site or its range is new (rare), so a crash keeps the list so far.
+    if (changed) {
+        if (std::FILE* file = std::fopen(path, "w")) {
+            for (const auto& [site, s] : sites) {
+                std::fprintf(file, "0x%08X %d %d %u\n", site, s.low, s.high, s.count);
+            }
+            std::fclose(file);
+        }
+    }
+    return value;
 }
 
 extern "C" uint32_t MKW100_IndexedRestore(uint32_t base, uint32_t table, uint32_t size, uint32_t shadow) {
