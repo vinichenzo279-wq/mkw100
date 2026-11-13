@@ -182,7 +182,7 @@ void DrawSettings() {
         thirtyFps = half;
         RuntimeConfigFile::WriteSetting("local_vs", "render_30fps", half ? "true" : "false");
     }
-    if (ImGui::Button("Finish race now (debug)")) finishRaceNow = true;
+    if (ImGui::Button("Finish race / battle now (debug)")) finishRaceNow = true;
     ImGui::SameLine();
     ImGui::TextUnformatted("ends the race with everyone in their current place");
     bool speedo = speedometer.load();
@@ -859,10 +859,13 @@ extern "C" void LocalVs_LeaderboardScroll_8085c0c4(CpuContext* ctx) {
     const auto pressed = [&](uint32_t bit) { return (now & bit) != 0 && (before & bit) == 0; };
     if (pressed(0x1)) LocalVsFinishCounting(pg, true);  // A: skip the count-up
     int step = 0;
-    if (pressed(0x8)) step = -1;
-    else if (pressed(0x10)) step = 1;
-    else if (pressed(0x20)) step = -int(kRows);
-    else if (pressed(0x40)) step = int(kRows);
+    // Pulsar packs (Retro Rewind, Item Fever) switch the rows between names and times with the
+    // D-pad, so there only the stick scrolls.
+    const bool dpad = !RuntimeProduct::IsRetroRewind();
+    if (dpad && pressed(0x8)) step = -1;
+    else if (dpad && pressed(0x10)) step = 1;
+    else if (dpad && pressed(0x20)) step = -int(kRows);
+    else if (dpad && pressed(0x40)) step = int(kRows);
     else if (stickY > 0.6f || stickY < -0.6f) {
         if (++repeat >= 12 && repeat % 4 == 0) step = stickY > 0 ? -1 : 1;  // hold to repeat after ~0.2 s
     } else {
@@ -979,18 +982,22 @@ void LocalVsSampleSpeed() {
 }
 } // namespace
 
+namespace LocalVs {
+// Every race frame (Raceinfo::Update, race_oracle.cpp), any mode: battles have no position counter.
+void PollFinishNow(CpuContext* ctx) {
+    // Tests: MKW100_TEST_FINISH=<race frame> finishes every race at that frame (scripted runs only).
+    static const long testFinish = std::getenv("MKW100_TEST_FINISH") ? std::atol(std::getenv("MKW100_TEST_FINISH")) : 0;
+    const uint32_t info = Memory::Read32(MKW_GADDR(809BD730));
+    if (testFinish > 0 && BootRace::Scripted() && info >= 0x80000000u && Memory::Read32(info + 0x20) == uint32_t(testFinish))
+        local_vs_detail::finishRaceNow = true;
+    if (local_vs_detail::finishRaceNow.exchange(false)) LocalVsFinishRaceNow(ctx);
+}
+} // namespace LocalVs
+
 extern "C" void LocalVs_Rank_807f4a08(CpuContext* ctx) {
     const uint32_t self=ctx->gpr[3];
     MKW_GUEST_NEXT(807F4A08)(ctx);
     if (Memory::Read32(self+0x19C)==0) LocalVsSampleSpeed();  // any race, player 0's counter
-    if (Memory::Read32(self+0x19C)==0) {
-        // Tests: MKW100_TEST_FINISH=<race frame> finishes every race at that frame (scripted runs only).
-        static const long testFinish = std::getenv("MKW100_TEST_FINISH") ? std::atol(std::getenv("MKW100_TEST_FINISH")) : 0;
-        const uint32_t info = Memory::Read32(MKW_GADDR(809BD730));
-        if (testFinish > 0 && BootRace::Scripted() && info >= 0x80000000u && Memory::Read32(info + 0x20) == uint32_t(testFinish))
-            local_vs_detail::finishRaceNow = true;
-        if (local_vs_detail::finishRaceNow.exchange(false)) LocalVsFinishRaceNow(ctx);
-    }
     if (!local_vs_detail::ExpandedOffline()) return;
     const uint32_t id=Memory::Read32(self+0x19C);  // the counter's racer (each split-screen player)
     const uint32_t info=Memory::Read32(MKW_GADDR(809BD730));

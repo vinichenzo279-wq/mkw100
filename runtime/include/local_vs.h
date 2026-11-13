@@ -6,6 +6,8 @@ void Initialize();
 void DrawSettings();
 void DrawHud();
 void TestItems(CpuContext* ctx, uint32_t raceinfo);
+// F10 "Finish race / battle now" and MKW100_TEST_FINISH, polled every race frame.
+void PollFinishNow(CpuContext* ctx);
 void PrepareRace(uint32_t racedata);
 // After RaceConfig::InitRace: past 12 racers in GP, every racer's start position from the cup standings.
 void AfterInitRace(uint32_t racedata);

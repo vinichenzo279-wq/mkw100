@@ -164,6 +164,7 @@ extern "C" void Raceinfo_Update_805331b4(CpuContext* ctx) {
     const uint32_t raceinfo = ctx->gpr[3];
     MKW_GUEST_NEXT(805331B4)(ctx);
     LocalVs::TestItems(ctx, raceinfo);
+    LocalVs::PollFinishNow(ctx);
     if (!BootRace::Scripted() || g_done) {
         return;
     }
@@ -259,7 +260,12 @@ extern "C" void RaceOracle_PageActivate_80601aec(CpuContext* ctx) {
         if (logged++ < 8) RT_LOGF("pages", "skipped activating a page that was never built (lr=0x%08X)\n", ctx->lr);
         return;
     }
-    if (ResultsTrace()) std::printf("[race-oracle] page 0x%02X activated\n", Memory::Read32(ctx->gpr[3] + 4));
+    if (ResultsTrace()) {
+        std::printf("[race-oracle] page 0x%02X activated\n", Memory::Read32(ctx->gpr[3] + 4));
+    } else if (const uint32_t rd = Memory::Read32(0x809BD728); rd != 0 && Memory::Read8(rd + 0x24) > 12) {
+        // Past 12 racers every page change is logged, to place a stuck screen (battle results).
+        RT_LOGF("pages", "page 0x%02X activated\n", Memory::Read32(ctx->gpr[3] + 4));
+    }
     MKW_GUEST_NEXT(80601AEC)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80601AEC, RaceOracle_PageActivate_80601aec, "RaceOracle_PageActivate_80601aec");

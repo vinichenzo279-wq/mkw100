@@ -50,6 +50,8 @@ constexpr uint32_t kLoaderLoad = 0x805C2C60;           // Load(this, folder, ctr
 constexpr uint32_t kAnimator = 0x98;                   // LayoutUIControl: UIAnimator
 constexpr uint32_t kGetAnimationGroup = 0x8063C820;    // UIAnimator::GetAnimationGroupById
 constexpr uint32_t kPlayAtFrameAndDisable = 0x8063CB20;
+constexpr uint32_t kUpdatePausePosition = 0x807EC3E0;  // CtrlRaceBase::UpdatePausePosition(this)
+constexpr uint32_t kHudSlotColorEnable = 0x807EBF20;   // CtrlRaceBase::HudSlotColorEnable(this, pane, bool)
 
 constexpr uint32_t kArchiveMgr = 0x809BD738;           // ArchiveMgr*: ArchivesHolder** at +0x4
 constexpr uint32_t kHolderUi = 2;
@@ -78,6 +80,7 @@ constexpr uint32_t kVariantText = kScratch + 0x80;     // "Speedo_n_m"
 constexpr uint32_t kAnimNames = kScratch + 0xA0;       // the 7 group names
 constexpr uint32_t kAnimTable = kScratch + 0x180;      // {name, name, null} x 7, null
 constexpr uint32_t kLoader = kScratch + 0x200;         // ControlLoader (small)
+constexpr uint32_t kPaneNames = kScratch + 0x280;      // speed0..speed6, kmh (0x10 each)
 constexpr uint32_t kMaxSpeedos = 4;
 
 std::array<uint32_t, kMaxSpeedos> gSpeedos{};          // our controls in the current race HUD
@@ -105,6 +108,8 @@ void WriteStrings() {
         name += 0x18;
     }
     Memory::Write32(kAnimTable + 7 * 12, 0);
+    static const char* const kPanes[8] = {"speed0", "speed1", "speed2", "speed3", "speed4", "speed5", "speed6", "kmh"};
+    for (uint32_t p = 0; p < 8; ++p) WriteText(kPaneNames + p * 0x10, kPanes[p]);
 }
 
 uint32_t Call(CpuContext* ctx, const CpuContext& saved, uint32_t fn, uint32_t r3, uint32_t r4 = 0, uint32_t r5 = 0,
@@ -183,6 +188,8 @@ void HudSpeedometerUpdate(CpuContext* ctx, uint32_t control) {
         hundreds = tens; tens = units; units = dot; dot = tenths; tenths = hundredths; hundredths = thousandths; thousandths = 10;
     }
     const uint32_t frames[7] = {hundreds, tens, units, dot, tenths, hundredths, thousandths};
+    // As Pulsar's OnUpdate: CtrlRaceBase::UpdatePausePosition places the control (off screen until it runs).
+    Call(ctx, saved, kUpdatePausePosition, control);
     Animate(ctx, saved, control, frames);
 }
 
@@ -195,7 +202,10 @@ struct RegisterSpeedoAssets {
 
 // ArchivesHolder::ArchivesHolder(this, u16 archiveCount): the UI holder gets a third archive.
 extern "C" void HudSpeedo_ArchivesHolderCtor_8052a538(CpuContext* ctx) {
-    if (ctx->lr == 0x8052A190 && (ctx->gpr[4] & 0xFFFF) == 2 && SpeedoProduct()) ctx->gpr[4] = 3;
+    if (ctx->lr == 0x8052A190 && (ctx->gpr[4] & 0xFFFF) == 2 && SpeedoProduct()) {
+        ctx->gpr[4] = 3;
+        RT_LOGF("speedometer", "UI archive holder: 3 archives\n");
+    }
     MKW_GUEST_NEXT(8052A538)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8052A538, HudSpeedo_ArchivesHolderCtor_8052a538, "HudSpeedo_ArchivesHolderCtor_8052a538");
@@ -210,6 +220,8 @@ extern "C" void HudSpeedo_ArchiveFileLoad_80518e10(CpuContext* ctx) {
         if (archives != 0 && ctx->gpr[3] == archives + 2 * kArchiveFileSize) {
             WriteStrings();
             ctx->gpr[4] = kPathText;
+            static uint32_t logged = 0;
+            if (logged++ < 4) RT_LOGF("speedometer", "UI archive 2 -> /MKW100/MKW100Speedo.szs\n");
         }
     }
     MKW_GUEST_NEXT(80518E10)(ctx);
@@ -248,6 +260,9 @@ extern "C" void HudSpeedo_InitControlGroup_8060245c(CpuContext* ctx) {
         WriteText(kVariantText, variant);
         Call(ctx, saved, kLoaderCtor, kLoader, control);
         Call(ctx, saved, kLoaderLoad, kLoader, kFolderText, kCtrlText, kVariantText, kAnimTable);
+        // As Pulsar's CtrlRaceSpeedo::Init: the digit and km/h panes take the player's HUD colour
+        // (without it they stay unlit).
+        for (uint32_t p = 0; p < 8; ++p) Call(ctx, saved, kHudSlotColorEnable, control, kPaneNames + p * 0x10, 1);
         gSpeedos[i] = control;
         const uint32_t zero[7] = {0, 0, 0, 0, 0, 0, 0};
         Animate(ctx, saved, control, zero);

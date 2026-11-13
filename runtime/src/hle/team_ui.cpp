@@ -21,6 +21,7 @@
 #include "guest_abi/player_slots.h"
 #include "guest_function_imports.h"
 #include "memory.h"
+#include "runtime_log.h"
 
 #include <algorithm>
 #include <cstdint>
