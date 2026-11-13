@@ -1221,3 +1221,27 @@ extern "C" void LocalVs_IsBattle_80860a8c(CpuContext* ctx) {
     MKW_GUEST_NEXT(80860A8C)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80860A8C, LocalVs_IsBattle_80860a8c, "LocalVs_IsBattle_80860a8c");
+
+// Battle balloons on any vehicle: Kart::Link::GetBalloonsPosition (0x8059098C) returns the vehicle's
+// balloon anchor from its parameters (kart +0x20 -> +0x140, bike +0x24 -> +0xA0), and only the
+// standard kart and bike have one; every other vehicle's is (0, 0, 0), so its balloons sat at the
+// vehicle's origin, low in the body. A zero anchor takes the standard vehicle's of the same type and
+// weight class (KartId: karts 0-17, bikes 18-35, small/medium/large = id % 3), as the disc has it.
+extern "C" void LocalVs_BalloonsPosition_8059098c(CpuContext* ctx) {
+    const uint32_t kart = Memory::Read32(Memory::Read32(Memory::Read32(ctx->gpr[3])) + 4);
+    MKW_GUEST_NEXT(8059098C)(ctx);
+    const uint32_t v = ctx->gpr[3];
+    if (kart >= 36 || TeamColouredKart(kart) || Memory::Read32(v) != 0 || Memory::Read32(v + 4) != 0 ||
+        Memory::Read32(v + 8) != 0)
+        return;
+    static constexpr float kStandard[2][3][3] = {
+        {{165.f, -40.f, 140.f}, {180.f, -50.f, 180.f}, {200.f, -60.f, 225.f}},   // Standard Kart S/M/L
+        {{160.f, -60.f, 185.f}, {170.f, -65.f, 230.f}, {185.f, -65.f, 280.f}}};  // Standard Bike S/M/L
+    const float* s = kStandard[kart >= 18][(kart >= 18 ? kart - 18 : kart) % 3];
+    for (uint32_t k = 0; k < 3; ++k) {
+        uint32_t u;
+        std::memcpy(&u, &s[k], 4);
+        Memory::Write32(v + 4 * k, u);
+    }
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8059098C, LocalVs_BalloonsPosition_8059098c, "LocalVs_BalloonsPosition_8059098c");
