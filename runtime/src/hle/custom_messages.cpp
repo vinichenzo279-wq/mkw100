@@ -33,8 +33,8 @@ constexpr const char* kTeamNames[kTeamMessages] = {
     "Lime Team avg", "Brown Team avg", "White Team avg", "Magenta Tm avg"};
 // Runtime labels per colour (the pre-race team screen): text rewritten before each use.
 constexpr uint32_t kTeamLabelBmgBase = kTeamBmgBase + 0x100;
-constexpr uint32_t kTeamLabelIndexBase = 0x7D40;  // ..0x7D58, below the places (0x7E0D+)
-constexpr uint32_t kTeamLabelBytes = 48;            // 23 characters
+constexpr uint32_t kTeamLabelIndexBase = 0x7D40;  // ..0x7D67, below the places (0x7E0D+)
+constexpr uint32_t kTeamLabelBytes = 96;            // 47 characters
 constexpr uint32_t kPlaceIndexBase = 0x7E00;
 constexpr uint32_t kFirstPlace = 13;
 constexpr uint32_t kLastPlace = PlayerSlots::kMaxPlayers;
@@ -47,9 +47,12 @@ constexpr uint32_t kTeamTextBytes = 32;
 static_assert(kPlaceText + (PlayerSlots::kMaxPlayers - 13 + 1) * 16 <= kTeamText);  // 13th..128th
 static_assert(kPlaceIndexBase + kLastPlace < 0x7FFE);
 static_assert(kTeamText + kTeamMessages * kTeamTextBytes <= ArrayOverflow::kMenuText + 0x1A40);
-constexpr uint32_t kTeamLabelText = ArrayOverflow::kMenuText + 0x1A40;
-constexpr uint32_t kTeamLabelSlots = 27;  // 0-11 teams; 12-19 team screen; 20 racers value; 21-22 Mirror; 23-24 Impossible; 25-26 Very Hard
-static_assert(kTeamLabelText + kTeamLabelSlots * kTeamLabelBytes <= ArrayOverflow::kMenuText + 0x2000);  // team_ui strings follow
+// 0-11 teams; 12-19 team screen; 20 racers value; 21-22 Mirror (200cc); 23-24 Impossible; 25-26 Very Hard;
+// 27-30 the 200cc GP texts (vs_racers_option.cpp).
+constexpr uint32_t kTeamLabelText = ArrayOverflow::kMenuText + 0x3000;  // free up to the speedometer (+0x4000)
+constexpr uint32_t kTeamLabelSlots = 40;
+static_assert(kTeamLabelText + kTeamLabelSlots * kTeamLabelBytes <= ArrayOverflow::kMenuText + 0x4000);
+static_assert(kTeamLabelIndexBase + kTeamLabelSlots <= kPlaceIndexBase + kFirstPlace);
 
 std::array<uint32_t, kLastPlace + 1> g_fontIndex{};  // msg index of 1312 in the holder that asked
 std::array<uint32_t, kTeamMessages> g_teamFontIndex{};

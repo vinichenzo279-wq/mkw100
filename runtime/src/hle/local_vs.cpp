@@ -1274,6 +1274,18 @@ extern "C" void LocalVs_BattleKartArchive2_80540f90(CpuContext* ctx) {
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80540F90, LocalVs_BattleKartArchive2_80540f90, "LocalVs_BattleKartArchive2_80540f90");
 
+// GP class page: Pages::GPClassSelect::OnButtonClick (0x8083F988) copies the button's vehicle
+// restriction (table 0x808AD148: 50cc karts only 0, 100cc bikes only 1, the rest both 2) to the
+// global context (SectionMgr +0x98, +0x74), which the vehicle menus read. Every class races with
+// karts and bikes: the restriction is raised to both after the click (the labels: vs_racers_option.cpp).
+extern "C" void LocalVs_GpClassClick_8083f988(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8083F988)(ctx);
+    const uint32_t mgr = Memory::Read32(MKW_GADDR(809C1E38));
+    const uint32_t global = mgr ? Memory::Read32(mgr + 0x98) : 0;
+    if (global != 0 && Memory::Read32(global + 0x74) < 2) Memory::Write32(global + 0x74, 2);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8083F988, LocalVs_GpClassClick_8083f988, "LocalVs_GpClassClick_8083f988");
+
 // The vehicle menus in a battle: the preview models came from Scene/Model/Kart/<char>-allkart_BT.szs
 // (red and blue standard kart and bike only) as <kart>_red/_blue.brres, so every other vehicle
 // showed a "?", and MultiKartSelect listed only the standard kart and bike. IsBattle (0x80860A8C)

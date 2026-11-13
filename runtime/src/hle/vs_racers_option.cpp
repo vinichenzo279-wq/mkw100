@@ -311,6 +311,11 @@ REGISTER_NATIVE_WRAPPER_AS(0x80853988, VsSettings_OnUpDownSelect_80853988, "VsSe
 
 // Menu.bmg 3414 "Mirror" and 3418 "150cc class with mirrored courses." when Mirror is 200cc.
 constexpr uint32_t kMirrorBmg = 3414, kMirrorHelpBmg = 3418;
+// GP class page (Pages::GPClassSelect::CreateControl: 3006 + button): 3006 "50cc Karts Only",
+// 3007 "100cc Bikes Only", 3009 "Mirror Karts and Bikes", 3010/3011 50cc/100cc "Karts and Bikes";
+// 3063 the Mirror help; 4322/4327/4330 "The next race is Mirror class!"; Race.bmg 1420 "Mirror".
+constexpr uint32_t kGpClass50 = 3006, kGpClass100 = 3007, kGpClassMirror = 3009, kGpMirrorHelp = 3063;
+constexpr uint32_t kRaceMirrorBmg = 1420;
 
 // The CPU row (local_vs.cpp PrepareRace turns the choice into Hard CPUs with ai_impossible.cpp's
 // tables for Very Hard and Impossible). Labels 3421-3424 Easy, Normal, Hard, Off; help 3425-3428.
@@ -338,6 +343,22 @@ extern "C" void BmgHolder_GetMsgId_805f8c88(CpuContext* ctx) {
             ctx->gpr[4] = CustomMessages::LabelBmg(help ? 26 : 25, help ? "CPU players are faster." : "Very Hard", id);
         } else {
             ctx->gpr[4] = (help ? kCpuEasyHelpBmg : kCpuEasyBmg) + shown + 1;  // Normal or Hard
+        }
+    }
+    // GP class page: 50cc and 100cc race with karts and bikes (local_vs.cpp LocalVs_GpClassClick), so
+    // their buttons show the game's own "Karts and Bikes" texts (3010, 3011) in place of 3006, 3007.
+    if (ctx->gpr[4] == kGpClass50 || ctx->gpr[4] == kGpClass100) ctx->gpr[4] += 4;
+    if (Cc200::ReplacesMirror()) {
+        switch (ctx->gpr[4]) {
+        case kGpClassMirror: ctx->gpr[4] = CustomMessages::LabelBmg(27, "200cc\nKarts and Bikes", kGpClassMirror); break;
+        case kGpMirrorHelp:
+            ctx->gpr[4] = CustomMessages::LabelBmg(28, "A 200cc Grand Prix (karts and bikes).", kGpMirrorHelp);
+            break;
+        case 4322: case 4327: case 4330:
+            ctx->gpr[4] = CustomMessages::LabelBmg(29, "The next race is 200cc class!", ctx->gpr[4]);
+            break;
+        case kRaceMirrorBmg: ctx->gpr[4] = CustomMessages::LabelBmg(30, "200cc", kRaceMirrorBmg); break;
+        default: break;
         }
     }
     if (Cc200::ReplacesMirror() && (ctx->gpr[4] == kMirrorBmg || ctx->gpr[4] == kMirrorHelpBmg)) {

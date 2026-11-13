@@ -18,17 +18,21 @@
 
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
+#include "hle/cc200.h"
 #include "local_vs.h"
 #include "memory.h"
+#include "runtime_log.h"
 
 #include <cstdint>
 #include <cstdlib>
+#include <algorithm>
 
 namespace {
 
 constexpr uint32_t kImpossibleRacedata = 0x809BD728;  // RaceConfig::spInstance
 constexpr uint32_t kImpossibleCpuMode = 0x20 + 0xB48 + 0x14;  // races scenario settings cpuMode
 constexpr uint32_t kImpossibleHard = 2;
+constexpr uint32_t kImpossibleGameMode = 0x20 + 0xB48 + 0x8;  // races scenario settings gameMode (0 GP)
 // Hard - Normal is 3 to 10 across the tables. Very Hard is 40 above Hard; Impossible, MKW100_TEST_CPU_STEP
 // for tuning, is kImpossibleSpeedStep above.
 constexpr float kVeryHardSpeedStep = 40.0f;
@@ -40,11 +44,15 @@ constexpr uint32_t kImpossibleActionBytes = 12 * 8;
 extern "C" void AIParams_Load_8073aca8(CpuContext* ctx) {
     const uint32_t params = ctx->gpr[3];
     MKW_GUEST_NEXT(8073ACA8)(ctx);
-    if (!LocalVs::ImpossibleCpus() || params == 0) return;
     const uint32_t racedata = Memory::Read32(kImpossibleRacedata);
-    if (racedata == 0 || Memory::Read32(racedata + kImpossibleCpuMode) != kImpossibleHard) return;
+    if (params == 0 || racedata == 0 || Memory::Read32(racedata + kImpossibleCpuMode) != kImpossibleHard) return;
+    // A 200cc Grand Prix (the GP class page's Mirror button, Hard CPUs) is Very Hard at least.
+    const bool gp200 = Cc200::Active() && Memory::Read32(racedata + kImpossibleGameMode) == 0;
+    const int tier = std::max(LocalVs::CpuTier(), gp200 ? 1 : 0);
+    if (tier == 0) return;
+    RT_LOGF("ai", "CPU tier %d (%s)\n", tier, gp200 && LocalVs::CpuTier() < 1 ? "200cc Grand Prix" : "CPU row");
     static const char* const tuned = std::getenv("MKW100_TEST_CPU_STEP");
-    const float step = LocalVs::CpuTier() >= 2 ? (tuned ? float(std::atof(tuned)) : kImpossibleSpeedStep) : kVeryHardSpeedStep;
+    const float step = tier >= 2 ? (tuned ? float(std::atof(tuned)) : kImpossibleSpeedStep) : kVeryHardSpeedStep;
     const uint32_t speed = Memory::Read32(params + 0x4);
     if (speed != 0) Memory::WriteFloat32(speed, Memory::ReadFloat32(speed) + step);
     const uint32_t actions = Memory::Read32(params + 0x8);
