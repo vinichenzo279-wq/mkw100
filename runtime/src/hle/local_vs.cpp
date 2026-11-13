@@ -505,10 +505,9 @@ void PrepareRace(uint32_t rd) {
         Memory::Write32(p+0x10, i>=seriesCount ? 5 : i==0 ? firstType : i<locals ? Memory::Read32(p+0x10) : 1);
         if (i>=locals && i<seriesCount && (diversity.load() || i>=12)) {
             const uint32_t character=(humanCharacter+ i)%24;
-            // Battles load red/blue kart models (%s_red/_blue.brres), which only the standard kart
-            // and bike have (S/M/L_Kart_Red ...): there the CPUs take one of those two.
-            const uint32_t vehicle = mode==3 ? weights[character] + ((i/3)%2 ? 18u : 0u)
-                                             : weights[character]+3*((i/3)%12);
+            // Any vehicle of the character's weight, battles too: a vehicle without team-coloured
+            // archives loads its normal one there (LocalVs_BattleKartArchive below).
+            const uint32_t vehicle = weights[character]+3*((i/3)%12);
             Memory::Write32(p+0xC,character); Memory::Write32(p+8,vehicle);
         }
         if (first) {
@@ -1133,3 +1132,23 @@ extern "C" void LocalVs_ComputeGpRank_8052daf0(CpuContext* ctx) {
     Memory::Write16(player + 0xDA, uint16_t(total));
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8052DAF0, LocalVs_ComputeGpRank_8052daf0, "LocalVs_ComputeGpRank_8052daf0");
+
+// Battles load each kart from a team-coloured archive (Race/Kart/<kart>_red-<char>.szs, _blue), which
+// the disc has only for the standard kart and bike (S/M/L: KartId 0-2, 18-20). Any other vehicle
+// asked for an archive that does not exist (Kart::BRRESHandle::LoadKartBRRES then read a null file).
+// ArchiveMgr::LoadKartArchive(this, player, kart, character, colour 0 red / 1 blue / 2 none, ...)
+// and its second-array twin load such a vehicle's normal archive instead: it keeps its own colours,
+// and its team still shows on the balloons, minimap and name tags.
+namespace {
+bool TeamColouredKart(uint32_t kart) { return kart <= 2 || (kart >= 18 && kart <= 20); }
+} // namespace
+extern "C" void LocalVs_BattleKartArchive_80540e3c(CpuContext* ctx) {
+    if (ctx->gpr[7] < 2 && !TeamColouredKart(ctx->gpr[5])) ctx->gpr[7] = 2;
+    MKW_GUEST_NEXT(80540E3C)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x80540E3C, LocalVs_BattleKartArchive_80540e3c, "LocalVs_BattleKartArchive_80540e3c");
+extern "C" void LocalVs_BattleKartArchive2_80540f90(CpuContext* ctx) {
+    if (ctx->gpr[7] < 2 && !TeamColouredKart(ctx->gpr[5])) ctx->gpr[7] = 2;
+    MKW_GUEST_NEXT(80540F90)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x80540F90, LocalVs_BattleKartArchive2_80540f90, "LocalVs_BattleKartArchive2_80540f90");
