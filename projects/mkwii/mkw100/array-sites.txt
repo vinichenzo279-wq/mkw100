@@ -116,3 +116,195 @@
 0x807F1758  0  objadd  12  0x20  0x82D10000  # add r16, r30, r0: Update stores positions[i]
 0x807F1AD8  0  objadd  12  0x20  0x82D10000  # add r4, r30, r0: positions[shown]
 0x807F1DA8  0  objadd  12  0x20  0x82D10000  # add r3, r3, r0: &positions[i]
+
+# Item Fever, all racers (profile item-fever): the struct at 0x818A2D30 also holds float[12] at
+# +0x10 and u8[12] at +0x40, read and written in 0x81817094 behind `racer < 12` guards. Racers
+# 12..127 use shadows (0x82D20000, 0x82D20200; item_fever.cpp clears them with the tables) and
+# the guards compare with 128 (cmpimm: the stride field is the new value).
+0x81817270  0  index  1  0x818A2D34  0x82D00000  profile=item-fever  # lbzx flag (2nd read)
+0x818171C4  0  index  4  0x818A2D40  0x82D20000  profile=item-fever  # stfsx timer
+0x8181720C  0  index  4  0x818A2D40  0x82D20000  profile=item-fever  # lfsx timer
+0x818171DC  0  index  1  0x818A2D70  0x82D20200  profile=item-fever  # stbx state = 1
+0x818171F4  0  index  1  0x818A2D70  0x82D20200  profile=item-fever  # lbzx state
+0x81817228  0  index  1  0x818A2D70  0x82D20200  profile=item-fever  # stbx state = 0
+0x818171B4  0  cmpimm  128  0x0  profile=item-fever  # racer < 12 (timer)
+0x818171CC  0  cmpimm  128  0x0  profile=item-fever  # racer < 12 (state)
+0x818171E8  0  cmpimm  128  0x0  profile=item-fever  # racer < 12 (state, timer)
+
+# Item Fever, all racers (profile item-fever): two structs of per-racer [12] arrays, 0x818B89F0
+# (16 tables, functions 0x81848790..0x8184A0FC) and 0x818B90E0 (11 tables, the per-kart routine
+# hooked into Kart::Sub::Update). Generated from the relocated Code.pul: every X-form access whose
+# base is a table start is an index site (size = the array stride), every `add rD, table, x` an
+# objadd site (one table per shadow base: slot 0), and every `racer < 12` guard, count clamp or
+# racer loop bound a cmpimm 128 site. Shadows 0x82D21000..0x82D25700; item_fever.cpp copies each
+# reset into them.
+0x818487E4  0  index  1  0x818B8A68  0x82D21500  profile=item-fever  # stbx
+0x818487EC  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # sthx
+0x818487F4  0  index  4  0x818B8A08  0x82D21100  profile=item-fever  # stfsx
+0x818487F8  0  index  4  0x818B8A38  0x82D21300  profile=item-fever  # stfsx
+0x818487FC  0  index  1  0x818B8A74  0x82D21600  profile=item-fever  # stbx
+0x81848800  0  index  1  0x818B8A80  0x82D21700  profile=item-fever  # stbx
+0x81848804  0  index  4  0x818B8A90  0x82D21800  profile=item-fever  # stfsx
+0x81848808  0  index  1  0x818B8AC0  0x82D21A00  profile=item-fever  # stbx
+0x818488CC  0  index  1  0x818B8A80  0x82D21700  profile=item-fever  # stbx
+0x818488E4  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # sthx
+0x81848B10  0  index  1  0x818B8F28  0x82D24600  profile=item-fever  # stbx
+0x81848B14  0  index  1  0x818B8F00  0x82D24400  profile=item-fever  # stbx
+0x81848B1C  0  index  12  0x818B8E70  0x82D23E00  profile=item-fever  # stfsx
+0x81848B34  0  index  2  0x818B8F10  0x82D24500  profile=item-fever  # sthx
+0x81848C5C  0  index  1  0x818B8F34  0x82D24700  profile=item-fever  # stbx
+0x81848C64  0  index  4  0x818B8F40  0x82D24800  profile=item-fever  # stfsx
+0x81849278  0  index  64  0x818B8AE0  0x82D21B00  profile=item-fever  # lfsx
+0x818492B4  0  index  64  0x818B8AE0  0x82D21B00  profile=item-fever  # lfsx
+0x818492DC  0  index  64  0x818B8AE0  0x82D21B00  profile=item-fever  # lfsx
+0x818495C4  0  index  1  0x818B8F00  0x82D24400  profile=item-fever  # lbzx
+0x8184986C  0  index  1  0x818B8F00  0x82D24400  profile=item-fever  # stbx
+0x8184987C  0  index  1  0x818B8F00  0x82D24400  profile=item-fever  # lbzx
+0x81849890  0  index  12  0x818B8DE0  0x82D23800  profile=item-fever  # lfsx
+0x818498A8  0  index  12  0x818B8E70  0x82D23E00  profile=item-fever  # stfsx
+0x818498CC  0  index  12  0x818B8E70  0x82D23E00  profile=item-fever  # stfsx
+0x818498E4  0  index  12  0x818B8DE0  0x82D23800  profile=item-fever  # stfsx
+0x818498F8  0  index  1  0x818B8F00  0x82D24400  profile=item-fever  # stbx
+0x81849958  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # lhzx
+0x81849968  0  index  2  0x818B8F10  0x82D24500  profile=item-fever  # sthx
+0x8184996C  0  index  1  0x818B8F28  0x82D24600  profile=item-fever  # stbx
+0x818499A0  0  index  1  0x818B8F28  0x82D24600  profile=item-fever  # lbzx
+0x818499D4  0  index  1  0x818B8F28  0x82D24600  profile=item-fever  # stbx
+0x818499DC  0  index  2  0x818B8F10  0x82D24500  profile=item-fever  # sthx
+0x81849A6C  0  index  2  0x818B8F10  0x82D24500  profile=item-fever  # lhzx
+0x81849A7C  0  index  2  0x818B8F10  0x82D24500  profile=item-fever  # sthx
+0x81849A84  0  index  2  0x818B8F10  0x82D24500  profile=item-fever  # sthx
+0x81849AD0  0  index  1  0x818B8F34  0x82D24700  profile=item-fever  # lbzx
+0x81849ADC  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # lhzx
+0x81849AEC  0  index  1  0x818B8F34  0x82D24700  profile=item-fever  # stbx
+0x81849B30  0  index  64  0x818B8AE0  0x82D21B00  profile=item-fever  # lfsx
+0x81849B90  0  index  4  0x818B8F40  0x82D24800  profile=item-fever  # lfsx
+0x81849CE4  0  index  1  0x818B8AC0  0x82D21A00  profile=item-fever  # stbx
+0x81849D34  0  index  4  0x818B8A90  0x82D21800  profile=item-fever  # stfsx
+0x81849D40  0  index  1  0x818B8AC0  0x82D21A00  profile=item-fever  # stbx
+0x81849D50  0  index  1  0x818B8AC0  0x82D21A00  profile=item-fever  # lbzx
+0x81849D74  0  index  4  0x818B8A90  0x82D21800  profile=item-fever  # lfsx
+0x81849D8C  0  index  1  0x818B8AC0  0x82D21A00  profile=item-fever  # stbx
+0x81849DF0  0  index  1  0x818B8A80  0x82D21700  profile=item-fever  # lbzx
+0x81849E0C  0  index  1  0x818B8A80  0x82D21700  profile=item-fever  # stbx
+0x81849E38  0  index  1  0x818B8A80  0x82D21700  profile=item-fever  # stbx
+0x81849E48  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # sthx
+0x81849E54  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # lhzx
+0x81849E64  0  index  1  0x818B8A74  0x82D21600  profile=item-fever  # lbzx
+0x81849E80  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # sthx
+0x81849E88  0  index  1  0x818B8A74  0x82D21600  profile=item-fever  # stbx
+0x81849EA0  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # lhzx
+0x81849EC0  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # lhzx
+0x81849ED0  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # sthx
+0x81849EF4  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # lhzx
+0x81849F44  0  index  1  0x818B8A74  0x82D21600  profile=item-fever  # stbx
+0x81849F70  0  index  2  0x818B89F0  0x82D21000  profile=item-fever  # lhzx
+0x81849FBC  0  index  1  0x818B8A68  0x82D21500  profile=item-fever  # lbzx
+0x81849FD4  0  index  4  0x818B8A08  0x82D21100  profile=item-fever  # stfsx
+0x81849FD8  0  index  1  0x818B8A68  0x82D21500  profile=item-fever  # stbx
+0x81849FE8  0  index  4  0x818B8A38  0x82D21300  profile=item-fever  # stfsx
+0x81849FF4  0  index  1  0x818B8A68  0x82D21500  profile=item-fever  # lbzx
+0x8184A004  0  index  1  0x818B8A74  0x82D21600  profile=item-fever  # lbzx
+0x8184A01C  0  index  1  0x818B8A74  0x82D21600  profile=item-fever  # stbx
+0x8184A030  0  index  4  0x818B8A38  0x82D21300  profile=item-fever  # lfsx
+0x8184A040  0  index  4  0x818B8A08  0x82D21100  profile=item-fever  # lfsx
+0x8184A04C  0  index  1  0x818B8A68  0x82D21500  profile=item-fever  # stbx
+0x8184B008  0  index  2  0x818B9128  0x82D25000  profile=item-fever  # lhax
+0x8184B018  0  index  2  0x818B9128  0x82D25000  profile=item-fever  # sthx
+0x8184B03C  0  index  2  0x818B9128  0x82D25000  profile=item-fever  # lhax
+0x8184B1B4  0  index  1  0x818B90E0  0x82D24A00  profile=item-fever  # stbx
+0x8184B1C0  0  index  1  0x818B90EC  0x82D24B00  profile=item-fever  # stbx
+0x8184B1CC  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # stbx
+0x8184B1D8  0  index  1  0x818B911C  0x82D24F00  profile=item-fever  # stbx
+0x8184B218  0  index  1  0x818B90E0  0x82D24A00  profile=item-fever  # lbzx
+0x8184B22C  0  index  1  0x818B90E0  0x82D24A00  profile=item-fever  # stbx
+0x8184B24C  0  index  1  0x818B90EC  0x82D24B00  profile=item-fever  # lbzx
+0x8184B260  0  index  1  0x818B90E0  0x82D24A00  profile=item-fever  # stbx
+0x8184B26C  0  index  1  0x818B90EC  0x82D24B00  profile=item-fever  # stbx
+0x8184B270  0  index  1  0x818B90F8  0x82D24C00  profile=item-fever  # stbx
+0x8184B274  0  index  1  0x818B9104  0x82D24D00  profile=item-fever  # stbx
+0x8184B2C0  0  index  1  0x818B90EC  0x82D24B00  profile=item-fever  # stbx
+0x8184B380  0  index  1  0x818B90E0  0x82D24A00  profile=item-fever  # lbzx
+0x8184B480  0  index  1  0x818B9104  0x82D24D00  profile=item-fever  # lbzx
+0x8184B56C  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # lbzx
+0x8184B66C  0  index  1  0x818B911C  0x82D24F00  profile=item-fever  # lbzx
+0x8184B950  0  index  2  0x818B9128  0x82D25000  profile=item-fever  # sthx
+0x8184B998  0  index  1  0x818B91A0  0x82D25500  profile=item-fever  # lbzx
+0x8184B9BC  0  index  1  0x818B91A0  0x82D25500  profile=item-fever  # stbx
+0x8184BA8C  0  index  1  0x818B91A0  0x82D25500  profile=item-fever  # lbzx
+0x8184BAAC  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # lbzx
+0x8184BB20  0  index  1  0x818B91AC  0x82D25600  profile=item-fever  # stbx
+0x8184BB50  0  index  1  0x818B90E0  0x82D24A00  profile=item-fever  # stbx
+0x8184BB5C  0  index  1  0x818B90EC  0x82D24B00  profile=item-fever  # stbx
+0x8184BB6C  0  index  1  0x818B91A0  0x82D25500  profile=item-fever  # stbx
+0x8184BC34  0  index  1  0x818B90E0  0x82D24A00  profile=item-fever  # lbzx
+0x8184BC44  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # lbzx
+0x8184BC68  0  index  1  0x818B91AC  0x82D25600  profile=item-fever  # lbzx
+0x8184BC84  0  index  1  0x818B91AC  0x82D25600  profile=item-fever  # stbx
+0x8184BCF4  0  index  4  0x818B9140  0x82D25100  profile=item-fever  # stfsx
+0x8184BD08  0  index  1  0x818B911C  0x82D24F00  profile=item-fever  # lbzx
+0x8184BD18  0  index  1  0x818B911C  0x82D24F00  profile=item-fever  # stbx
+0x8184BD24  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # lbzx
+0x8184BD34  0  index  1  0x818B90E0  0x82D24A00  profile=item-fever  # lbzx
+0x8184BD50  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # stbx
+0x8184BD70  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # stbx
+0x8184BD90  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # stbx
+0x8184BDA4  0  index  1  0x818B90F8  0x82D24C00  profile=item-fever  # lbzx
+0x8184BDC0  0  index  1  0x818B90F8  0x82D24C00  profile=item-fever  # stbx
+0x8184C14C  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # lbzx
+0x8184C1A8  0  index  4  0x818B9140  0x82D25100  profile=item-fever  # lfsx
+0x8184C60C  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # lbzx
+0x8184C644  0  index  4  0x818B9140  0x82D25100  profile=item-fever  # lfsx
+0x8184C884  0  index  1  0x818B90E0  0x82D24A00  profile=item-fever  # stbx
+0x8184C88C  0  index  1  0x818B90EC  0x82D24B00  profile=item-fever  # stbx
+0x8184C894  0  index  1  0x818B90F8  0x82D24C00  profile=item-fever  # stbx
+0x8184C898  0  index  1  0x818B9104  0x82D24D00  profile=item-fever  # stbx
+0x8184C89C  0  index  1  0x818B9110  0x82D24E00  profile=item-fever  # stbx
+0x8184C8A0  0  index  1  0x818B911C  0x82D24F00  profile=item-fever  # stbx
+0x8184C8A4  0  index  2  0x818B9128  0x82D25000  profile=item-fever  # sthx
+0x8184C8A8  0  index  4  0x818B9140  0x82D25100  profile=item-fever  # stfsx
+0x8184C8AC  0  index  1  0x818B91A0  0x82D25500  profile=item-fever  # stbx
+0x8184C8B0  0  index  1  0x818B91AC  0x82D25600  profile=item-fever  # stbx
+0x8184C8B4  0  index  4  0x818B9170  0x82D25300  profile=item-fever  # stwx
+0x81848B18  0  objadd  12  0x0  0x82D23E00  profile=item-fever  # &table[racer] (0x818B8E70)
+0x81848B28  0  objadd  64  0x0  0x82D21B00  profile=item-fever  # &table[racer] (0x818B8AE0)
+0x81848FAC  0  objadd  64  0x0  0x82D21B00  profile=item-fever  # &table[racer] (0x818B8AE0)
+0x81848FE4  0  objadd  64  0x0  0x82D21B00  profile=item-fever  # &table[racer] (0x818B8AE0)
+0x81849044  0  objadd  64  0x0  0x82D21B00  profile=item-fever  # &table[racer] (0x818B8AE0)
+0x8184908C  0  objadd  64  0x0  0x82D21B00  profile=item-fever  # &table[racer] (0x818B8AE0)
+0x8184924C  0  objadd  64  0x0  0x82D21B00  profile=item-fever  # &table[racer] (0x818B8AE0)
+0x81849274  0  objadd  64  0x0  0x82D21B00  profile=item-fever  # &table[racer] (0x818B8AE0)
+0x81849894  0  objadd  12  0x0  0x82D23800  profile=item-fever  # &table[racer] (0x818B8DE0)
+0x8184989C  0  objadd  12  0x0  0x82D23E00  profile=item-fever  # &table[racer] (0x818B8E70)
+0x818498D0  0  objadd  12  0x0  0x82D23E00  profile=item-fever  # &table[racer] (0x818B8E70)
+0x818498E0  0  objadd  12  0x0  0x82D23800  profile=item-fever  # &table[racer] (0x818B8DE0)
+0x81849AF8  0  objadd  64  0x0  0x82D21B00  profile=item-fever  # &table[racer] (0x818B8AE0)
+0x81849B34  0  objadd  64  0x0  0x82D21B00  profile=item-fever  # &table[racer] (0x818B8AE0)
+0x8184B0E4  0  objadd  4  0x0  0x82D25300  profile=item-fever  # &table[racer] (0x818B9170)
+0x8184889C  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x818495AC  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x81849DAC  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184B1A4  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184B204  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184B43C  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184B65C  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184B984  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184BA80  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184BAA0  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184BB00  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184BC28  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184BCBC  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184BCFC  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184BD98  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184C13C  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x8184C5A8  0  cmpimm  128  0x0  profile=item-fever  # racer < 12
+0x81848BA4  0  cmpimm  128  0x0  profile=item-fever  # init loop i < 12 over the 0x818B89F0 struct (its adds are objadd sites)
+0x81848CCC  0  cmpimm  128  0x0  profile=item-fever  # if (n > 12) n = 12
+0x81849828  0  cmpimm  128  0x0  profile=item-fever  # count = min(racers, 12)
+0x81849924  0  cmpimm  128  0x0  profile=item-fever  # count = min(racers, 12)
+0x8184AFE4  0  cmpimm  128  0x0  profile=item-fever  # count = min(racers, 12)
+0x8184B07C  0  cmpimm  128  0x0  profile=item-fever  # racer < 12 (then &table9170[racer] to a game function)
+0x8184B134  0  cmpimm  128  0x0  profile=item-fever  # racer < 12 (0x818B8F74 lookup)
+0x8184B3C8  0  cmpimm  128  0x0  profile=item-fever  # loop i < 12 && i < racers
+0x8184B548  0  cmpimm  128  0x0  profile=item-fever  # count = min(racers, 12)
+0x8184B814  0  cmpimm  128  0x0  profile=item-fever  # count = min(racers, 12)

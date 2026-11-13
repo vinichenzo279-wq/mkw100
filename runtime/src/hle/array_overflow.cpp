@@ -132,18 +132,25 @@ extern "C" uint32_t MKW100_ObjectArrayAdd(uint32_t object, uint32_t scaled, uint
     if (stride == 0 || scaled < kInlineSlots * stride || scaled >= kMaxPlayers * stride) {
         return object + scaled;
     }
-    // One shadow table per object (8 per shadow base, given out in turn); objects are rebuilt each
-    // race, often at the same address, which then keeps its table.
-    struct Owner { uint32_t shadow = 0, object = 0; };
-    static Owner owners[8];
-    static uint32_t next = 0;
+    // One shadow table per object, up to 8 per shadow base (0x1000 apart), given out in turn per
+    // base; objects are rebuilt each race, often at the same address, which then keeps its table.
+    // A base used by one static table (Item Fever) always gives slot 0, the layout its `index`
+    // sites use.
+    struct Base { uint32_t shadow = 0, next = 0; uint32_t objects[8] = {}; };
+    static Base bases[48];
+    Base* base = nullptr;
+    for (Base& b : bases) {
+        if (b.shadow == shadow || b.shadow == 0) { base = &b; break; }
+    }
+    if (base == nullptr) return object + scaled;  // more bases than slots: leave the address alone
+    base->shadow = shadow;
     uint32_t slot = 8;
     for (uint32_t k = 0; k < 8; ++k) {
-        if (owners[k].shadow == shadow && owners[k].object == object) slot = k;
+        if (base->objects[k] == object) slot = k;
     }
     if (slot == 8) {
-        slot = next++ % 8;
-        owners[slot] = Owner{shadow, object};
+        slot = base->next++ % 8;
+        base->objects[slot] = object;
     }
     return shadow + slot * 0x1000 + (scaled - kInlineSlots * stride) - offset;
 }

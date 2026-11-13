@@ -30,7 +30,7 @@ public sealed class ArrayOverflowSites
     public const string IndexedRestoreHelper = "MKW100_IndexedRestore";
     public const string ObjectAddHelper = "MKW100_ObjectArrayAdd";
 
-    public enum SiteKind { Scale, Step, Index, ObjAdd }
+    public enum SiteKind { Scale, Step, Index, ObjAdd, CmpImm }
 
     /// <param name="Offset">scale/step: byte offset from the instance. index: the table's address.</param>
     /// <param name="Shadow">index only: where elements 12.. of the table live.</param>
@@ -70,6 +70,8 @@ public sealed class ArrayOverflowSites
             return RewriteIndexed(ins, ir, site, Fail);
         if (site.Kind == SiteKind.ObjAdd)
             return RewriteObjectAdd(ins, site, Fail);
+        if (site.Kind == SiteKind.CmpImm)
+            return RewriteCompareImmediate(ins, ir, site, Fail);
 
         if (site.Kind == SiteKind.Scale)
         {
@@ -141,6 +143,30 @@ public sealed class ArrayOverflowSites
     }
 
     /// <summary>
+    /// cmpimm: a `cmpwi`/`cmplwi crF, rA, 12` that keeps a pack's code to racers 0..11 (a guard or a
+    /// loop bound over a [12] table now shadowed for 12+) compares with the listed value instead
+    /// (the site's stride field). Only a compare with 12 is accepted, so a moved site fails loudly.
+    /// </summary>
+    private static IReadOnlyList<IrInstruction> RewriteCompareImmediate(
+        PpcInstruction ins, IReadOnlyList<IrInstruction> ir, Site site, Func<string, string> fail)
+    {
+        var word = ins.Word;
+        var op = (int)(word >> 26);
+        if (op is not (10 or 11) || ((word >> 21) & 1) != 0)
+            fail("not a 32-bit cmpwi or cmplwi");
+        if ((word & 0xFFFF) != 12)
+            fail($"compares with {(short)(word & 0xFFFF)}, not 12");
+        if (ir.Count != 1 || ir[0] is not IrSetCrField)
+            fail("unexpected lifted form");
+        var field = (int)((word >> 23) & 7);
+        var ra = (int)((word >> 16) & 31);
+        return new IrInstruction[]
+        {
+            new IrSetCrField(field, IrValue.Register($"r{ra}"), IrValue.Imm(site.Stride), op == 10)
+        };
+    }
+
+    /// <summary>
     /// objadd: `add rD, rObj, rScaled` forming the address of element rScaled / stride of a [12] array
     /// at +offset inside a (non-singleton) object. For elements 12+ rD becomes that object's shadow
     /// table (MKW100_ObjectArrayAdd) minus offset, so the following +offset access lands there.
@@ -190,7 +216,8 @@ public sealed class ArrayOverflowSites
                 "step" => SiteKind.Step,
                 "index" => SiteKind.Index,
                 "objadd" => SiteKind.ObjAdd,
-                _ => throw Bad("kind must be scale, step, index or objadd")
+                "cmpimm" => SiteKind.CmpImm,
+                _ => throw Bad("kind must be scale, step, index, objadd or cmpimm")
             };
             var shadowed = kind is SiteKind.Index or SiteKind.ObjAdd;
             if (fields.Length != (shadowed ? 6 : 5))
