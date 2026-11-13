@@ -585,13 +585,31 @@ constexpr uint32_t kPageMultiTeamSelect = 0x83;
 constexpr uint32_t kPageVsTeamsView = 0x74;
 } // namespace
 
+// Battle's vehicle page (PAGE_BATTLE_KART_SELECT 0x76) only offers the standard kart and bike. Every
+// battle menu section also builds the VS vehicle page (1P: PAGE_KART_SELECT 0x6C; 2-4P:
+// PAGE_MULTIPLAYER_KART_SELECT 0x81), and both go on to the drift page, which continues by game mode
+// (battle: cup, then stage). Battle is sent there, so players pick any vehicle too; a vehicle without
+// team-coloured archives drives in its own colours (local_vs.cpp LocalVs_BattleKartArchive).
+namespace {
+uint32_t AnyVehiclePage(uint32_t page) {
+    if (page != 0x76) return page;
+    const uint32_t mgr = Memory::Read32(0x809C1E38);
+    const uint32_t section = TeamUiInRam(mgr) ? Memory::Read32(mgr) : 0;
+    if (!TeamUiInRam(section)) return page;
+    const auto built = [&](uint32_t id) { return Memory::Read32(section + 8 + id * 4) != 0; };
+    return built(0x6C) ? 0x6C : built(0x81) ? 0x81 : page;
+}
+} // namespace
+
 extern "C" void TeamUi_LoadNextPageDelay_8083761c(CpuContext* ctx) {
+    ctx->gpr[4] = AnyVehiclePage(ctx->gpr[4]);
     if (ctx->gpr[4] == kPageMultiTeamSelect && TeamUiScreenKind() == TeamScreen::kVs) ctx->gpr[4] = kPageVsTeamsView;
     MKW_GUEST_NEXT(8083761C)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8083761C, TeamUi_LoadNextPageDelay_8083761c, "TeamUi_LoadNextPageDelay_8083761c");
 
 extern "C" void TeamUi_LoadNextPage_80837720(CpuContext* ctx) {
+    ctx->gpr[4] = AnyVehiclePage(ctx->gpr[4]);
     if (ctx->gpr[4] == kPageMultiTeamSelect && TeamUiScreenKind() == TeamScreen::kVs) ctx->gpr[4] = kPageVsTeamsView;
     MKW_GUEST_NEXT(80837720)(ctx);
 }
