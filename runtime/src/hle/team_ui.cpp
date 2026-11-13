@@ -27,6 +27,8 @@
 #include <string>
 #include <vector>
 
+void HudSpeedometerUpdate(CpuContext* ctx, uint32_t control);  // hud_speedometer.cpp
+
 namespace {
 
 constexpr uint32_t kGetPaneByName = 0x805E8368;     // Layout::GetPaneByName(layout, name)
@@ -177,7 +179,12 @@ extern "C" void TeamUi_MapCharacterUpdate_807eb250(CpuContext* ctx) {
     if (!Teams::Active()) return;
     const uint32_t player = Memory::Read8(marker + kMapPlayer);
     const uint32_t team = Teams::TeamOf(player);
-    if (team >= Teams::kMaxTeams || team != Teams::TeamOf(0)) return;  // the local player's team only
+    if (team >= Teams::kMaxTeams) return;
+    // The local players' teams only (every one of them in split screen), so they stand out.
+    bool local = false;
+    for (uint32_t p = 0, humans = std::min<uint32_t>(std::max<uint32_t>(LocalVs::LocalPlayers(), 1), 4); p < humans; ++p)
+        local = local || team == Teams::TeamOf(p);
+    if (!local) return;
     const Teams::Colour& c = Teams::ColourOf(team);
     const CpuContext saved = *ctx;
     TeamUiCall(ctx, saved, kSetPaneVisibility, marker, kShadow0, 1);
@@ -512,6 +519,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x807E9F5C, TeamUi_ConfirmTeamInit_807e9f5c, "TeamUi_
 extern "C" void TeamUi_ControlUpdate_8063db00(CpuContext* ctx) {
     const uint32_t control = ctx->gpr[3];
     MKW_GUEST_NEXT(8063DB00)(ctx);
+    HudSpeedometerUpdate(ctx, control);  // hud_speedometer.cpp: our HUD speedometers
     if (control == 0 || control != gScreenColumn[0] || Memory::Read32(control) != kConfirmVtable) return;
     if (!TeamUiScreenActive()) return;
     const CpuContext saved = *ctx;
@@ -587,3 +595,58 @@ extern "C" void TeamUi_LoadNextPage_80837720(CpuContext* ctx) {
     MKW_GUEST_NEXT(80837720)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80837720, TeamUi_LoadNextPage_80837720, "TeamUi_LoadNextPage_80837720");
+
+// The battle results (page 0x33; CtrlRaceResultTeam::InitSelf 0x807F69E4) list each team's racers
+// in six entries of 0x14 bytes at +0x174: every racer whose Racedata team (+0xCC) is the control's
+// (+0x1EC) is added, with no limit, so past 12 racers a team of 60 wrote over the control (its team
+// at +0x1EC, then other objects; 120 racers: a jump through a Mii-name pointer). Past 12 racers
+// only the team's six shown ones keep their team while InitSelf runs: the local players, then the
+// highest battle scores (Raceinfo player +0x22, the value the rows sort by). The team total it adds
+// up (+0xB74) is put back to the whole team's.
+namespace {
+constexpr uint32_t kResultTeamOf = 0x1EC;      // CtrlRaceResultTeam: u32 team
+constexpr uint32_t kResultTeamTotal = 0xB74;   // u32, the team's score sum
+constexpr uint32_t kResultTeamRows = 6;
+constexpr uint32_t kRaceinfo = 0x809BD730;     // Raceinfo*: players at +0xC
+constexpr uint32_t kRacedataTeam = 0xCC;       // race scenario player: u32 team
+constexpr uint32_t kBattleScore = 0x22;        // RaceinfoPlayer: u16 battle score
+constexpr uint32_t kHiddenTeam = 0x7F;
+} // namespace
+
+extern "C" void TeamUi_ResultTeamInit_807f69e4(CpuContext* ctx) {
+    const uint32_t control = ctx->gpr[3];
+    const uint32_t rd = Memory::Read32(kRacedata);
+    const uint32_t racers = rd == 0 ? 0 : Memory::Read8(rd + 0x24);
+    const uint32_t info = Memory::Read32(kRaceinfo);
+    if (racers <= 12 || info == 0) {
+        MKW_GUEST_NEXT(807F69E4)(ctx);
+        return;
+    }
+    const uint32_t team = Memory::Read32(control + kResultTeamOf);
+    const uint32_t players = Memory::Read32(info + 0xC);
+    struct Member { uint32_t racer, score; bool local; };
+    std::vector<Member> members;
+    uint32_t total = 0;
+    for (uint32_t i = 0; i < racers; ++i) {
+        const uint32_t slot = rd + MKW100_PlayerSlotOffset(i) + kRaceScenarioPlayers;
+        if (Memory::Read32(slot + kRacedataTeam) != team) continue;
+        const uint32_t player = Memory::Read32(players + 4 * i);
+        const uint32_t score = TeamUiInRam(player) ? Memory::Read16(player + kBattleScore) : 0;
+        total += score;
+        members.push_back({i, score, Memory::Read32(slot + kPlayerType) == 0});
+    }
+    std::stable_sort(members.begin(), members.end(), [](const Member& a, const Member& b) {
+        return a.local != b.local ? a.local : a.score > b.score;
+    });
+    std::vector<uint32_t> hidden;
+    for (size_t k = kResultTeamRows; k < members.size(); ++k) {
+        hidden.push_back(members[k].racer);
+        Memory::Write32(rd + MKW100_PlayerSlotOffset(members[k].racer) + kRaceScenarioPlayers + kRacedataTeam, kHiddenTeam);
+    }
+    MKW_GUEST_NEXT(807F69E4)(ctx);
+    for (const uint32_t racer : hidden)
+        Memory::Write32(rd + MKW100_PlayerSlotOffset(racer) + kRaceScenarioPlayers + kRacedataTeam, team);
+    if (Memory::Read32(control + kResultTeamTotal) != 0 || total != 0) Memory::Write32(control + kResultTeamTotal, total);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x807F69E4, TeamUi_ResultTeamInit_807f69e4, "TeamUi_ResultTeamInit_807f69e4");
+

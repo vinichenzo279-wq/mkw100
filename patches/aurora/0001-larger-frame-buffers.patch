@@ -10,10 +10,10 @@ index 3fdc0ee..c3ba996 100644
 -inline constexpr uint64_t VertexBufferSize = 5242880;   // 5 MiB
 -inline constexpr uint64_t IndexBufferSize = 2097152;    // 2 MiB
 -inline constexpr uint64_t StorageBufferSize = 8388608;  // 8 MiB
-+inline constexpr uint64_t UniformBufferSize = 50331648; // 48 MiB (mkw100: 24 overflowed at 128 racers)
-+inline constexpr uint64_t VertexBufferSize = 16777216;  // 16 MiB (mkw100: was 5)
-+inline constexpr uint64_t IndexBufferSize = 8388608;    // 8 MiB (mkw100: was 2, overflowed at 128 racers)
-+inline constexpr uint64_t StorageBufferSize = 16777216; // 16 MiB (mkw100: was 8)
++inline constexpr uint64_t UniformBufferSize = 100663296; // 96 MiB (mkw100: 24 overflowed at 128 racers)
++inline constexpr uint64_t VertexBufferSize = 50331648;   // 48 MiB (mkw100: was 5; 16 overflowed in 4P)
++inline constexpr uint64_t IndexBufferSize = 25165824;    // 24 MiB (mkw100: was 2, overflowed at 128 racers)
++inline constexpr uint64_t StorageBufferSize = 50331648;  // 48 MiB (mkw100: was 8; 16 overflowed in 4P)
  inline constexpr uint64_t TextureUploadSize = 25165824; // 24 MiB
  
  namespace detail {

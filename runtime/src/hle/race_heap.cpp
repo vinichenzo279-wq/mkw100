@@ -170,6 +170,13 @@ extern "C" void MEM_AllocFromExpHeapEx_80198d88(CpuContext* ctx) {
     const uint32_t mem2 = SceneRvlHeap(scene, kStructsMem2);
     const uint32_t debug = SceneRvlHeap(scene, kStructsDebug);
     if (heap == 0 || (heap != mem1 && heap != mem2)) {
+        // Another heap: the game gets null. Logged (first 20), since it usually crashes later.
+        static uint32_t logged = 0;
+        if (logged < 20) {
+            ++logged;
+            RT_LOGF("race-heap", "allocation failed outside the scene heaps: size=%u heap=0x%08X lr=0x%08X\n", size,
+                    heap, ctx->lr);
+        }
         return;
     }
     uint32_t held = 0;

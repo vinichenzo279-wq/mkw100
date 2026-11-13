@@ -250,8 +250,15 @@ bool ResultsTrace() {
 }
 } // namespace
 
-// Page::Activate(this)
+// Page::Activate(this). Also: past 12 racers the battle results activated a page the battle section
+// (0x28) never builds, so `this` was null and the game called through address 0's bytes. A null page
+// is skipped (the base game never activates one) and the caller is logged.
 extern "C" void RaceOracle_PageActivate_80601aec(CpuContext* ctx) {
+    if (ctx->gpr[3] == 0) {
+        static uint32_t logged = 0;
+        if (logged++ < 8) RT_LOGF("pages", "skipped activating a page that was never built (lr=0x%08X)\n", ctx->lr);
+        return;
+    }
     if (ResultsTrace()) std::printf("[race-oracle] page 0x%02X activated\n", Memory::Read32(ctx->gpr[3] + 4));
     MKW_GUEST_NEXT(80601AEC)(ctx);
 }

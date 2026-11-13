@@ -130,6 +130,13 @@ function Copy-Runtime([string]$Stage, [string]$ExeName) {
         New-Item -ItemType Directory -Force (Join-Path $Stage 'rank_icons') | Out-Null
         Get-ChildItem -LiteralPath $icons -File | Copy-Item -Destination (Join-Path $Stage 'rank_icons') -Force
     }
+    # Runtime assets (the HUD speedometer's layout), mounted over the disc from mkw100_assets\.
+    $assets = Join-Path $Repo 'runtime\assets\mkw100\MKW100'
+    if (Test-Path -LiteralPath $assets) {
+        $dest = Join-Path $Stage 'mkw100_assets\MKW100'
+        New-Item -ItemType Directory -Force $dest | Out-Null
+        Get-ChildItem -LiteralPath $assets -File | Copy-Item -Destination $dest -Force
+    }
     Set-Content -LiteralPath (Join-Path $Stage 'portable.txt') -Value ''
 }
 
@@ -140,8 +147,10 @@ function Write-DefaultConfig([string]$Stage, [int]$Players, [string]$ExtraPaths)
     $userData = Join-Path $Stage 'UserData'
     New-Item -ItemType Directory -Force $userData | Out-Null
     $config = Join-Path $userData 'Config.toml'
-    if (Test-Path -LiteralPath $config) { return }
     $nand = Join-Path $userData 'NAND'
+    # The runtime stops with a "NAND root" error when the folder is missing; a new one starts empty.
+    New-Item -ItemType Directory -Force $nand | Out-Null
+    if (Test-Path -LiteralPath $config) { return }
     $text = @"
 [paths]
 dvd_root = "$(TomlPath $dvd)"
