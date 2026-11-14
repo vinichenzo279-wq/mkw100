@@ -334,3 +334,8 @@
 0x8067E208  0  sbyte  0  0x0  # extsb r6, r6
 # Raceinfo player position (u8 at +0x20) read as s8: 12 - position.
 0x8071674C  0  sbyte  0  0x0  # extsb r0, r0: position
+
+# 200cc (cc200.cpp): Audio::EngineMgr::Update reads the kart status flags (+0x4) once and takes
+# its three engine-sound bits from them; while brake drifting they read 2 (Pulsar's
+# BrakeDriftingSoundWrapper at 0x806FAFF8). loadhook: stride = hook id.
+0x806FAFEC  0  loadhook  1  0x0  # lwz r0, 0x4(r4): status flags

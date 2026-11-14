@@ -148,6 +148,9 @@ extern "C" uint32_t MKW100_IndexedRestore(uint32_t base, uint32_t table, uint32_
 // objadd sites (a [12] array at +offset in an object that has several instances): `object + scaled`,
 // or for element 12+ that object's shadow table (one of 8 per site shadow base, 0x1000 apart, given
 // out per object on first use) minus offset.
+// loadhook sites: the word at base + disp, or what hook `id` returns instead (cc200.cpp: 1, the
+// engine sound's status flags while brake drifting in 200cc).
+extern "C" uint32_t MKW100_LoadHook(uint32_t base, int32_t disp, uint32_t id);
 extern "C" uint32_t MKW100_ObjectArrayAdd(uint32_t object, uint32_t scaled, uint32_t stride, uint32_t offset,
                                           uint32_t shadow);
 // sbyte sites: the result of an `extsb` on a racer index or place the game keeps in a signed byte.

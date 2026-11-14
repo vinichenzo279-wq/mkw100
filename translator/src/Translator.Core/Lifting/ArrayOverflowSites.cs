@@ -31,8 +31,9 @@ public sealed class ArrayOverflowSites
     public const string ObjectAddHelper = "MKW100_ObjectArrayAdd";
     public const string RacerByteHelper = "MKW100_RacerByte";
     public const string TraceSignedByteHelper = "MKW100_TraceSignedByte";
+    public const string LoadHookHelper = "MKW100_LoadHook";
 
-    public enum SiteKind { Scale, Step, Index, ObjAdd, CmpImm, SByte }
+    public enum SiteKind { Scale, Step, Index, ObjAdd, CmpImm, SByte, LoadHook }
 
     /// <param name="Offset">scale/step: byte offset from the instance. index: the table's address.</param>
     /// <param name="Shadow">index only: where elements 12.. of the table live.</param>
@@ -109,6 +110,8 @@ public sealed class ArrayOverflowSites
             return RewriteObjectAdd(ins, site, Fail);
         if (site.Kind == SiteKind.CmpImm)
             return RewriteCompareImmediate(ins, ir, site, Fail);
+        if (site.Kind == SiteKind.LoadHook)
+            return RewriteLoadHook(ins, site, Fail);
 
         if (site.Kind == SiteKind.Scale)
         {
@@ -204,6 +207,29 @@ public sealed class ArrayOverflowSites
     }
 
     /// <summary>
+    /// loadhook: `lwz rD, d(rA)` reads through a native hook instead: rD = MKW100_LoadHook(rA, d, id)
+    /// (the site's stride field is the hook id; runtime picks what the load returns, normally the
+    /// word itself). For a value read once into a register that a mod changes on the way.
+    /// </summary>
+    private static IReadOnlyList<IrInstruction> RewriteLoadHook(PpcInstruction ins, Site site, Func<string, string> fail)
+    {
+        var word = ins.Word;
+        if (word >> 26 != 32)
+            fail("not lwz");
+        var rd = (int)((word >> 21) & 31);
+        var ra = (int)((word >> 16) & 31);
+        if (ra == 0)
+            fail("lwz from an absolute address");
+        return new IrInstruction[]
+        {
+            new IrCall($"r{rd}", LoadHookHelper, new[]
+            {
+                IrValue.Register($"r{ra}"), IrValue.Imm((short)(word & 0xFFFF)), IrValue.Imm(site.Stride)
+            })
+        };
+    }
+
+    /// <summary>
     /// objadd: `add rD, rObj, rScaled` forming the address of element rScaled / stride of a [12] array
     /// at +offset inside a (non-singleton) object. For elements 12+ rD becomes that object's shadow
     /// table (MKW100_ObjectArrayAdd) minus offset, so the following +offset access lands there.
@@ -261,7 +287,8 @@ public sealed class ArrayOverflowSites
                 "objadd" => SiteKind.ObjAdd,
                 "cmpimm" => SiteKind.CmpImm,
                 "sbyte" => SiteKind.SByte,
-                _ => throw Bad("kind must be scale, step, index, objadd, cmpimm or sbyte")
+                "loadhook" => SiteKind.LoadHook,
+                _ => throw Bad("kind must be scale, step, index, objadd, cmpimm, sbyte or loadhook")
             };
             var shadowed = kind is SiteKind.Index or SiteKind.ObjAdd;
             if (fields.Length != (shadowed ? 6 : 5))
