@@ -4,6 +4,7 @@
 #include "hle/controller_status_contract.h"
 #include "input_bindings.h"
 #include "runtime_log.h" // R26_PAD_TRACE
+#include "motion_trick.h"
 
 #include <algorithm>
 #include <atomic>
@@ -118,6 +119,7 @@ extern "C" uint32_t PAD__Read_HLE(uint32_t statusPtr)
 
     FillTriggersHeldByButtons(statuses);
     InputBindings::Apply(statuses);
+    MotionTrick::Apply(statuses);
     AutoDriver::FillPad(statuses[0]);  // --race-auto only
     // R26_PAD_TRACE: host-to-guest PAD sample. Do not synthesize inputs.
     // Bounded to the first 3000 reads or 24 changes to avoid per-frame logs.

@@ -88,3 +88,6 @@ output.txt
 /install-options.json
 # MKW100 runtime assets (made by modders, MIT; see runtime/assets/mkw100/README.md)
 !/runtime/assets/**/*.szs
+
+# upstream WiiCompiled
+/native-build-macos*/

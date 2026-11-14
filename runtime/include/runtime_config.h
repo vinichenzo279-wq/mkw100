@@ -54,7 +54,8 @@ struct RuntimeUserConfig {
     std::optional<uint32_t> localVsBattleRed;            // battle past 12: red team size, 0 = even
     std::optional<std::string> localVsBattleTeam;        // battle past 12: "random", "red", "blue"
     std::optional<bool> widescreen;
-    std::optional<bool> forceAspect169;
+    std::optional<bool> forceAspect;
+    bool legacyForceAspect = false;
     std::optional<int32_t> windowPosX;
     std::optional<int32_t> windowPosY;
     std::optional<uint32_t> windowWidth;
@@ -90,6 +91,10 @@ struct RuntimeUserConfig {
     std::optional<int32_t> wiiIrSensitivity;
     std::optional<int32_t> wiiSpeakerVolume;
     std::optional<bool> wiiRumble;
+    // Outside a Steam launch, ask a running Steam client for a game controller layout while
+    // the window has focus instead of its desktop one (buttons bound to mouse and keyboard).
+    std::optional<bool> steamInputOverride;
+    std::optional<uint32_t> steamInputAppId;
     std::optional<bool> networkEnabled;
     std::optional<bool> discordPresenceEnabled;
     // The application ID of the WiiCompiled Discord application. This is only
@@ -107,6 +112,9 @@ struct RuntimeUserConfig {
     // "dpad_up,left_shoulder") as values; pressing either bound button counts.
     std::array<std::optional<std::string>, 12> controllerButtons;
     std::optional<bool> rumbleEnabled;
+    // Shake a motion controller to press the D-pad, like shaking a Wii Remote.
+    std::optional<bool> motionTrick;
+    std::optional<int32_t> motionTrickSensitivity;
     std::optional<int32_t> muteHotkey;
     std::map<std::string, std::string> controllerExpressions;
 };
@@ -292,7 +300,7 @@ inline void EnsureConfigFile() {
               "# Set paths.dvd_root to an extracted Mario Kart Wii DATA directory.\n\n"
               "[video]\n"
               "widescreen = true\n"
-              "force_16_9 = false\n"
+              "force_aspect = false\n"
               "resolution_multiplier = 1.0\n"
               "frame_interpolation_fps = 0\n"
               "display_mode = \"windowed\"\n"
@@ -325,6 +333,9 @@ inline void EnsureConfigFile() {
               "mix_worker = true\n\n"
               "[network]\n"
               "enabled = true\n\n"
+              "[controller]\n"
+              "steam_input_override = true\n"
+              "# steam_input_app_id = 480\n\n"
               "[discord]\n"
               "# Rich Presence talks only to a locally-running Discord client.\n"
               "# Retro Rewind supplies its official app ID automatically. Set this\n"
@@ -410,6 +421,10 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     }
 
     config.rumbleEnabled = FindConfigValue<bool>(document, "controller", "rumble");
+    config.motionTrick = FindConfigValue<bool>(document, "controller", "motion_trick");
+    if (const auto value = FindConfigInt(document, "controller", "motion_trick_sensitivity"); value && *value >= 1 && *value <= 5) {
+        config.motionTrickSensitivity = *value;
+    }
     if (auto value = FindConfigInt(document, "audio", "mute_key")) {
         config.muteHotkey = *value;
     }
@@ -447,7 +462,15 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     config.localVsBattleRed = FindConfigUint(document, "local_vs", "battle_red");
     config.localVsBattleTeam = FindConfigValue<std::string>(document, "local_vs", "battle_team");
     config.widescreen = FindConfigValue<bool>(document, "video", "widescreen");
-    config.forceAspect169 = FindConfigValue<bool>(document, "video", "force_16_9");
+    config.forceAspect = FindConfigValue<bool>(document, "video", "force_aspect");
+    if (!config.forceAspect) {
+        // Legacy key; it always forced a 16:9 game.
+        config.forceAspect = FindConfigValue<bool>(document, "video", "force_16_9");
+        config.legacyForceAspect = config.forceAspect.has_value();
+        if (config.forceAspect.value_or(false)) {
+            config.widescreen = true;
+        }
+    }
     config.windowPosX = FindConfigInt(document, "video", "window_x");
     config.windowPosY = FindConfigInt(document, "video", "window_y");
     if (auto value = FindConfigUint(document, "video", "window_width"); value && *value != 0) {
@@ -517,6 +540,10 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
         config.wiiSpeakerVolume = *value;
     }
     config.wiiRumble = FindConfigValue<bool>(document, "controller", "wii_rumble");
+    config.steamInputOverride = FindConfigValue<bool>(document, "controller", "steam_input_override");
+    if (const auto value = FindConfigUint(document, "controller", "steam_input_app_id"); value && *value != 0) {
+        config.steamInputAppId = *value;
+    }
     config.networkEnabled = FindConfigValue<bool>(document, "network", "enabled");
     config.discordPresenceEnabled = FindConfigValue<bool>(document, "discord", "enabled");
     config.discordClientId = FindConfigValue<std::string>(document, "discord", "client_id");
@@ -736,6 +763,24 @@ inline bool SetRumbleEnabled(bool value) {
     return WriteSetting("controller", "rumble", value ? "true" : "false");
 }
 
+inline bool MotionTrickEnabled(bool fallback = false) {
+    return Get().motionTrick.value_or(fallback);
+}
+
+inline bool SetMotionTrickEnabled(bool value) {
+    Mutable().motionTrick = value;
+    return WriteSetting("controller", "motion_trick", value ? "true" : "false");
+}
+
+inline int32_t MotionTrickSensitivity(int32_t fallback = 3) {
+    return Get().motionTrickSensitivity.value_or(fallback);
+}
+
+inline bool SetMotionTrickSensitivity(int32_t value) {
+    Mutable().motionTrickSensitivity = value;
+    return WriteSetting("controller", "motion_trick_sensitivity", std::to_string(value));
+}
+
 inline int32_t MuteHotkey(int32_t fallback) {
     return Get().muteHotkey.value_or(fallback);
 }
@@ -804,13 +849,30 @@ inline bool WidescreenEnabled(bool fallback = false) {
     return Get().widescreen.value_or(fallback);
 }
 
-inline bool ForceAspect169Enabled(bool fallback = false) {
-    return Get().forceAspect169.value_or(fallback);
+inline bool ForceAspectEnabled(bool fallback = false) {
+    return Get().forceAspect.value_or(fallback);
 }
 
-inline bool SetForceAspect169(bool value) {
-    Mutable().forceAspect169 = value;
-    return WriteSetting("video", "force_16_9", value ? "true" : "false");
+inline bool SetForceAspect(bool value) {
+    Mutable().forceAspect = value;
+    return WriteSetting("video", "force_aspect", value ? "true" : "false");
+}
+
+// The in-memory value stays as booted; SCGetAspectRatio must not change mid-session.
+inline bool SetWidescreen(bool value) {
+    return WriteSetting("video", "widescreen", value ? "true" : "false");
+}
+
+// Rewrites a legacy force_16_9 as force_aspect plus the widescreen it implied.
+inline void MigrateLegacyForceAspect() {
+    if (!Get().legacyForceAspect) {
+        return;
+    }
+    const bool force = ForceAspectEnabled();
+    if ((!force || WriteSetting("video", "widescreen", "true")) &&
+        WriteSetting("video", "force_aspect", force ? "true" : "false")) {
+        Mutable().legacyForceAspect = false;
+    }
 }
 
 inline bool WindowPosition(int32_t& x, int32_t& y) {
@@ -886,6 +948,15 @@ inline bool SetWiiRemotesEnabled(bool value) {
     if (!WriteSetting("controller", "wii_remotes", value ? "true" : "false")) return false;
     Mutable().wiiRemotes = value;
     return true;
+}
+
+inline bool SteamInputOverrideEnabled(bool fallback = true) {
+    return Get().steamInputOverride.value_or(fallback);
+}
+
+// Spacewar, Valve's Steamworks sample app, available to every Steam account.
+inline uint32_t SteamInputAppId(uint32_t fallback = 480) {
+    return Get().steamInputAppId.value_or(fallback);
 }
 
 inline bool WiiAutoPairEnabled(bool fallback = true) {
