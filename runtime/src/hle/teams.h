@@ -64,9 +64,30 @@ void SetBattleTeamChoice(uint32_t choice);
 // scenario's team flag cleared and becomes a teams race; the first race of a series (and a
 // headless boot) deals new teams.
 void OnInitRace(uint32_t racedata);
-// The section the game goes to next (SectionMgr::SetNextSection): after a teams series its Team VS
-// ceremony (0x37) becomes the solo VS one (0x36), set up as the game does for a solo series.
+// The end of a teams series. Its ceremony is the solo VS one (section 0x36) and the results page of
+// that ceremony lists the teams, best first, a row each.
+// AwardSection: the section the game goes to next (SectionMgr::SetNextSection); when that is the
+// ceremony of a teams series (0x36 from the menus, 0x37 from a Team VS section) the scene is set
+// to winning when a local player's team has the best score, else losing, and 0x36 is returned.
 uint32_t AwardSection(uint32_t section);
+// Before Racedata::InitAwards: the menu scenario's first slots get one racer a team (a local
+// player of it, else its best racer) with the team's place and score. False when the series had
+// no teams (the caller then sets the slots up as usual).
+bool PrepareAwardStandings(uint32_t racedata);
+struct AwardRow {
+    uint32_t slot;    // award scenario slot of the team's racer; kNoTeam when none was left
+    uint32_t colour;  // colour index
+    uint32_t score;
+    bool local;       // a local player's team
+};
+// The rows of the ceremony being shown, by place; empty when it is not a teams series'.
+std::vector<AwardRow> AwardRows();
+bool AwardWon();
+// team_ui.cpp: an AwardDemoResultItem as a team's row: its bar in the team's colour, a local
+// player's team with the player frame. Guest calls clobber `ctx`; the caller restores it.
+void TintAwardRow(CpuContext* ctx, uint32_t control, uint32_t colour, bool local);
+// The rows TintAwardRow keeps painted are gone (a new ceremony, or a race).
+void ForgetAwardRows();
 // The pre-race team screen of a Team VS series of `racers` (> 12): deals the series' teams now so
 // the screen and the race agree; OnInitRace keeps them for that series.
 void DealForMenu(uint32_t racers, bool redeal = false);

@@ -152,6 +152,14 @@ void AutoDriver::FillPad(PADStatus& status) {
     status = PADStatus{};
     status.err = PAD_ERR_NONE;
 
+    // Tests: MKW100_TEST_AWARD_HOLD presses nothing during the award ceremony (game mode 11), so
+    // its results page stays up for a screenshot instead of being skipped.
+    static const bool holdAward = std::getenv("MKW100_TEST_AWARD_HOLD") != nullptr;
+    if (holdAward) {
+        const uint32_t racedata = Memory::Read32(0x809BD728);
+        if (InGuestRam(racedata) && Memory::Read32(racedata + 0x20 + 0xB50) == 11) return;
+    }
+
     const uint32_t raceinfo = Memory::Read32(kRaceinfoGlobal);
     const uint32_t kartManager = Memory::Read32(kKartManager);
     if (!InGuestRam(raceinfo) || !InGuestRam(kartManager)) {

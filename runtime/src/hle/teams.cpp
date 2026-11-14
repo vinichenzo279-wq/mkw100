@@ -102,6 +102,8 @@ std::mutex g_lock;
 std::vector<uint8_t> g_teamOf;                  // per racer
 std::array<uint8_t, Teams::kMaxTeams> g_colour{};  // team -> colour index
 std::vector<Teams::Standing> g_standings;
+std::vector<Teams::AwardRow> g_awardRows;  // the ceremony's rows; game thread
+bool g_awardWon = false;
 
 } // namespace
 
@@ -121,6 +123,7 @@ constexpr uint32_t kTeamsRaceNumber = 0x20 + 0xB6C;     // race scenario: race o
 constexpr uint32_t kTeamsFlag = 2;
 constexpr uint32_t kTeamsRaceGameMode = 0x20 + 0xB50;  // race scenario settings gameMode
 constexpr uint32_t kTeamsModeVs = 1;
+constexpr uint32_t kTeamsModeAwards = 11;
 // Race scenario player team (+0x28 + 0xCC), compared for equality by the hit checks below; 2 there
 // means no team, so team t is stored as t + kTeamsFieldBase.
 constexpr uint32_t kTeamsRaceTeam = 0x28 + 0xCC;
@@ -218,6 +221,10 @@ uint32_t Standing::Score() const { return g_byAverage.load() ? uint32_t(average 
 void OnInitRace(uint32_t racedata) {
     g_teamVsRace = false;
     if (racedata == 0) return;
+    if (Memory::Read32(racedata + kTeamsRaceGameMode) != kTeamsModeAwards) {  // a race, not the ceremony
+        g_awardRows.clear();
+        ForgetAwardRows();
+    }
     const uint32_t flags = Memory::Read32(racedata + kTeamsRaceModeFlags);
     // VS only: battles always run with the team flag and keep the game's red/blue.
     if (Memory::Read32(racedata + kTeamsRaceGameMode) != kTeamsModeVs) return;
@@ -243,36 +250,124 @@ void OnInitRace(uint32_t racedata) {
     }
 }
 
-// The end of a series: Pages::RaceMenu::OnButtonClick (0x8085A0F4) sets the menu scenario up for the
-// ceremony and asks for its section. Its Team VS case (section 0x37) is all red against blue: the
-// winner by the race scenario's teams (ours are stored there as 3 and up, so blue always won and
-// the player always lost), the ceremony and its results page by the menu scenario's red and blue
-// (dealt by the game's team page, nothing to do with our teams), six a team: past 12 racers the
-// page filled items that do not exist (player_slots.cpp, PrepareTeamAwardSlots).
-// A teams series plays as solo VS with our teams on top, so it gets the solo ceremony (0x36), set
-// up as that function's solo case does: the winning scene and the podium camera when a local
-// player is in the series' top three (menu player +0xE0, the standings page's rank), else the
-// losing scene; the team flag off, so InitAwards and the results page take their solo paths.
+// The end of a teams series.
+// Pages::RaceMenu::OnButtonClick (0x8085A0F4) sets the menu scenario up for the ceremony and asks
+// for its section. From the menus a teams series runs in a solo VS section, so its solo case
+// decides (the winning scene, camera mode 8, when a local player is in the top three racers;
+// section 0x36), with the menu scenario's team flag still set: InitAwards and the results page
+// then went by the menu scenario's red and blue, which the game's team page dealt and our teams
+// do not use. From a Team VS section (headless boots) the Team VS case decides by the race
+// scenario's teams (ours are stored there as 3 and up: blue always won; section 0x37).
+// Either way the ceremony becomes the solo one without the team flag, won by a local player's
+// team having the best score (a tie for first counts): InitAwards then shows the local players
+// (camera mode 8: player 0; 12: every local player), and the results page lists the teams
+// (PrepareAwardStandings, local_vs.cpp LocalVs_AwardResultItems, TintAwardRow).
+std::vector<AwardRow> AwardRows() { return g_awardRows; }
+bool AwardWon() { return g_awardWon; }
+
 uint32_t AwardSection(uint32_t section) {
     constexpr uint32_t kSectionTeamVsAward = 0x37, kSectionVsAward = 0x36;
     constexpr uint32_t kMenu = 0xC10;
     constexpr uint32_t kCourse = 0xB48, kCameraMode = 0xB54, kModeFlags = 0xB70;
     constexpr uint32_t kCourseWinning = 0x37, kCourseLosing = 0x38;
-    constexpr uint32_t kCameraVsPodium = 8, kCameraLosing = 12;
-    if (section != kSectionTeamVsAward || !Active()) return section;
+    constexpr uint32_t kCameraVsWin = 8, kCameraLosing = 12;
+    if ((section != kSectionTeamVsAward && section != kSectionVsAward) || !Active()) return section;
     const uint32_t rd = Memory::Read32(kTeamsRacedata);
-    if (rd == 0) return section;
-    bool podium = false;
-    for (uint32_t i = 0; i < 4; ++i) {  // local players are slots 0-3
-        if (Memory::Read32(rd + 0x28 + i * 0xF0 + 0x10) != 0) continue;
-        const uint32_t rank = Memory::Read8(rd + kMenu + 0x8 + i * 0xF0 + 0xE0);
-        podium = podium || (rank >= 1 && rank <= 3);
-    }
-    Memory::Write32(rd + kMenu + kCameraMode, podium ? kCameraVsPodium : kCameraLosing);
-    Memory::Write32(rd + kMenu + kCourse, podium ? kCourseWinning : kCourseLosing);
+    const auto standings = LastStandings();
+    if (rd == 0 || standings.empty()) return section;
+    const uint32_t best = standings.front().Score();
+    const uint32_t humans = std::min<uint32_t>(std::max<uint32_t>(LocalVs::LocalPlayers(), 1), 4);
+    bool won = false;
+    for (uint32_t p = 0; p < humans; ++p)
+        for (const auto& s : standings) won = won || (s.team == TeamOf(p) && s.Score() == best);
+    // Tests: MKW100_TEST_AWARD_WIN takes the winning scene whatever the standings (scripted runs).
+    if (BootRace::Scripted() && std::getenv("MKW100_TEST_AWARD_WIN") != nullptr) won = true;
+    g_awardWon = won;
+    Memory::Write32(rd + kMenu + kCameraMode, won ? kCameraVsWin : kCameraLosing);
+    Memory::Write32(rd + kMenu + kCourse, won ? kCourseWinning : kCourseLosing);
     Memory::Write32(rd + kMenu + kModeFlags, Memory::Read32(rd + kMenu + kModeFlags) & ~kTeamsFlag);
-    RT_LOGF("teams", "series over: the solo ceremony (%s)\n", podium ? "podium" : "not in the top three");
+    RT_LOGF("teams", "series over: %s wins, the player's team %s\n", ColourOf(standings.front().team).name,
+            won ? "won" : "did not");
     return kSectionVsAward;
+}
+
+bool PrepareAwardStandings(uint32_t racedata) {
+    constexpr uint32_t kMenu = 0xC10, kModeFlags = 0xB70, kInline = 12;
+    constexpr uint32_t kType = 0x10, kTypeLocal = 0, kTypeNone = 5;
+    g_awardRows.clear();
+    ForgetAwardRows();
+    if (racedata == 0 || !Active()) return false;
+    const auto standings = LastStandings();
+    const uint32_t count = local_vs_detail::RaceCount();
+    if (standings.empty() || count <= kInline) return false;
+    const uint32_t menu = racedata + kMenu;
+    const auto player = [&](uint32_t slot) { return PlayerSlots::PlayerAddress(racedata, menu, slot); };
+    // Local players sit in slots 0-3 and never move: their controllers, and the ceremony takes
+    // them from there.
+    const auto local = [&](uint32_t slot) { return slot < 4 && Memory::Read32(player(slot) + kType) == kTypeLocal; };
+    // Each team's racer, while every racer still sits in the slot of its number: a local player
+    // of the team, else its best by series total (+0xDA), ties by the last place (+0xE2).
+    std::vector<uint32_t> racerOf;
+    for (const auto& s : standings) {
+        uint32_t pick = kNoTeam;
+        for (uint32_t i = 0; i < count; ++i) {
+            if (TeamOf(i) != s.team || Memory::Read32(player(i) + kType) == kTypeNone) continue;
+            if (local(i)) { pick = i; break; }
+            if (pick == kNoTeam) { pick = i; continue; }
+            const uint32_t a = Memory::Read16(player(i) + 0xDA), b = Memory::Read16(player(pick) + 0xDA);
+            if (a > b || (a == b && Memory::Read8(player(i) + 0xE2) < Memory::Read8(player(pick) + 0xE2))) pick = i;
+        }
+        racerOf.push_back(pick);
+    }
+    // The other teams' racers move into the slots left of the first 12, whole players swapped.
+    std::vector<uint32_t> where(count);
+    for (uint32_t i = 0; i < count; ++i) where[i] = i;
+    std::vector<uint32_t> who = where;
+    std::vector<bool> keep(kInline, false);
+    for (uint32_t i = 0; i < kInline; ++i) keep[i] = local(i);
+    for (size_t k = 0; k < standings.size(); ++k) {
+        const uint32_t racer = racerOf[k];
+        uint32_t slot = kNoTeam;
+        if (racer != kNoTeam && where[racer] < kInline) {
+            slot = where[racer];
+        } else if (racer != kNoTeam) {
+            uint32_t free = 0;
+            while (free < kInline && keep[free]) ++free;
+            if (free < kInline) {
+                const uint32_t at = where[racer];
+                const uint32_t a = player(free), b = player(at);
+                for (uint32_t o = 4; o < PlayerSlots::kStride; o += 4) {
+                    const uint32_t word = Memory::Read32(a + o);
+                    Memory::Write32(a + o, Memory::Read32(b + o));
+                    Memory::Write32(b + o, word);
+                }
+                const uint32_t moved = who[free];
+                who[free] = racer; who[at] = moved;
+                where[racer] = free; where[moved] = at;
+                slot = free;
+            }
+        }
+        const uint32_t score = standings[k].Score();
+        const uint16_t shown = uint16_t(std::min<uint32_t>(score, 0xFFFF));
+        if (slot != kNoTeam) {
+            keep[slot] = true;
+            Memory::Write8(player(slot) + 0xE0, uint8_t(k + 1));  // the rank the page and the ceremony go by
+            Memory::Write16(player(slot) + 0xD8, shown);
+        }
+        bool mine = false;
+        for (uint32_t p = 0; p < 4; ++p) {
+            if (!local(p) || TeamOf(p) != standings[k].team) continue;
+            mine = true;
+            Memory::Write8(player(p) + 0xE0, uint8_t(k + 1));  // every local player of the team
+            Memory::Write16(player(p) + 0xD8, shown);
+        }
+        g_awardRows.push_back({slot, ColourIndexOf(standings[k].team), score, mine});
+    }
+    for (uint32_t i = 0; i < kInline; ++i)
+        if (!keep[i]) Memory::Write32(player(i) + kType, kTypeNone);
+    Memory::Write32(menu + kModeFlags, Memory::Read32(menu + kModeFlags) & ~kTeamsFlag);
+    RT_LOGF("teams", "ceremony: %u teams listed\n", uint32_t(g_awardRows.size()));
+    return true;
 }
 
 uint32_t Count() { return g_count.load(); }

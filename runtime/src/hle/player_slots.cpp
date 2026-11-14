@@ -235,8 +235,8 @@ REGISTER_NATIVE_WRAPPER_AS(0x805302C4, RaceConfig_InitRace_805302c4, "RaceConfig
 // top CPUs by series total (+0xDA, ties by the last place +0xE2); the player stays in slot 0 (its
 // controller); those 12 get ranks 1-12 in that order. The ceremony then shows the real podium.
 //
-// With teams (the menu scenario's team flag: battles; a Team VS series past 12 has gone to the solo
-// ceremony, Teams::AwardSection) everything is built for six a team. InitAwards fills the ceremony
+// With teams (the menu scenario's team flag: battles; a Team VS series past 12 has its own slots,
+// Teams::PrepareAwardStandings) everything is built for six a team. InitAwards fills the ceremony
 // with the local players' team from slots 0-11, and the results page
 // (Pages::AwardResults::PrepareResultItems 0x805BCDC4) has six items a team: the racers of its
 // first slots each fill item rank - 1 of their team's six, +0xE0 being the rank within the team.
@@ -305,6 +305,7 @@ void PrepareTeamAwardSlots(uint32_t racedata, uint32_t count) {
 void PrepareAwardSlots(uint32_t racedata) {
     const uint32_t count = Memory::Read8(racedata + 0x24);
     if (count <= kInlineSlots || count > kMaxPlayers) return;
+    if (Teams::PrepareAwardStandings(racedata)) return;  // a teams series: a slot a team
     const uint32_t menu = racedata + kScenarioOffsets[1];
     if ((Memory::Read32(menu + kSettingsModeFlagsOffset) & kModeFlagTeams) != 0) {
         PrepareTeamAwardSlots(racedata, count);

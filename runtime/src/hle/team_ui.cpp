@@ -115,6 +115,95 @@ void Teams::TintResultRow(CpuContext* ctx, uint32_t control, uint32_t player) {
     *ctx = saved;
 }
 
+// The ceremony's results item (AwardDemoResultItem, layout common_w121_ending_team_blue_red_chara_point)
+// as a team's row. Its bars are driven by four animation groups (1 the gold player frame, 2 and 3
+// the player bar p_color_r under p_color_null, 4 the CPU bar team_color_c: red and blue are
+// animations of 3 and 4), which would repaint the row at every draw: their animations are
+// unbound, and what they set is set here. A local player's team keeps the player look (gold frame, player bar) in the
+// team's colour; any other team gets the CPU bar in its colour. Colours as the game's red: TEV
+// colour 0 with alpha 0, colour 1 with alpha 255.
+namespace {
+constexpr uint32_t kAwardNames = ArrayOverflow::kMenuText + 0x20A0;  // free after the team screen's names
+constexpr uint32_t kPlayerBarPane = kAwardNames;                     // "p_color_r"
+constexpr uint32_t kPlayerBarNull = kAwardNames + 0x10;              // "p_color_null"
+constexpr uint32_t kGoldPane = kAwardNames + 0x20;                   // "gold_parts"
+constexpr uint32_t kAwardTeamPane = kAwardNames + 0x30;              // "team_color_c"
+constexpr uint32_t kGetAnimationGroup = 0x8063C820;                  // (animator, index)
+constexpr uint32_t kAnimator = 0x98;                                 // LayoutUIControl: its animation groups
+constexpr uint32_t kGroupActive = 0x35;
+constexpr uint32_t kGroupCurrent = 0x38;    // AnimationGroup: s32 current animation, -1 none
+constexpr uint32_t kGroupLayouts = 0x18;    // list of layout holders (+8 the layout)
+constexpr uint32_t kGroupRecursive = 0x34;  // the bool passed on to bind / unbind
+constexpr uint32_t kLayoutUnbind = 0x48;    // layout vtable: unbind an animation transform
+} // namespace
+
+namespace {
+// The rows being shown: the page plays the items' animations again after filling them, so each
+// row is repainted after its every update (TeamUi_ControlUpdate) while it is still that control.
+struct AwardRowTint { uint32_t control, vtable, colour; bool local; };
+std::vector<AwardRowTint> g_awardRowTints;  // game thread
+void TeamUiPaintAwardRow(CpuContext* ctx, uint32_t control, uint32_t colour, bool local);
+} // namespace
+
+void Teams::ForgetAwardRows() { g_awardRowTints.clear(); }
+
+void Teams::TintAwardRow(CpuContext* ctx, uint32_t control, uint32_t colour, bool local) {
+    g_awardRowTints.push_back({control, Memory::Read32(control), colour, local});
+    TeamUiPaintAwardRow(ctx, control, colour, local);
+}
+
+namespace {
+void TeamUiPaintAwardRow(CpuContext* ctx, uint32_t control, uint32_t colour, bool local) {
+    static bool named = false;
+    if (!named) {
+        named = true;
+        WriteName(kPlayerBarPane, "p_color_r");
+        WriteName(kPlayerBarNull, "p_color_null");
+        WriteName(kGoldPane, "gold_parts");
+        WriteName(kAwardTeamPane, "team_color_c");
+    }
+    const CpuContext saved = *ctx;
+    for (uint32_t group = 1; group <= 4; ++group) {
+        const uint32_t g = TeamUiCall(ctx, saved, kGetAnimationGroup, control + kAnimator, group);
+        if (!TeamUiInRam(g)) continue;
+        // Unbind the group's current animation from its layouts, as AnimationGroup::
+        // PlayAnimationAtFrame (0x8063C91C) does before it binds another: a bound animation is
+        // applied at every draw, whether the group is active or not.
+        const int32_t current = int32_t(Memory::Read32(g + kGroupCurrent));
+        if (current >= 0) {
+            const uint32_t transform = Memory::Read32(Memory::Read32(g) + uint32_t(current) * 16);
+            for (uint32_t node = Memory::Read32(g + kGroupLayouts); TeamUiInRam(node) && node != g + kGroupLayouts;
+                 node = Memory::Read32(node)) {
+                const uint32_t layout = Memory::Read32(node + 8);
+                if (!TeamUiInRam(layout)) continue;
+                TeamUiCall(ctx, saved, Memory::Read32(Memory::Read32(layout) + kLayoutUnbind), layout, transform,
+                           Memory::Read8(g + kGroupRecursive));
+            }
+            Memory::Write32(g + kGroupCurrent, 0xFFFFFFFFu);  // none: the next play binds anew
+        }
+        Memory::Write8(g + kGroupActive, 0);
+    }
+    const Teams::Colour& c = Teams::ColourByIndex(colour);
+    const auto pane = [&](uint32_t name) { return TeamUiCall(ctx, saved, kGetPaneByName, control + kLayout, name); };
+    const auto show = [&](uint32_t p, bool on, uint32_t alpha) {
+        if (!TeamUiInRam(p)) return;
+        Memory::Write8(p + kPaneFlag, uint8_t(on ? (Memory::Read8(p + kPaneFlag) | 1u) : (Memory::Read8(p + kPaneFlag) & 0xFEu)));
+        Memory::Write8(p + kPaneAlpha, uint8_t(alpha));
+    };
+    const auto paint = [&](uint32_t p) {
+        if (!TeamUiInRam(p)) return;
+        TeamUiTint(ctx, saved, p, c, 0, 0, 0);
+        TeamUiTint(ctx, saved, p, c, 1, 1, 255);
+    };
+    const uint32_t gold = pane(kGoldPane), barNull = pane(kPlayerBarNull), bar = pane(kPlayerBarPane), team = pane(kAwardTeamPane);
+    show(gold, local, 255);
+    show(barNull, true, local ? 255 : 0);
+    show(team, !local, local ? 0 : 200);
+    paint(local ? bar : team);
+    *ctx = saved;
+}
+} // namespace
+
 // CtrlRaceNameBalloon::UpdateInfo(this, playerId)
 extern "C" void TeamUi_BalloonUpdateInfo_807f0044(CpuContext* ctx) {
     const uint32_t balloon = ctx->gpr[3];
@@ -521,6 +610,13 @@ extern "C" void TeamUi_ControlUpdate_8063db00(CpuContext* ctx) {
     const uint32_t control = ctx->gpr[3];
     MKW_GUEST_NEXT(8063DB00)(ctx);
     HudSpeedometerUpdate(ctx, control);  // hud_speedometer.cpp: our HUD speedometers
+    for (const auto& row : g_awardRowTints) {  // the ceremony's team rows
+        if (row.control != control || Memory::Read32(control) != row.vtable) continue;
+        const CpuContext before = *ctx;
+        TeamUiPaintAwardRow(ctx, control, row.colour, row.local);
+        *ctx = before;
+        break;
+    }
     if (control == 0 || control != gScreenColumn[0] || Memory::Read32(control) != kConfirmVtable) return;
     if (!TeamUiScreenActive()) return;
     const CpuContext saved = *ctx;

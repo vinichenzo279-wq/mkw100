@@ -302,7 +302,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x80601AEC, RaceOracle_PageActivate_80601aec, "RaceOr
 
 // SectionMgr::SetNextSection(this, id, animDirection)
 extern "C" void RaceOracle_SetNextSection_80635a3c(CpuContext* ctx) {
-    ctx->gpr[4] = Teams::AwardSection(ctx->gpr[4]);  // a teams series ends in the solo ceremony
+    ctx->gpr[4] = Teams::AwardSection(ctx->gpr[4]);  // the ceremony of a teams series
     if (ResultsTrace()) std::printf("[race-oracle] next section 0x%02X\n", ctx->gpr[4]);
     MKW_GUEST_NEXT(80635A3C)(ctx);
 }

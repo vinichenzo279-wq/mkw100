@@ -1223,9 +1223,52 @@ REGISTER_NATIVE_WRAPPER_AS(0x8062C3A4, LocalVs_SectionPages_8062c3a4, "LocalVs_S
 // empty control; 13-racer Team VS, ranks 1-12 over two teams: SetTextBoxMessage called through
 // text). Racedata_InitAwards (player_slots.cpp) hands out ranks that fit; should one not fit all
 // the same, that racer is left out here, the game's loops otherwise as they are.
+//
+// After a teams series (Teams::AwardRows) the items list the teams instead: item k is the team in
+// place k + 1 (1st-6th left, 7th-12th right), filled from its racer's slot as the game does (place,
+// icon, the player frame for a local player's team), then its name becomes the team's (the "avg"
+// name under average scoring), its points the team's score and its bar the team's colour. Items
+// past the teams are hidden. The page's best local place (+5997), which picked the message above
+// the list and picks the trophy next, follows the local players' team: first (a tie counts) is
+// "CONGRATULATIONS!" (Race.bmg 1219), anything else "BETTER LUCK NEXT TIME!" (1222), as the scene.
+namespace {
+constexpr uint32_t kAwardNamePane = 0x80892C57;   // "mii_name": the name text box of an item
+constexpr uint32_t kAwardPointPane = 0x80892C69;  // "point": its score
+constexpr uint32_t kAwardMessage = 0x488;         // the page's congratulations control
+constexpr uint32_t kSetMessageAll = 0x8063DDB4;   // LayoutUIControl::SetMessageAll(control, bmg, info)
+
+void LocalVsAwardTeamRows(CpuContext* ctx, uint32_t page, const std::vector<Teams::AwardRow>& rows) {
+    constexpr uint32_t kItems = 12;
+    const uint32_t mode = Memory::Read8(page + 5998);
+    const uint32_t flag = (int32_t((mode | ~2u) - ((mode - 2u) >> 1)) < 0) ? 1u : 0u;  // the game's r30
+    const CpuContext saved = *ctx;
+    for (uint32_t k = 0; k < kItems; ++k) {
+        const uint32_t item = page + 1532 + k * 372;
+        if (k >= rows.size() || rows[k].slot >= kItems) {
+            Memory::Write8(item + 0x80, 1);  // hidden, as SetValues leaves an empty slot's item
+            continue;
+        }
+        results_scroll::Call(ctx, saved, MKW_GADDR(805BBBD0), item, rows[k].slot, 0, flag);  // SetValues
+        results_scroll::Call(ctx, saved, 0x8063DCBC, item, kAwardNamePane,
+                             CustomMessages::TeamNameBmg(rows[k].colour, Teams::ScoreByAverage()), 0);
+        results_scroll::SetPaneMessage(ctx, saved, item, kAwardPointPane, results_scroll::kIntegerMessage, rows[k].score);
+        *ctx = saved;
+        Teams::TintAwardRow(ctx, item, rows[k].colour, rows[k].local);
+    }
+    const bool won = Teams::AwardWon();
+    Memory::Write8(page + 5997, won ? 1 : 12);
+    results_scroll::Call(ctx, saved, kSetMessageAll, page + kAwardMessage, won ? 1219 : 1222, 0);
+    *ctx = saved;
+}
+} // namespace
+
 extern "C" void LocalVs_AwardResultItems_805bcdc4(CpuContext* ctx) {
     constexpr uint32_t kItems = 12, kTeamItems = 6;
     const uint32_t page = ctx->gpr[3];
+    if (const auto rows = Teams::AwardRows(); !rows.empty()) {
+        LocalVsAwardTeamRows(ctx, page, rows);
+        return;
+    }
     const uint32_t count = std::min<uint32_t>(Memory::Read8(page + 5999), kItems);
     const uint32_t teams = Memory::Read8(page + 5996);
     const uint32_t award = Memory::Read32(MKW_GADDR(809BD728)) + 6144;
