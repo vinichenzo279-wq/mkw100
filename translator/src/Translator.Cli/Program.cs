@@ -77,6 +77,15 @@ var preferCachedInputs = HasFlag(tail, "--prefer-cached-inputs");
 var dolFile = new Lazy<DolFile>(LoadDol);
 var relFile = new Lazy<RelFile?>(LoadRel);
 var image = new Lazy<ProgramImage>(LoadImage);
+if (project?.Translation.InstructionOverridesPath is { } instructionOverridesPath)
+{
+    Translator.Core.Disassembly.InstructionOverrides.Current =
+        Translator.Core.Disassembly.InstructionOverrides.Load(instructionOverridesPath, address =>
+            image.Value.Contains(address, sizeof(uint))
+                ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+                    image.Value.Memory.AsSpan(image.Value.GetOffset(address, sizeof(uint)), 4))
+                : null);
+}
 var canonicalIrStore = new CanonicalIrStore();
 // Hoisted out of the translator factory so the base pipeline can prewarm the
 // recursive ABI cache in one stable pass, exactly like translate-mod does.

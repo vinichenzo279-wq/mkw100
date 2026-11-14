@@ -100,12 +100,16 @@ internal sealed class TranslationProjectConfig
         var arraySitesPath = dto.Translation?.ArraySites is { } arraySitesValue
             ? ResolvePath(workspaceRoot, arraySitesValue)
             : null;
+        var instructionOverridesPath = dto.Translation?.InstructionOverrides is { } overridesValue
+            ? ResolvePath(workspaceRoot, overridesValue)
+            : null;
         var translation = new ProjectTranslation(
             entryPoints,
             functionMapPath,
             dto.Translation?.AllowUnsupportedInstructions ?? false,
             playerSlotSitesPath,
-            arraySitesPath);
+            arraySitesPath,
+            instructionOverridesPath);
 
         var abiDirectories = (dto.Runtime?.NativeAbiDirectories ?? [])
             .Select(pathValue => ResolvePath(workspaceRoot, pathValue))
@@ -418,6 +422,8 @@ internal sealed class TranslationProjectConfig
         public string? PlayerSlotSites { get; init; }
         // mkw100: per-player array sites in singletons rewritten to shadow windows (ArrayOverflowSites).
         public string? ArraySites { get; init; }
+        // mkw100: guest instruction words replaced before decoding (InstructionOverrides).
+        public string? InstructionOverrides { get; init; }
     }
 
     private sealed class FunctionMapDto
@@ -488,7 +494,8 @@ internal sealed record ProjectTranslation(
     string? FunctionMapPath,
     bool AllowUnsupportedInstructions,
     string? PlayerSlotSitesPath = null,
-    string? ArraySitesPath = null);
+    string? ArraySitesPath = null,
+    string? InstructionOverridesPath = null);
 internal sealed record ProjectRuntime(
     IReadOnlyList<string> NativeAbiDirectories,
     string NativeRegistrationRoot,

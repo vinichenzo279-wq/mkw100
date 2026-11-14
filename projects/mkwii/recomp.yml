@@ -33,6 +33,8 @@ translation:
   # mkw100: mulli 0xF0 sites rewritten to reach overflow player slots (scripts/mkw100/slot_sites.py).
   player_slot_sites: projects/mkwii/mkw100/player-slot-sites.txt
   array_sites: projects/mkwii/mkw100/array-sites.txt
+  # mkw100: guest instruction words replaced before decoding (coin battle's 12-player layout).
+  instruction_overrides: projects/mkwii/mkw100/instruction-overrides.txt
 
   #just a precaution, but this should never be needed for MKWii
   allow_unsupported_instructions: false 
