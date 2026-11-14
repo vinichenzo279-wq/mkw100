@@ -1,17 +1,17 @@
 # MKW100
 
-A fork of the WiiCompiled Mario Kart Wii (PAL) recompiler for big offline races: up to 128 racers. It builds from source on your own PC, from your own game files.
+A fork of the WiiCompiled Mario Kart Wii (PAL) recompiler for big offline races: up to 255 racers. It builds from source on your own PC, from your own game files.
 
 ## What it does
 
-- **VS race**: 1 to 128 racers. Set the count in the new **Racers** row on the VS rules page, or in F10 → Local VS.
+- **VS race**: 1 to 255 racers. Set the count in the new **Racers** row on the VS rules page, or in F10 → Local VS.
 - **Team VS**: 2 to 12 teams, chosen by team count, by team size, or with a custom size per colour. Races of more than 12 racers use MKW100's team colours, HUD tinting and team results.
 - **Balloon battle**: past 12 players, with red/blue team sizes and your team picked on the battle team screen.
 - **Grand Prix**: past 12 racers through the award ceremony, with points scaled to the field and a GP rank.
 - **Split screen**: 2 to 4 local players, with CPUs filling the rest of the field.
-- **200cc** in place of Mirror. Choosing Mirror runs the race unmirrored at 200cc, with brake drifting.
-- **Impossible CPUs**: a fourth CPU difficulty after Hard on the rules page.
-- Position icons 13th to 128th, a speedometer in the race HUD (Pulsar's, as Retro Rewind shows it), instant item boxes, scoring and item-distribution options for big fields, all characters/vehicles/cups unlocked, and optional 30 FPS rendering.
+- **200cc** in place of Mirror (the class button reads 200cc), with Pulsar's brake drifting, fast falling and cannon cap. A 200cc Grand Prix has Very Hard CPUs.
+- **Harder CPUs**: the CPU row on the rules page offers Hard, Very Hard and Impossible.
+- Position icons 13th to 255th, a speedometer in the race HUD (Pulsar's, as Retro Rewind shows it), instant item boxes, scoring and item-distribution options for big fields, all characters/vehicles/cups unlocked, and optional 30 FPS rendering.
 - **Debug item cycler**: a port of _Ro's code. In a race, hold Y and press D-pad left/right to pick an item. It is off by default.
 - **F10** opens the settings overlay. The Local VS tab holds the options above. They are saved to `UserData/Config.toml` in the play folder.
 
@@ -22,6 +22,8 @@ Online play is not supported: the installer turns networking off.
 The same checkout can also build a Retro Rewind version from your Retro Rewind 6 pack (offline, no Retro WFC). It runs up to **128 racers**. CPUs get varied skins up to racer 64; past that they keep the stock look, because every skin loads a large kart archive and 128 of them don't fit in memory. The racer fixes are measured on the WheelWizard RetroRewind6 `Code.pul`; with another build they switch themselves off (and the build warns).
 
 ## Installing on Windows
+
+Step by step for a new PC: [INSTALL.md](INSTALL.md).
 
 You need:
 
