@@ -25,7 +25,7 @@ widening those everywhere.
 | Battle ranking | our own `balloon_battle.cpp` read the position byte as `int8_t`: place 128 and up was skipped (128 racers already) | `int32_t` | done |
 | Battle length | game code: `Raceinfo::__ct` reads the seconds from `minigame.kmg` by arena and player count, a row for 2..12 players | the 12-player length for more players (`balloon_battle.cpp`) | done, see Battle length |
 | F10 slider, VS and battle rules row, `--race-players` | `LocalVs::MaxRacers()` | per product | base 255, mod product 128 |
-| Position icons | `runtime/assets/rank_icons`: rank013..rank128.tpl | assets | 129..255 missing: the HUD uses the overlay digits |
+| Position icons | `runtime/assets/rank_icons`: rank013..rank128.tpl | 129..255 generated with the generator of 25..128 | done |
 | Item Fever | `item_fever.cpp` (`kFeverShadowRacers = 128 - 12`, shadows 0x100..0x200 apart), `cmpimm 128` guards in array-sites.txt | resize the shadows, guards to 255, retest | not done |
 | Retro Rewind | `rr_racer_state` (class 10) fits; the per-racer skin archives (`rr_skins.cpp`) are budgeted for 128 and there is no arena | memory budget, retest | not done |
 | Past 255 | `u8` count and ids everywhere | redesign | out of scope |
@@ -166,7 +166,6 @@ Battle (Block Plaza), with the battle length fix:
 
 ## Not done
 
-- Position icons 129th..255th (`runtime/assets/rank_icons`); the overlay digits are used.
 - Item Fever and Retro Rewind past 128 (see the table). Neither product was built or run from
   this branch.
 - Anything a headless race does not reach: the menus with 255 (F10 slider, rules row, team

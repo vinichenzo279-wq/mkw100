@@ -1,13 +1,12 @@
-// mkw100: position icons for 13th..128th on the race HUD's position counter (CtrlRaceRankNum).
+// mkw100: position icons for 13th..255th on the race HUD's position counter (CtrlRaceRankNum).
 //
-// The game's counter only has pictures for 1st..12th. rank_icons/rank013.tpl .. rank128.tpl next
-// to the executable (runtime/assets/rank_icons: 13-24 by hammerbro101, 25-128 generated; see the
+// The game's counter only has pictures for 1st..12th. rank_icons/rank013.tpl .. rank255.tpl next
+// to the executable (runtime/assets/rank_icons: 13-24 by hammerbro101, 25-255 generated; see the
 // README there) are read once, and each race copies the ones it needs into the race scene's
 // structsDebug heap (MEM2) and binds them as TPLBind does, then hands them to the counter's own
 // texture pattern animation (see Show). Textures must sit in MEM1/MEM2: the GX layer rejects
 // texture data outside them (a fixed runtime span gave "GXLoadTexObj rejected data-out-of-range").
 // When the files are missing the HUD overlay's vector digits are used instead.
-// (129th..255th have no files yet.)
 
 #include "rank_icons.h"
 
