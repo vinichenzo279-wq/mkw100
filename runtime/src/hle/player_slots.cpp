@@ -234,10 +234,82 @@ REGISTER_NATIVE_WRAPPER_AS(0x805302C4, RaceConfig_InitRace_805302c4, "RaceConfig
 // then called through an empty object). The menu scenario is reordered so slots 1-11 hold the
 // top CPUs by series total (+0xDA, ties by the last place +0xE2); the player stays in slot 0 (its
 // controller); those 12 get ranks 1-12 in that order. The ceremony then shows the real podium.
+//
+// With teams (the menu scenario's team flag: battles; a Team VS series past 12 has gone to the solo
+// ceremony, Teams::AwardSection) everything is built for six a team. InitAwards fills the ceremony
+// with the local players' team from slots 0-11, and the results page
+// (Pages::AwardResults::PrepareResultItems 0x805BCDC4) has six items a team: the racers of its
+// first slots each fill item rank - 1 of their team's six, +0xE0 being the rank within the team.
+// Ranks 1-12 over both teams reached past the page's 12 items (from 13 racers: SetTextBoxMessage
+// called through whatever followed them). So the first slots get up to six racers of each team,
+// its local players and then its best by total, ranked within their team; the slots left are
+// emptied.
+namespace {
+
+constexpr uint32_t kSettingsModeFlagsOffset = 0xB48 + 0x28;
+constexpr uint32_t kModeFlagTeams = 2;
+constexpr uint32_t kPlayerTeamOffset = 0xCC;  // 0 red, 1 blue
+constexpr uint32_t kAwardTeamRows = 6;
+
+void PrepareTeamAwardSlots(uint32_t racedata, uint32_t count) {
+    const uint32_t menu = racedata + kScenarioOffsets[1];
+    const auto player = [&](uint32_t i) { return PlayerAddress(racedata, menu, i); };
+    const auto type = [&](uint32_t i) { return Memory::Read32(player(i) + kPlayerTypeOffset); };
+    const auto better = [&](uint32_t a, uint32_t b) {
+        const uint32_t ta = Memory::Read16(player(a) + 0xDA), tb = Memory::Read16(player(b) + 0xDA);
+        if (ta != tb) return ta > tb;
+        return Memory::Read8(player(a) + 0xE2) < Memory::Read8(player(b) + 0xE2);
+    };
+    std::vector<bool> shown(count, false);
+    uint32_t total = 0;
+    for (uint32_t team = 0; team < 2; ++team) {
+        std::vector<uint32_t> members;
+        for (uint32_t i = 0; i < count; ++i)
+            if (type(i) != kTypeNone && Memory::Read32(player(i) + kPlayerTeamOffset) == team) members.push_back(i);
+        std::stable_sort(members.begin(), members.end(), [&](uint32_t a, uint32_t b) {
+            const bool la = type(a) == kTypeRealLocal, lb = type(b) == kTypeRealLocal;
+            return la != lb ? la : better(a, b);
+        });
+        if (members.size() > kAwardTeamRows) members.resize(kAwardTeamRows);
+        std::stable_sort(members.begin(), members.end(), better);
+        for (uint32_t r = 0; r < members.size(); ++r) {
+            const uint32_t p = player(members[r]);
+            shown[members[r]] = true;
+            Memory::Write8(p + 0xE0, uint8_t(r + 1));
+            Memory::Write16(p + 0xD8, Memory::Read16(p + 0xDA));  // the score the page shows, as below
+        }
+        total += uint32_t(members.size());
+    }
+    // Slots 0..total-1 hold the shown racers, as the page and InitAwards walk them: whoever else
+    // sits there changes places with a shown racer from further up. The local players (slots 0-3)
+    // are shown, so they stay where their controllers are.
+    uint32_t from = total;
+    for (uint32_t k = 0; k < total; ++k) {
+        if (shown[k]) continue;
+        while (from < count && !shown[from]) ++from;
+        if (from >= count) break;
+        const uint32_t a = player(k), b = player(from);
+        for (uint32_t o = 4; o < kStride; o += 4) {
+            const uint32_t word = Memory::Read32(a + o);
+            Memory::Write32(a + o, Memory::Read32(b + o));
+            Memory::Write32(b + o, word);
+        }
+        shown[k] = true;
+        shown[from] = false;
+    }
+    for (uint32_t k = total; k < kInlineSlots; ++k) Memory::Write32(player(k) + kPlayerTypeOffset, kTypeNone);
+}
+
+} // namespace
+
 void PrepareAwardSlots(uint32_t racedata) {
     const uint32_t count = Memory::Read8(racedata + 0x24);
     if (count <= kInlineSlots || count > kMaxPlayers) return;
     const uint32_t menu = racedata + kScenarioOffsets[1];
+    if ((Memory::Read32(menu + kSettingsModeFlagsOffset) & kModeFlagTeams) != 0) {
+        PrepareTeamAwardSlots(racedata, count);
+        return;
+    }
     const auto player = [&](uint32_t i) { return PlayerAddress(racedata, menu, i); };
     std::vector<uint32_t> order(count);
     for (uint32_t i = 0; i < count; ++i) order[i] = i;
