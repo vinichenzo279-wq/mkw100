@@ -1212,28 +1212,48 @@ extern "C" void LocalVs_SectionPages_8062c3a4(CpuContext* ctx) {
 REGISTER_NATIVE_WRAPPER_AS(0x8062C3A4, LocalVs_SectionPages_8062c3a4, "LocalVs_SectionPages_8062c3a4");
 
 // Pages::AwardResults::PrepareResultItems (0x805BCDC4): the ceremony's final ranking has 12 result
-// items (page +1532, 0x174 each); each racer fills the item of its final place (racer + 232), so a
-// place past 12 reached past them (100-racer GP: a call through an empty control after race 4).
-// Past 12 racers only the top 12 fill their items; the full standings are the results pages'. The
-// other path (+5996 set: items placed by team) is left to the game.
+// items (page +1532, 0x174 each). The racers of the award scenario's first slots (+5999 of them,
+// 12 at most) each fill the item of their final rank (player +0xE0): item rank - 1, or with teams
+// (+5996) item rank - 1 of their team's six, blue's (team 1) after red's. Nothing checks the rank,
+// so one that does not fit filled whatever follows the items (100-racer GP: a call through an
+// empty control; 13-racer Team VS, ranks 1-12 over two teams: SetTextBoxMessage called through
+// text). Racedata_InitAwards (player_slots.cpp) hands out ranks that fit; should one not fit all
+// the same, that racer is left out here, the game's loops otherwise as they are.
 extern "C" void LocalVs_AwardResultItems_805bcdc4(CpuContext* ctx) {
+    constexpr uint32_t kItems = 12, kTeamItems = 6;
     const uint32_t page = ctx->gpr[3];
-    const uint32_t count = Memory::Read8(page + 5999);
-    if (count <= 12 || Memory::Read8(page + 5996) != 0) { MKW_GUEST_NEXT(805BCDC4)(ctx); return; }
+    const uint32_t count = std::min<uint32_t>(Memory::Read8(page + 5999), kItems);
+    const uint32_t teams = Memory::Read8(page + 5996);
+    const uint32_t award = Memory::Read32(MKW_GADDR(809BD728)) + 6144;
+    // The item racer `i` fills, kItems when its rank has none.
+    const auto itemOf = [&](uint32_t i) {
+        const uint32_t slot = award + i * 240;
+        const uint32_t index = uint32_t(Memory::Read8(slot + 232)) - 1;  // rank 0: no item
+        if (teams == 0) return index < kItems ? index : kItems;
+        if (index >= kTeamItems) return kItems;
+        return Memory::Read32(slot + 212) == 1 ? index + kTeamItems : index;
+    };
+    bool fits = true;
+    for (uint32_t i = 0; i < count; ++i) fits = fits && itemOf(i) < kItems;
+    if (fits) { MKW_GUEST_NEXT(805BCDC4)(ctx); return; }
+    RT_LOGF("local-vs", "award results: a rank without an item, that racer is left out\n");
     const uint32_t mode = Memory::Read8(page + 5998);
     const uint32_t flag = (int32_t((mode | ~2u) - ((mode - 2u) >> 1)) < 0) ? 1u : 0u;  // the game's r30
-    const uint32_t rd = Memory::Read32(MKW_GADDR(809BD728));
     const CpuContext saved = *ctx;
-    for (uint32_t i = 0; i < count && i < PlayerSlots::kMaxPlayers; ++i) {
-        const uint32_t place = Memory::Read8(rd + 6144 + MKW100_PlayerSlotOffset(i) + 232);
-        if (place < 1 || place > 12) continue;
+    const auto setValues = [&](uint32_t item, uint32_t player) {
         *ctx = saved;
-        ctx->gpr[3] = page + 1532 + (place - 1) * 372;
-        ctx->gpr[4] = i;
-        ctx->gpr[5] = 0;  // +5996, zero on this path
+        ctx->gpr[3] = page + 1532 + item * 372;
+        ctx->gpr[4] = player;
+        ctx->gpr[5] = teams;
         ctx->gpr[6] = flag;
-        InvokeIndirectCpu(MKW_GADDR(805BBBD0), ctx);  // AwardDemoResultItem::SetValues(item, player, r5, r6)
-    }
+        InvokeIndirectCpu(MKW_GADDR(805BBBD0), ctx);  // AwardDemoResultItem::SetValues(item, player, teams, r6)
+    };
+    // As the game: with teams every item starts as slot 11's (hidden when that slot is empty);
+    // without, the items past the racers take the empty slots of their own number.
+    if (teams != 0) for (uint32_t k = 0; k < kItems; ++k) setValues(k, kItems - 1);
+    for (uint32_t i = 0; i < count; ++i)
+        if (const uint32_t item = itemOf(i); item < kItems) setValues(item, i);
+    if (teams == 0) for (uint32_t k = count; k < kItems; ++k) setValues(k, k);
     *ctx = saved;
 }
 REGISTER_NATIVE_WRAPPER_AS(0x805BCDC4, LocalVs_AwardResultItems_805bcdc4, "LocalVs_AwardResultItems_805bcdc4");

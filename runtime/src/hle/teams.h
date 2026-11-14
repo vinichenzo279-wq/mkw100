@@ -64,6 +64,9 @@ void SetBattleTeamChoice(uint32_t choice);
 // scenario's team flag cleared and becomes a teams race; the first race of a series (and a
 // headless boot) deals new teams.
 void OnInitRace(uint32_t racedata);
+// The section the game goes to next (SectionMgr::SetNextSection): after a teams series its Team VS
+// ceremony (0x37) becomes the solo VS one (0x36), set up as the game does for a solo series.
+uint32_t AwardSection(uint32_t section);
 // The pre-race team screen of a Team VS series of `racers` (> 12): deals the series' teams now so
 // the screen and the race agree; OnInitRace keeps them for that series.
 void DealForMenu(uint32_t racers, bool redeal = false);

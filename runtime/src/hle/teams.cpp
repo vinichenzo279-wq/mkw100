@@ -243,6 +243,38 @@ void OnInitRace(uint32_t racedata) {
     }
 }
 
+// The end of a series: Pages::RaceMenu::OnButtonClick (0x8085A0F4) sets the menu scenario up for the
+// ceremony and asks for its section. Its Team VS case (section 0x37) is all red against blue: the
+// winner by the race scenario's teams (ours are stored there as 3 and up, so blue always won and
+// the player always lost), the ceremony and its results page by the menu scenario's red and blue
+// (dealt by the game's team page, nothing to do with our teams), six a team: past 12 racers the
+// page filled items that do not exist (player_slots.cpp, PrepareTeamAwardSlots).
+// A teams series plays as solo VS with our teams on top, so it gets the solo ceremony (0x36), set
+// up as that function's solo case does: the winning scene and the podium camera when a local
+// player is in the series' top three (menu player +0xE0, the standings page's rank), else the
+// losing scene; the team flag off, so InitAwards and the results page take their solo paths.
+uint32_t AwardSection(uint32_t section) {
+    constexpr uint32_t kSectionTeamVsAward = 0x37, kSectionVsAward = 0x36;
+    constexpr uint32_t kMenu = 0xC10;
+    constexpr uint32_t kCourse = 0xB48, kCameraMode = 0xB54, kModeFlags = 0xB70;
+    constexpr uint32_t kCourseWinning = 0x37, kCourseLosing = 0x38;
+    constexpr uint32_t kCameraVsPodium = 8, kCameraLosing = 12;
+    if (section != kSectionTeamVsAward || !Active()) return section;
+    const uint32_t rd = Memory::Read32(kTeamsRacedata);
+    if (rd == 0) return section;
+    bool podium = false;
+    for (uint32_t i = 0; i < 4; ++i) {  // local players are slots 0-3
+        if (Memory::Read32(rd + 0x28 + i * 0xF0 + 0x10) != 0) continue;
+        const uint32_t rank = Memory::Read8(rd + kMenu + 0x8 + i * 0xF0 + 0xE0);
+        podium = podium || (rank >= 1 && rank <= 3);
+    }
+    Memory::Write32(rd + kMenu + kCameraMode, podium ? kCameraVsPodium : kCameraLosing);
+    Memory::Write32(rd + kMenu + kCourse, podium ? kCourseWinning : kCourseLosing);
+    Memory::Write32(rd + kMenu + kModeFlags, Memory::Read32(rd + kMenu + kModeFlags) & ~kTeamsFlag);
+    RT_LOGF("teams", "series over: the solo ceremony (%s)\n", podium ? "podium" : "not in the top three");
+    return kSectionVsAward;
+}
+
 uint32_t Count() { return g_count.load(); }
 
 void DealForMenu(uint32_t racers, bool redeal) {
