@@ -262,9 +262,12 @@ bool ResultsTrace() {
 // the vanilla UpdatePoints' stack array, fixed in local_vs.cpp; this check catches such a page only
 // when it is already broken on entry.)
 namespace {
-bool GuestCode(uint32_t a) { return a >= 0x80000000 && a < 0x81800000; }
+// MEM1 plus the Kamek module overlay above it (memory.cpp: 0x81800000, 2 MiB), where Retro Rewind's
+// and Item Fever's Code.pul live with their own page classes (Pulsar's character select, page 0x6B,
+// has its vtable there; leaving the overlay out blanked that screen, issue #17).
+bool GuestCode(uint32_t a) { return a >= 0x80000000 && a < 0x81A00000; }
 bool GuestData(uint32_t a) {
-    return (a >= 0x80000000 && a < 0x81800000) || (a >= 0x90000000 && a < 0x98000000);
+    return (a >= 0x80000000 && a < 0x81A00000) || (a >= 0x90000000 && a < 0x98000000);
 }
 // A page Activate can run: its vtable and its input manager's vtable (called at +0x28) are code.
 bool ActivatablePage(uint32_t page) {
