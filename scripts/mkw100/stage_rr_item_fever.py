@@ -10,7 +10,8 @@ UserData/Config.toml:  [paths] overlay_roots = ["<stage>/ItemFeverItems"]
   riivolution/ItemFeverItems.xml  maps the files below over the disc
   files/IFCnfg.pul                Item Fever's Config.pul (combine_pul.py renames the name it reads)
   files/Common.szs                Item Fever's Race/Common.szs + Assets/CommonAssets2.szs (item models)
-  files/RaceAssets.szs            Retro Rewind's RaceAssets.szs + Item Fever's + its mkwci icons
+  files/RaceAssets.szs            Retro Rewind's RaceAssets.szs, plus Item Fever's files it lacks,
+                                  Item Fever's item icon bank (PULitem) and its mkwci icons
   files/revo_kart.brsar           Item Fever's sound archive (item sounds)
 
 Everything comes from the user's own copies of both packs; nothing here is shipped.
@@ -76,9 +77,12 @@ def main():
     merge(os.path.join(files, 'Common.szs'), [
         (os.path.join(ifp, 'Disc', 'Race', 'Common.szs'), everything),
         (os.path.join(ifp, 'Assets', 'CommonAssets2.szs'), everything)])
+    # Retro Rewind's files win where both packs have one (they differ in its knockout end screen,
+    # course info and timer controls), except Item Fever's item icon bank (PULitem) and icons.
     merge(os.path.join(files, 'RaceAssets.szs'), [
-        (os.path.join(a.rr_pack, 'Assets', 'RaceAssets.szs'), everything),
         (os.path.join(ifp, 'Assets', 'RaceAssets.szs'), everything),
+        (os.path.join(a.rr_pack, 'Assets', 'RaceAssets.szs'), everything),
+        (os.path.join(ifp, 'Assets', 'RaceAssets.szs'), lambda k: k == 'game_image/blyt/PULitem.brlyt'),
         (os.path.join(ifp, 'Disc', 'Scene', 'UI', 'Race.szs'), lambda k: k.startswith('game_image/timg/mkwci'))])
     with open(os.path.join(root, 'riivolution', 'ItemFeverItems.xml'), 'w', encoding='utf-8') as f:
         f.write(XML)

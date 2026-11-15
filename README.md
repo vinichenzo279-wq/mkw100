@@ -57,6 +57,7 @@ The first build takes a while: it translates the game, builds aurora (the graphi
 | `play\` | `WiiCompiled.exe`, the base game, with its own `UserData` (settings, NAND saves, logs) |
 | `play-rr\` | `RetroRewind.exe` with its own `UserData`, plus `RetroRewind6\`, a folder of links to your pack. Retro Rewind's own save lives in `play-rr\riivolution\save`, so your Dolphin or WheelWizard save is left alone. |
 | `play-if\` | `RetroRewind.exe` built from Item Fever, with its own `UserData`, `ItemFever\` (links to your pack) and `riivolution\ItemFever.xml` |
+| `play-rr-if\` | Experimental: `RetroRewind.exe` built from Retro Rewind with Item Fever's items, with its own `UserData`, `RetroRewind6\` (links) and `ItemFeverItems\` (Item Fever's item files, merged from your download) |
 | `install-options.json` | Your WiiCompiled folder and mod choice, reused on the next run |
 
 Your WiiCompiled installation is only read from: the game data and the clean DOL/REL stay there, so keep it where it is. Nothing in it is changed, and your original WiiCompiled saves are not copied.
@@ -74,6 +75,16 @@ Instead of Retro Rewind, a checkout can build an **Item Fever 1.1.1** version (o
 ```
 
 Play with **Play-ItemFever.cmd**. It lives in `play-if\` with its own `UserData`; Item Fever's own save (`ifever.dat`) is made from that NAND's save on the first launch. Both mods build the same mod executable, so one checkout holds the base game plus **one** mod: for both, use a second clone in another folder. Known gaps: Item Fever's own per-racer data is made for 12 racers, and not all of it has been extended yet, so a crash in a big race is possible.
+
+### Retro Rewind with Item Fever's items (experimental)
+
+With `-RetroRewind`, `-ItemFeverItems` adds Item Fever's items and their logic to Retro Rewind: its item table, the 21 new items and the four reworked ones, without Item Fever's menus, settings pages or save. Retro Rewind's own item rules (custom item toggles, item modes) are off in this version, Item Fever's settings stay at their defaults, Item Rain and Loot Party are off, and it is offline only. Headless races of up to 128 racers have been tested; menus and the item icons on screen have not been checked yet. See `docs/mkw100/rr-item-fever.md`.
+
+```powershell
+./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -RetroRewind auto -ItemFeverItems 'D:\Mods\item-fever-110'
+```
+
+Play with **Play-RetroRewindItemFever.cmd**. It lives in `play-rr-if\`, so `play-rr\` keeps the plain Retro Rewind of an earlier install; this checkout's Retro Rewind executable is then the combined one. `-NoItemFeverItems` goes back to plain Retro Rewind. Item Fever's licence allows personal use only: don't share this version.
 
 ## Development
 

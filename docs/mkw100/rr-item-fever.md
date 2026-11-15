@@ -99,7 +99,13 @@ Each fix is in the plan or the stage script:
   - **Results** (repeatable): 12 racers `59e215a1e8678039`, 24 `a56bc6fd42641cf9` (twice), 100 `4629df62208e7535`, 128 `f3f5c1ee1974502f`.
 - **Not checked from the menus**: character select, the item icons on screen, sounds, results, the next race. Headless runs don't show the HUD.
 - **Item Fever's settings stay at their defaults** (Settings.pul in its own NAND folder), with no way to change them in this build. Item Rain and Loot Party are off.
-- **Small asset gaps**: "Boo: animation 3 MISSING". Item Fever's versions of Pulsar's HUD layouts replace Retro Rewind's in the merged `RaceAssets.szs`.
+- **Assets.** The merged `RaceAssets.szs` keeps all of Retro Rewind's files except the item icon bank `PULitem.brlyt` (only 4 files differ between the two packs; the other three are Retro Rewind's knockout end screen, course info and timer controls). "Boo: animation 3 MISSING" is logged by plain Item Fever in MKW100 as well, so it isn't caused by the merge.
+- **Retro Rewind's own Item Rain** (switched on in Retro Rewind's menus) is still in this build and untested with Item Fever's items; it does nothing unless turned on.
+- **Playing it**: `Install-MKW100.ps1 -RetroRewind ... -ItemFeverItems <Item Fever download>` builds it and stages it into `play-rr-if\` (with `ItemFeverItems\` and the `overlay_roots` line), launched by `Play-RetroRewindItemFever.cmd`; `play-rr\` is left alone.
+- **The other builds still pass with this branch's shared changes** (runtime, translator), tested headless on 2026-11-15:
+  - base game: 12 racers `fa906b50b69477e8` (3 runs, two build configurations), 24 `924b7ee927786e20`, 128 `5576bba5f6e7ecec`, 128 with the item test `82a35cdb20a4e222`: all four are MKW100's existing baselines;
+  - plain Retro Rewind: 12 racers `e6b5e28c2590f6dd` twice (repeatable now), 24, 100, 128 and 128 with the item test finish, pack fixes on;
+  - plain Item Fever: 12 racers `19f921d8b3158f48` twice, 24, 100, 128 and 128 with the item test finish, pack fixes on.
 - **Online must stay off** for this build. Retro Rewind's code check is stubbed, and the items differ from everyone else's.
 - **The licence question** (below) is unchanged: this runs the user's own copy, but the author's permission is still the decent thing to ask for before sharing it.
 

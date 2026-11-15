@@ -13,6 +13,11 @@ param(
     # (both use the mod executable); remembered like -RetroRewind, -NoItemFever turns it off.
     [string]$ItemFever,
     [switch]$NoItemFever,
+    # Experimental, with -RetroRewind: an Item Fever download (as for -ItemFever) whose items join
+    # Retro Rewind (docs/mkw100/rr-item-fever.md). Builds the Retro Rewind product from both packs
+    # and stages it into play-rr-if\ instead of play-rr\. Remembered; -NoItemFeverItems turns it off.
+    [string]$ItemFeverItems,
+    [switch]$NoItemFeverItems,
     [switch]$AllowSourceDependencies,
     [switch]$PreflightOnly
 )
@@ -96,12 +101,21 @@ if ($RetroRewind -eq 'auto') {
 }
 if ($RetroRewind) { $RetroRewind = Resolve-RetroRewindPack $RetroRewind }
 
-[pscustomobject]@{ InstallRoot = $InstallRoot; RetroRewind = $RetroRewind; ItemFever = $ItemFever } |
+if ($NoItemFeverItems -or !$RetroRewind) {
+    if ($ItemFeverItems -and !$RetroRewind) { throw '-ItemFeverItems goes with -RetroRewind (Item Fever''s items join Retro Rewind).' }
+    $ItemFeverItems = ''
+} elseif (!$ItemFeverItems -and $saved -and $saved.PSObject.Properties['ItemFeverItems'] -and $saved.ItemFeverItems) {
+    $ItemFeverItems = $saved.ItemFeverItems
+}
+if ($ItemFeverItems) { $ItemFeverItems = Resolve-ItemFeverPack $ItemFeverItems }
+
+[pscustomobject]@{ InstallRoot = $InstallRoot; RetroRewind = $RetroRewind; ItemFever = $ItemFever; ItemFeverItems = $ItemFeverItems } |
     ConvertTo-Json | Set-Content -LiteralPath $OptionsFile -Encoding UTF8
 
 $buildArgs = @{ InstallRoot = $InstallRoot; Jobs = $Jobs; AllowSourceDependencies = $AllowSourceDependencies; PreflightOnly = $PreflightOnly }
 if ($RetroRewind) { $buildArgs.RetroRewind = $RetroRewind }
 if ($ItemFever) { $buildArgs.ItemFever = $ItemFever }
+if ($ItemFeverItems) { $buildArgs.ItemFeverItems = $ItemFeverItems }
 & (Join-Path $Repo 'Build-MKW100.ps1') @buildArgs
 if ($LASTEXITCODE -ne 0) { throw 'Build failed; see build-logs.' }
 if ($PreflightOnly) { return }
@@ -196,10 +210,11 @@ function Mirror-Pack([string]$Pack, [string]$Stage) {
 
 # A mod product: native-build-win\RetroRewind.exe (the mod target) plus its pack. One checkout
 # builds at most one mod product (Retro Rewind or Item Fever), so the other needs its own clone.
-function Install-ModProduct([string]$Name, [string]$Stage, [string]$Pack, [int]$Players, [string]$ConfigKey) {
+function Install-ModProduct([string]$Name, [string]$Stage, [string]$Pack, [int]$Players, [string]$ConfigKey, [string]$ExtraPaths = '') {
     Copy-Runtime $Stage 'RetroRewind.exe'
     $mirror = Mirror-Pack $Pack $Stage
     $extra = if ($ConfigKey) { "$ConfigKey = `"$(TomlPath $mirror)`"" } else { '' }
+    if ($ExtraPaths) { $extra = ($extra + "`n" + $ExtraPaths).Trim() }
     Write-DefaultConfig $Stage $Players $extra
     Write-Host "$Name staged in $Stage (pack: $Pack)."
 }
@@ -209,7 +224,24 @@ Copy-Runtime $play 'WiiCompiled.exe'
 Write-DefaultConfig $play 100 ''
 Write-Host "MKW100 staged in $play."
 
-if ($RetroRewind) {
+if ($RetroRewind -and $ItemFeverItems) {
+    # The mod product is Retro Rewind with Item Fever's items: its own folder, so play-rr\ keeps the
+    # plain Retro Rewind of an earlier install. Item Fever's files are added as a second Riivolution
+    # root (scripts/mkw100/stage_rr_item_fever.py), named in the first-run Config.toml.
+    $stageRrIf = Join-Path $Repo 'play-rr-if'
+    $ifRoot = Join-Path $stageRrIf 'ItemFeverItems'
+    Install-ModProduct -Name 'Retro Rewind + Item Fever items' -Stage $stageRrIf -Pack $RetroRewind -Players 100 `
+        -ConfigKey 'retro_rewind_root' -ExtraPaths "overlay_roots = [`"$(TomlPath $ifRoot)`"]"
+    $python = Get-Command python.exe -ErrorAction SilentlyContinue
+    if (!$python) { throw 'python.exe is needed to stage Item Fever''s files (scripts/mkw100/stage_rr_item_fever.py).' }
+    & $python.Source -I (Join-Path $Repo 'scripts\mkw100\stage_rr_item_fever.py') --stage $stageRrIf `
+        --rr-pack $RetroRewind --if-pack $ItemFeverItems
+    if ($LASTEXITCODE -ne 0) { throw 'Staging Item Fever''s files failed.' }
+    $config = Join-Path $stageRrIf 'UserData\Config.toml'
+    if (!(Select-String -LiteralPath $config -Pattern '^\s*overlay_roots\s*=' -Quiet)) {
+        Write-Warning "$config has no overlay_roots line: add  overlay_roots = [`"$(TomlPath $ifRoot)`"]  under [paths]."
+    }
+} elseif ($RetroRewind) {
     # Retro Rewind is capped at 100 racers (runtime/src/hle/local_vs.cpp MaxRacers).
     Install-ModProduct -Name 'Retro Rewind' -Stage (Join-Path $Repo 'play-rr') -Pack $RetroRewind -Players 100 -ConfigKey 'retro_rewind_root'
 }
@@ -223,6 +255,7 @@ if ($ItemFever) {
         -Destination (Join-Path $stageIf 'riivolution') -Force
 }
 
-$launchers = if ($RetroRewind) { 'Play-MKW100.cmd or Play-RetroRewind.cmd' }
+$launchers = if ($RetroRewind -and $ItemFeverItems) { 'Play-MKW100.cmd or Play-RetroRewindItemFever.cmd' }
+             elseif ($RetroRewind) { 'Play-MKW100.cmd or Play-RetroRewind.cmd' }
              elseif ($ItemFever) { 'Play-MKW100.cmd or Play-ItemFever.cmd' } else { 'Play-MKW100.cmd' }
 Write-Host "Installed. Run $launchers. Settings and saves are kept on updates."

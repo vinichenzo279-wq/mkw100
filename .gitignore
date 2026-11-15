@@ -95,3 +95,9 @@ output.txt
 /build-logs-rrif.txt
 /PulsarPacks/
 /play-rrplain/
+/play-base/
+/play-ifplain/
+/play-rr-if/
+/install-rrif.txt
+/build-logs-rrplain.txt
+/build-logs-ifplain.txt
