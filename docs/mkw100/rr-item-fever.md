@@ -84,7 +84,13 @@ Each fix is in the plan or the stage script:
 
 ### Open points
 
-- **Not deterministic.** Two runs of the same case agreed up to race frame 4800, then diverged. Not yet known whether Item Fever's code reads wall-clock time, or whether something in the combination does. A pure Retro Rewind run in the same setup has not been compared.
+- **Determinism: fixed.** Two runs of the same case used to agree up to race frame 4800, then diverge.
+  - **Plain Retro Rewind** (the 0.9.4 build's `RetroRewind.exe`) had the same problem, even earlier: two identical 12-racer runs differed by frame 1200. So it was not caused by the combination.
+  - **The cause**: the game's `Random()` constructor and `Random::Reset()` seed from `OSGetTick`, which is the host clock in the recomp. The game seeds its own race randomness from race data, so the base game repeats exactly. But Retro Rewind (15 call sites) and Item Fever (14) create clock-seeded `Random` objects for their own features.
+  - **The fix**: `runtime/src/hle/scripted_random.cpp` gives those objects seeds from a fixed sequence in scripted test races (`--race-cpu`, `--race-auto`). Normal play keeps clock seeds.
+  - **Result**: two runs of the plain combined case give the same result `a3be7efeb9b046a7` at every trajectory checkpoint, and two runs of the Ice Flower case give `a36ef50f0c8aeca3`.
+  - **Not covered**: Item Fever's 5 direct `OSGetTick` reads are in its UI controls and don't affect the race.
+  - **Applies to the normal Retro Rewind build too.** Its headless results become repeatable once this file is in that build.
 - **12 racers only.** The combined module's digest is unknown to `mod_build.cpp`, so the build caps at 12 racers and leaves Retro Rewind's racer fixes (`rr_skins.cpp`, `profile=retro-rewind` sites) off. Going past 12 needs:
   - a `Kind` for this build;
   - the Retro Rewind sites tagged for the new profile;
