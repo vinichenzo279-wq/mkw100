@@ -262,3 +262,15 @@ keep-func 0x80562444  # ScnMgr::CreateScnGroup (room for more models)
 keep-func 0x805638FC  # ScnMgr::CreateScnGroupEx
 keep-func 0x8078746C  # ClipInfoMgr::CreateInstance
 keep-func 0x807875EC  # ClipInfoMgr::__ct
+
+# Retro Rewind's own item rules on item objects (its custom item toggles, item modes, Battle
+# Royale, its Item Rain's "all items can land"), which Item Fever's item set replaces:
+own-func 0x80790AFC   # Item::InitAllObjProperties (Retro Rewind's ItemBehaviour.cpp, 6 calls)
+own-func 0x80790AD8   # Item::LoadObjProperties (Retro Rewind's AllowDroppedItems)
+# Item-related sites both packs patch, where Item Fever's version goes with its items
+# (24-racer run: a Thunder Cloud without a model after Retro Rewind's Mega TC handled a strike).
+keep 0x80580630       # cloud strike: Item Fever's cloud rework, not Retro Rewind's MegaTC.cpp
+keep 0x80567F84       # Kart::Damage::ApplyBananaDamage (Retro Rewind: Battle Royale item eject)
+keep 0x805967AC       # Kart::Sub::Update: Feather (Item Fever's Feather item, slot 0x1D)
+keep 0x805973B4       # Kart::Player::ApplyPhysics: Feather
+keep 0x805B68DC       # Kart::Collision::UpdateCollisionsInner: Feather

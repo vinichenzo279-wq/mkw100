@@ -65,6 +65,12 @@ public sealed class ArrayOverflowSites
     /// <summary>The sites <paramref name="keep"/> accepts.</summary>
     public ArrayOverflowSites Where(Func<Site, bool> keep) => new(_sites.Values.Where(keep), TraceSignedBytes);
 
+    /// <summary>Every site (mkw100: merged profiles, ProfileMerges).</summary>
+    public IEnumerable<Site> All => _sites.Values;
+
+    /// <summary>A list holding <paramref name="sites"/>, keeping this list's trace setting.</summary>
+    public ArrayOverflowSites With(IEnumerable<Site> sites) => new(sites, TraceSignedBytes);
+
     public bool TryGet(uint address, out Site site) => _sites.TryGetValue(address, out site!);
 
     /// <summary>The lifted IR of <paramref name="ins"/>, rewritten when it is a listed site.</summary>

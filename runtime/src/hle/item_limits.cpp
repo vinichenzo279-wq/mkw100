@@ -17,6 +17,7 @@
 
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
+#include "hle/mod_build.h"
 #include "memory.h"
 #include "recomp_mod_loader.h"
 #include "runtime_log.h"
@@ -51,7 +52,7 @@ constexpr bool IsFieldItem(uint32_t id) { return id == 5 || id == 6 || id == 10 
 // cloud spawned with no model (100 racers). Under that pack the cloud keeps its stock limit.
 bool ItemFeverPack() {
     static const bool itemFever = RecompMod::RiivolutionXml().find("ItemFever") != std::string::npos;
-    return itemFever;
+    return itemFever || ModBuild::HasKnownItemFeverCode();  // or Retro Rewind with its items
 }
 bool KeepsStockLimit(uint32_t id) { return IsFieldItem(id) || (id == 14 && ItemFeverPack()); }
 

@@ -379,7 +379,7 @@ MKW_REGION_RANGE(NtscU, 809C4330, 809C4333, -0x4840)
 MKW_REGION_RANGE(NtscU, 809C4680, 809C4683, -0x48C0)
 MKW_REGION_RANGE(NtscU, 809C4730, 809C474F, -0x47B0)
 MKW_REGION_RANGE(NtscU, 809C496C, 809C496F, -0x4820)
-MKW_REGION_RANGE(NtscU, 81800000, 818FFFFF, +0x0)  // Retro Rewind module, see the end
+MKW_REGION_RANGE(NtscU, 81800000, 819FFFFF, +0x0)  // Kamek module overlay (2 MiB), see the end
 
 MKW_REGION_RANGE(NtscJ, 80000000, 80008023, +0x0)
 MKW_REGION_RANGE(NtscJ, 800080E8, 8000ADBF, -0xA4)
@@ -417,7 +417,7 @@ MKW_REGION_RANGE(NtscJ, 808E2BBC, 808E2BBE, +0x0)
 MKW_REGION_RANGE(NtscJ, 809BD6E8, 809C474B, -0xFA0)
 MKW_REGION_RANGE(NtscJ, 809C496C, 809C496F, -0xFA0)
 
-// Retro Rewind's Code.pul module (Kamek, loaded at 0x81800000). Only the PAL Code.pul is
-// translated (projects/mkwii/recomp.yml retro-rewind, --region P), so its addresses map to
-// themselves: natives in the module (rr_cpu_skins.cpp, boot_race.cpp) run only in that product.
-MKW_REGION_RANGE(NtscJ, 81800000, 818FFFFF, +0x0)
+// The Kamek module overlay (0x81800000, 2 MiB): Retro Rewind, Item Fever, or both combined (Item Fever
+// at 0x818C0000, docs/mkw100/rr-item-fever.md). Only PAL Code.pul is translated (--region P), so
+// module addresses map to themselves: natives in the module run only in their product.
+MKW_REGION_RANGE(NtscJ, 81800000, 819FFFFF, +0x0)

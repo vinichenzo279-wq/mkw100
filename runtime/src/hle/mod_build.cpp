@@ -22,6 +22,29 @@ constexpr KnownBuild kKnownBuilds[] = {
      "Item Fever 1.1.1"},
 };
 
+// The combined Retro Rewind + Item Fever module carries this marker and its two source digests
+// (combine_pul.py writes them; its own digest changes with every change of the combining plan).
+constexpr uint32_t kCombinedMarker = 0x818AFF00;
+constexpr char kCombinedMagic[16] = "MKW100 RR+IF v1";
+
+bool CombinedFromKnownBuilds() {
+    if (!Memory::Contains(kCombinedMarker, 56)) return false;
+    for (uint32_t i = 0; i < 16; ++i)
+        if (Memory::Read8(kCombinedMarker + i) != uint8_t(kCombinedMagic[i])) return false;
+    for (uint32_t part = 0; part < 2; ++part) {
+        const ModBuild::Kind want = part == 0 ? ModBuild::Kind::RetroRewind : ModBuild::Kind::ItemFever;
+        bool found = false;
+        for (const KnownBuild& b : kKnownBuilds) {
+            if (b.kind != want) continue;
+            bool same = true;
+            for (uint32_t i = 0; i < 20; ++i) same &= Memory::Read8(kCombinedMarker + 16 + part * 20 + i) == b.sha1[i];
+            found |= same;
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
 std::atomic<int> g_kind{-1};  // decided once the digest is present
 
 } // namespace
@@ -42,6 +65,10 @@ Kind Current() {
         bool same = true;
         for (uint32_t i = 0; i < 20; ++i) same &= digest[i] == b.sha1[i];
         if (same) { kind = b.kind; name = b.name; break; }
+    }
+    if (kind == Kind::Unknown && CombinedFromKnownBuilds()) {
+        kind = Kind::RetroRewindItemFever;
+        name = "Retro Rewind + Item Fever items (combined from WheelWizard RetroRewind6 and Item Fever 1.1.0)";
     }
     if (kind == Kind::Unknown) {
         RT_LOGF("mod-build", "WARNING: this Code.pul is not a build MKW100's pack fixes were measured on "

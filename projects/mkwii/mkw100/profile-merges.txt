@@ -1,0 +1,7 @@
+# Profiles whose Kamek module combines other profiles' modules (translator: Lifting/ProfileMerges.cs).
+# `PROFILE PART 0xDELTA`: PROFILE takes PART's profile= sites from array-sites.txt and
+# player-slot-sites.txt, with every value inside the Kamek overlay (0x81800000..0x81A00000) moved by
+# DELTA, where combine_pul.py put PART in the combined module (docs/mkw100/rr-item-fever.md).
+
+rr-item-fever  retro-rewind  0x0       # Retro Rewind stays at the module base
+rr-item-fever  item-fever    0xC0000   # Item Fever at 0x818C0000 (if-offset in rr-item-fever.txt)

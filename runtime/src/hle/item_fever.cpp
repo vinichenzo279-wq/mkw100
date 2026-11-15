@@ -5,6 +5,10 @@
 // item-fever): racers 12+ use a shadow table instead. This file resets those shadows when Item
 // Fever resets its own tables, and applies the item reserve Item Rain patches into game code.
 // Retro Rewind has no function at 0x81816EE8; the Item::Manager wrappers change nothing unpatched.
+//
+// Retro Rewind with Item Fever's items (docs/mkw100/rr-item-fever.md) carries the same Item Fever
+// code ModBuild::kItemFeverCombinedOffset higher; the same hooks are registered there too, and the
+// tables move with them (ModBuild::ItemFeverOffset).
 
 #include "hle/mod_build.h"
 #include "hle/item_fever.h"
@@ -37,9 +41,10 @@ struct FeverTable { uint32_t table, stride, shadow; };
 // Item Fever's resets of these tables run a fixed 12 times and write one value per table; the
 // shadow elements get the value element 0 was just given.
 void CopyResetToShadow(const FeverTable& t) {
+    const uint32_t table = t.table + ModBuild::ItemFeverOffset();
     for (uint32_t i = 0; i < kFeverShadowRacers; ++i) {
         for (uint32_t b = 0; b < t.stride; ++b) {
-            Memory::Write8(t.shadow + i * t.stride + b, Memory::Read8(t.table + b));
+            Memory::Write8(t.shadow + i * t.stride + b, Memory::Read8(table + b));
         }
     }
 }
@@ -80,9 +85,9 @@ void LogFeverUnlocks(CpuContext* ctx);  // below, with Item Fever's unlocks
 // Item Fever's race-load hook (node 0x818A33B0): clears its float[12] at 0x818A3370 and u8[12] at
 // 0x818A33A0 (a fixed count of 12, no compare to raise). Their shadows and the flags' are cleared
 // with them, so a racer 12+ starts each race like racers 0..11.
-extern "C" void ItemFever_ResetRacerTables_81816ee8(CpuContext* ctx) {
-    MKW_GUEST_NEXT(81816EE8)(ctx);
-    if (!ModBuild::IsKnownItemFever()) return;  // another pack (build) has other code here
+static void ResetRacerTables(CpuContext* ctx, bool combinedSite) {
+    // Each address holds Item Fever's function in one build only; elsewhere it is another pack's code.
+    if (combinedSite ? ModBuild::Current() != ModBuild::Kind::RetroRewindItemFever : !ModBuild::IsKnownItemFever()) return;
     for (uint32_t i = 0; i < kFeverShadowRacers; ++i) {
         Memory::Write8(kFeverFlagsShadow + i, 0);
     }
@@ -90,19 +95,30 @@ extern "C" void ItemFever_ResetRacerTables_81816ee8(CpuContext* ctx) {
     CopyResetToShadow({0x818A33A0, 1, kFeverStateShadow});
     LogFeverUnlocks(ctx);
 }
+static void Reset89F0(bool combinedSite) {
+    if (combinedSite ? ModBuild::Current() != ModBuild::Kind::RetroRewindItemFever : !ModBuild::IsKnownItemFever()) return;
+    for (const FeverTable& t : kResetTables89F0) CopyResetToShadow(t);
+}
+static void Reset90E0(bool combinedSite) {
+    if (combinedSite ? ModBuild::Current() != ModBuild::Kind::RetroRewindItemFever : !ModBuild::IsKnownItemFever()) return;
+    for (const FeverTable& t : kResetTables90E0) CopyResetToShadow(t);
+}
+
+extern "C" void ItemFever_ResetRacerTables_81816ee8(CpuContext* ctx) {
+    MKW_GUEST_NEXT(81816EE8)(ctx);
+    ResetRacerTables(ctx, false);
+}
 REGISTER_NATIVE_WRAPPER_AS(0x81816EE8, ItemFever_ResetRacerTables_81816ee8, "ItemFever_ResetRacerTables_81816ee8");
 
 extern "C" void ItemFever_Reset89F0_818489a0(CpuContext* ctx) {
     MKW_GUEST_NEXT(818489A0)(ctx);
-    if (!ModBuild::IsKnownItemFever()) return;
-    for (const FeverTable& t : kResetTables89F0) CopyResetToShadow(t);
+    Reset89F0(false);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x818489A0, ItemFever_Reset89F0_818489a0, "ItemFever_Reset89F0_818489a0");
 
 extern "C" void ItemFever_Reset90E0_8184ca38(CpuContext* ctx) {
     MKW_GUEST_NEXT(8184CA38)(ctx);
-    if (!ModBuild::IsKnownItemFever()) return;
-    for (const FeverTable& t : kResetTables90E0) CopyResetToShadow(t);
+    Reset90E0(false);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8184CA38, ItemFever_Reset90E0_8184ca38, "ItemFever_Reset90E0_8184ca38");
 
@@ -230,6 +246,25 @@ extern "C" void ItemFever_ExpHeapTotalFree_80226c88(CpuContext* ctx) {
     ctx->gpr[3] = uint32_t(std::min<uint64_t>(uint64_t(own) + extra, 0x7FFFFFFFu));
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80226C88, ItemFever_ExpHeapTotalFree_80226c88, "ItemFever_ExpHeapTotalFree_80226c88");
+
+// The same three functions in Retro Rewind + Item Fever items (+0xC0000).
+extern "C" void RrItemFever_ResetRacerTables_818d6ee8(CpuContext* ctx) {
+    MKW_GUEST_NEXT(818D6EE8)(ctx);
+    ResetRacerTables(ctx, true);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x818D6EE8, RrItemFever_ResetRacerTables_818d6ee8, "RrItemFever_ResetRacerTables_818d6ee8");
+
+extern "C" void RrItemFever_Reset89F0_819089a0(CpuContext* ctx) {
+    MKW_GUEST_NEXT(819089A0)(ctx);
+    Reset89F0(true);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x819089A0, RrItemFever_Reset89F0_819089a0, "RrItemFever_Reset89F0_819089a0");
+
+extern "C" void RrItemFever_Reset90E0_8190ca38(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8190CA38)(ctx);
+    Reset90E0(true);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8190CA38, RrItemFever_Reset90E0_8190ca38, "RrItemFever_Reset90E0_8190ca38");
 
 // Item::Manager +0x42C is the sum of the item pools' capacities minus 30, set by `addi r0, rN, -30`
 // at 0x8079992C (Update) and 0x80799AB0 (UpdateTotalItemCountMinus30). Item Fever rewrites both

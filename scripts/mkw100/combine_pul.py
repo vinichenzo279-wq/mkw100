@@ -9,6 +9,7 @@ The result is one raw Kamek v3 chunk (PAL) that translate-mod handles like any p
     0x000000  Retro Rewind's code, then room for its bss (zeros)
     ctor      one constructor table listing both packs' constructors
     tramps    PowerPC trampolines for the `chain` sites of the plan
+    +0xAFF00  marker: "MKW100 RR+IF v1", then both packs' Kamek code SHA-1 (runtime mod_build.cpp)
     IF_OFF    Item Fever's code; the chunk's bss is Item Fever's bss
 
 Every Retro Rewind command is kept. Item Fever's module-relative commands are moved by IF_OFF, so
@@ -125,6 +126,18 @@ def main():
     a = ap.parse_args()
     plan = read_plan(a.plan)
     rr, iff = parse_pul(a.rr), parse_pul(a.if_)
+    # The plan and MKW100's site lists hold addresses inside one build of each pack.
+    digests = {'retro-rewind': hashlib.sha1(rr['blob']).hexdigest(), 'item-fever': hashlib.sha1(iff['blob']).hexdigest()}
+    builds = os.path.join(os.path.dirname(os.path.abspath(a.plan)), 'mod-builds.txt')
+    known = {}
+    for raw in open(builds, encoding='utf-8'):
+        fields = raw.split('#', 1)[0].split()
+        if len(fields) >= 2:
+            known.setdefault(fields[0], set()).add(fields[1].lower())
+    for profile, digest in digests.items():
+        if digest not in known.get(profile, set()):
+            raise SystemExit(f'{profile} Code.pul (Kamek code SHA-1 {digest}) is not a build listed in {builds}; '
+                             'the plan holds addresses of the listed one (docs/mkw100/UPDATING.md)')
     off = plan['if-offset']
     rr_end = rr['code'] + rr['bss']
     if off < rr_end + 0x1000 or off % 0x10000:
@@ -144,7 +157,12 @@ def main():
     ctor_at = (rr_end + 0xFF) & ~0xFF
     tramp_at = (ctor_at + 4 * len(ctors) + 0xFF) & ~0xFF
 
+    marker_at = 0xAFF00
+    if tramp_at + 0x40 * len(plan['chain']) > marker_at or marker_at + 56 > off:
+        raise SystemExit('no room for the trampolines and the marker below if-offset')
     image = bytearray(off + iff['code'])
+    image[marker_at:marker_at + 56] = (b'MKW100 RR+IF v1' + bytes(1) + bytes.fromhex(digests['retro-rewind']) +
+                                       bytes.fromhex(digests['item-fever']))
     image[:rr['code']] = rr['blob']
     image[off:off + iff['code']] = iff['blob']
 

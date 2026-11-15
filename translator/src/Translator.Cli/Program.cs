@@ -58,19 +58,34 @@ if (functionMap is not null)
 {
     GuestSaveRestoreThunks.Current = GuestSaveRestoreThunks.FromFunctionMap(functionMap);
 }
+// mkw100: a profile whose module combines other profiles' modules takes their sites, moved
+// (projects/mkwii/mkw100/profile-merges.txt, Translator.Core.Lifting.ProfileMerges).
+var profileMergeParts = profile?.Name is { } mergeProfileName &&
+    (project?.Translation.ArraySitesPath ?? project?.Translation.PlayerSlotSitesPath) is { } mergeSitesPath
+    ? Translator.Core.Lifting.ProfileMerges.Load(
+        Path.Combine(Path.GetDirectoryName(mergeSitesPath) ?? ".", "profile-merges.txt"), mergeProfileName)
+    : Array.Empty<Translator.Core.Lifting.ProfileMerges.Part>();
 if (project?.Translation.PlayerSlotSitesPath is { } playerSlotSitesPath)
 {
-    Translator.Core.Lifting.PlayerSlotStrideSites.Current =
-        Translator.Core.Lifting.PlayerSlotStrideSites.Load(playerSlotSitesPath, profile?.Name);
+    Translator.Core.Lifting.PlayerSlotStrideSites.Current = profileMergeParts.Count > 0
+        ? Translator.Core.Lifting.ProfileMerges.MergeSlots(playerSlotSitesPath, profileMergeParts)
+        : Translator.Core.Lifting.PlayerSlotStrideSites.Load(playerSlotSitesPath, profile?.Name);
 }
 if (project?.Translation.ArraySitesPath is { } arraySitesPath)
 {
     var arraySites = Translator.Core.Lifting.ArrayOverflowSites.Load(arraySitesPath);
     // Sites in a pack's code (profile=NAME) apply only when translate-mod runs that profile;
     // another pack has other code at those addresses.
-    arraySites = arraySites.Where(site => site.Profile is null ||
-        string.Equals(site.Profile, profile?.Name, StringComparison.OrdinalIgnoreCase));
+    arraySites = profileMergeParts.Count > 0
+        ? Translator.Core.Lifting.ProfileMerges.Merge(arraySites, profile!.Name, profileMergeParts)
+        : arraySites.Where(site => site.Profile is null ||
+            string.Equals(site.Profile, profile?.Name, StringComparison.OrdinalIgnoreCase));
     Translator.Core.Lifting.ArrayOverflowSites.Current = arraySites;
+    if (profileMergeParts.Count > 0)
+        Console.WriteLine($"[mkw100] profile {profile!.Name} combines " +
+            string.Join(", ", profileMergeParts.Select(p => $"{p.Profile} (+0x{p.Delta:X})")) +
+            $": {arraySites.All.Count(s => s.Profile is not null)} array site(s), " +
+            $"{Translator.Core.Lifting.PlayerSlotStrideSites.Current.Count} player-slot site(s)");
 }
 var root = project?.WorkspaceRoot ?? Directory.GetCurrentDirectory();
 var preferCachedInputs = HasFlag(tail, "--prefer-cached-inputs");

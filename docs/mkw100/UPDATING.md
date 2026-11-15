@@ -48,3 +48,12 @@ To bring big races back for the new build:
 2. For each `profile=` site and each address in `rr_skins.cpp` / `item_fever.cpp`, find the same instruction in the new `Code.pul`. Most functions only move; matching the surrounding instructions (with branch offsets and `lis`/`addi` address halves masked) finds them. Re-check by hand any site whose surroundings changed.
 3. Update the addresses, then put the new digest in **both** `mod-builds.txt` and `mod_build.cpp` (keep the old line only if both builds are still supported, which needs both address sets, so normally replace it).
 4. Run the pack's 12- and 100-racer checks and a menu play test.
+
+### Retro Rewind with Item Fever's items
+
+The experimental combined build (`-ItemFeverItems`, docs/mkw100/rr-item-fever.md) depends on both packs' builds at once:
+
+- `scripts/mkw100/combine_pul.py` stops when either `Code.pul` is not a build listed in `mod-builds.txt`, so a pack update first goes through the steps above for that pack.
+- Its plan, `projects/mkwii/mkw100/rr-item-fever.txt`, holds addresses inside both packs' modules (kept patches, Retro Rewind's code check, `chain` sites). Those need the same remeasuring.
+- Its site lists come from the two packs' `profile=` sites through `projects/mkwii/mkw100/profile-merges.txt`, so they follow automatically.
+- The runtime recognises it by the marker `combine_pul.py` writes (both source digests), checked against the digests in `mod_build.cpp`.

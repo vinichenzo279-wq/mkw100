@@ -52,7 +52,7 @@
 namespace {
 
 // True for the Retro Rewind build these addresses were measured on (mod_build.h).
-bool KnownRrBuild() { return ModBuild::IsKnownRetroRewind(); }
+bool KnownRrBuild() { return ModBuild::HasKnownRetroRewindCode(); }
 
 // Toggle: off gives CPUs the stock look, as Retro Rewind itself does. The index fixes stay on.
 constexpr bool kCpuSkins = true;

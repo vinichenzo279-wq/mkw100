@@ -41,6 +41,10 @@ public sealed class PlayerSlotStrideSites
 
     public int Count => _sites.Count;
 
+    /// <summary>The mulli sites and the deref sites (mkw100: merged profiles, ProfileMerges).</summary>
+    public IEnumerable<uint> Sites => _sites;
+    public IEnumerable<uint> Derefs => _derefs;
+
     public int DerefCount => _derefs.Count;
 
     public bool Contains(uint address) => _sites.Contains(address);

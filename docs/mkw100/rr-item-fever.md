@@ -1,6 +1,6 @@
 # Item Fever's items in Retro Rewind: feasibility
 
-Status (2026-11-15, branch `rr-item-fever`): the go/no-go test below **passed**. A headless 12-racer Retro Rewind race runs to the finish with Item Fever's item system in it. Not pushed, not play-tested from the menus. Measured on the packs MKW100 supports today:
+Status (2026-11-15, branch `rr-item-fever`): the go/no-go test below **passed**, and the build now runs headless races of up to 128 racers with Item Fever's item system in Retro Rewind. Not pushed, not play-tested from the menus. Measured on the packs MKW100 supports today:
 
 - Retro Rewind: WheelWizard RetroRewind6, Kamek code SHA-1 `5061374c...`.
 - Item Fever 1.1.0: SHA-1 `2c6c40ca...`.
@@ -88,13 +88,15 @@ Each fix is in the plan or the stage script:
   - **Plain Retro Rewind** (the 0.9.4 build's `RetroRewind.exe`) had the same problem, even earlier: two identical 12-racer runs differed by frame 1200. So it was not caused by the combination.
   - **The cause**: the game's `Random()` constructor and `Random::Reset()` seed from `OSGetTick`, which is the host clock in the recomp. The game seeds its own race randomness from race data, so the base game repeats exactly. But Retro Rewind (15 call sites) and Item Fever (14) create clock-seeded `Random` objects for their own features.
   - **The fix**: `runtime/src/hle/scripted_random.cpp` gives those objects seeds from a fixed sequence in scripted test races (`--race-cpu`, `--race-auto`). Normal play keeps clock seeds.
-  - **Result**: two runs of the plain combined case give the same result `a3be7efeb9b046a7` at every trajectory checkpoint, and two runs of the Ice Flower case give `a36ef50f0c8aeca3`.
+  - **Result**: two runs of the plain combined case give the same result `a3be7efeb9b046a7` at every trajectory checkpoint, and two runs of the Ice Flower case give `a36ef50f0c8aeca3` (results of the build before the 12-racer cap was lifted; current ones below).
   - **Not covered**: Item Fever's 5 direct `OSGetTick` reads are in its UI controls and don't affect the race.
   - **Applies to the normal Retro Rewind build too.** Its headless results become repeatable once this file is in that build.
-- **12 racers only.** The combined module's digest is unknown to `mod_build.cpp`, so the build caps at 12 racers and leaves Retro Rewind's racer fixes (`rr_skins.cpp`, `profile=retro-rewind` sites) off. Going past 12 needs:
-  - a `Kind` for this build;
-  - the Retro Rewind sites tagged for the new profile;
-  - Item Fever's 226 sites moved by +0xC0000.
+- **Past 12 racers: done, up to 128.** Headless races of 12, 24, 48, 64, 100 and 128 racers finish with a full classification, including 128 racers with an Ice Flower handed to every CPU every 5 s and 128 racers with MKW100's item mechanics test (lightning and POW from racers past 12). What it took:
+  - **Recognising the build at run time.** The combined module's own digest changes whenever the plan changes, so `combine_pul.py` writes a marker at 0x818AFF00: `MKW100 RR+IF v1` and both source packs' Kamek code SHA-1. `mod_build.cpp` gives `Kind::RetroRewindItemFever` when both digests are builds it knows. That lifts the cap to 128 and switches on Retro Rewind's racer fixes (`rr_skins.cpp`). `combine_pul.py` refuses packs whose digests aren't in `mod-builds.txt`, since the plan holds addresses of those builds.
+  - **The site lists.** `projects/mkwii/mkw100/profile-merges.txt` makes profile `rr-item-fever` take the `retro-rewind` sites as they are and the `item-fever` sites moved by +0xC0000 (every value in the Kamek overlay moves, shadow tables don't): 187 array sites and the player-slot sites. In the translator this is `Translator.Core/Lifting/ProfileMerges.cs`, with unit tests.
+  - **Item Fever's run-time hooks** (`item_fever.cpp`: resetting its racer tables' shadows) are registered at the moved addresses too, and use the moved tables; `item_limits.cpp` and `item_cycler.cpp` treat the combined build as Item Fever. `guest_versions.inc` now covers the whole 2 MiB overlay (0x81800000-0x819FFFFF).
+  - **More of Retro Rewind's item code left out.** The first 24-racer run stopped on a Thunder Cloud without a model. Retro Rewind's Mega Thunder Cloud handler (0x80580630) had handled the strike instead of Item Fever's cloud rework. Item Fever now also gets that site, banana damage and Pulsar's three Feather physics sites, and owns `Item::InitAllObjProperties` / `Item::LoadObjProperties`, which removes Retro Rewind's own item rules (custom item toggles, item modes, Battle Royale, its Item Rain's "all items can land").
+  - **Results** (repeatable): 12 racers `59e215a1e8678039`, 24 `a56bc6fd42641cf9` (twice), 100 `4629df62208e7535`, 128 `f3f5c1ee1974502f`.
 - **Not checked from the menus**: character select, the item icons on screen, sounds, results, the next race. Headless runs don't show the HUD.
 - **Item Fever's settings stay at their defaults** (Settings.pul in its own NAND folder), with no way to change them in this build. Item Rain and Loot Party are off.
 - **Small asset gaps**: "Boo: animation 3 MISSING". Item Fever's versions of Pulsar's HUD layouts replace Retro Rewind's in the merged `RaceAssets.szs`.

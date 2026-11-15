@@ -18,6 +18,7 @@
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
 #include "local_vs.h"
+#include "hle/mod_build.h"
 #include "memory.h"
 #include "recomp_mod_loader.h"
 
@@ -49,7 +50,7 @@ constexpr uint32_t kStockCycle = 20;  // empty + the 19 stock items
 // The ids in the cycle: Item Fever's 21 items too when that pack runs.
 uint32_t CycleSize() {
     static const bool itemFever = RecompMod::RiivolutionXml().find("ItemFever") != std::string::npos;
-    return itemFever ? uint32_t(kCycleIds.size()) : kStockCycle;
+    return itemFever || ModBuild::HasKnownItemFeverCode() ? uint32_t(kCycleIds.size()) : kStockCycle;
 }
 
 bool Offline() {
