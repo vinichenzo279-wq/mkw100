@@ -83,8 +83,12 @@ public sealed class PlayerSlotStrideSites
     /// `#` starts a comment.
     /// </summary>
     /// <param name="profile">The translate-mod profile; lines tagged `profile=NAME` apply only to it.</param>
+    /// <summary>The file the current sites were loaded from.</summary>
+    public static string? SourcePath { get; private set; }
+
     public static PlayerSlotStrideSites Load(string path, string? profile = null)
     {
+        SourcePath = path;
         var sites = new List<uint>();
         var derefs = new List<uint>();
         foreach (var (raw, index) in File.ReadLines(path).Select((line, i) => (line, i)))

@@ -1816,6 +1816,7 @@ int RunTranslateModCore(string[] argsTail, string? outputDirectoryOverride)
     var selected = pul.SelectRegion(region);
     // The server validates the hash of the unmodified chunk.
     var sourceKamekCodeSha1 = SHA1.HashData(selected.CodeBlob);
+    Mkw100CheckModBuild(profile?.Name, sourceKamekCodeSha1);
     if (string.Equals(profile?.Name, "retro-rewind", StringComparison.OrdinalIgnoreCase))
     {
         var corrected = pul.IsCombined && !string.Equals(region, "P", StringComparison.OrdinalIgnoreCase)
@@ -4092,6 +4093,40 @@ static TranslationOptions WithProjectCodegenPolicy(
         // prologue is rejected rather than mis-transformed.
         EnableLeafAbiSpillElision = true,
     };
+
+// mkw100: pack-specific sites (profile=NAME in array-sites.txt / player-slot-sites.txt) hold
+// addresses inside one build of that pack (projects/mkwii/mkw100/mod-builds.txt). Another build
+// has other code there, so its sites are left out with a warning instead of failing the build or
+// rewriting the wrong instructions; the runtime caps such a build at 12 racers (mod_build.cpp).
+static void Mkw100CheckModBuild(string? profileName, byte[] kamekCodeSha1)
+{
+    var digest = Convert.ToHexString(kamekCodeSha1).ToLowerInvariant();
+    Console.WriteLine($"[mkw100] {profileName ?? "mod"} Kamek code SHA-1 {digest}");
+    if (profileName is null || Translator.Core.Lifting.ArrayOverflowSites.SourcePath is not { } sitesPath)
+        return;
+    var listPath = Path.Combine(Path.GetDirectoryName(sitesPath) ?? ".", "mod-builds.txt");
+    if (!File.Exists(listPath))
+        return;
+    var known = new List<string>();
+    foreach (var raw in File.ReadAllLines(listPath))
+    {
+        var line = raw.Split('#')[0].Trim();
+        if (line.Length == 0) continue;
+        var fields = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (fields.Length >= 2 && string.Equals(fields[0], profileName, StringComparison.OrdinalIgnoreCase))
+            known.Add(fields[1].ToLowerInvariant());
+    }
+    if (known.Count == 0 || known.Contains(digest))
+        return;
+    var arraySites = Translator.Core.Lifting.ArrayOverflowSites.Current;
+    if (arraySites is not null)
+        Translator.Core.Lifting.ArrayOverflowSites.Current = arraySites.Where(site => site.Profile is null);
+    if (Translator.Core.Lifting.PlayerSlotStrideSites.SourcePath is { } slotPath)
+        Translator.Core.Lifting.PlayerSlotStrideSites.Current = Translator.Core.Lifting.PlayerSlotStrideSites.Load(slotPath, null);
+    Console.WriteLine($"[mkw100] WARNING: this {profileName} Code.pul is not a build MKW100's {profileName} fixes were measured on " +
+        $"(known: {string.Join(", ", known)}). Its pack-specific fixes are left out and the game caps it at 12 racers. " +
+        "See docs/mkw100/UPDATING.md.");
+}
 
 /// <summary>
 /// One option carried by one command. <paramref name="Value"/> is the metavariable

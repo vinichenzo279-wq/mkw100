@@ -258,8 +258,12 @@ public sealed class ArrayOverflowSites
     /// table's address, stride its element size, SHADOW required); `#` starts a comment. A site with
     /// a profile only applies when translate-mod runs that profile.
     /// </summary>
+    /// <summary>The file the current sites were loaded from (mkw100: mod-builds.txt sits beside it).</summary>
+    public static string? SourcePath { get; private set; }
+
     public static ArrayOverflowSites Load(string path)
     {
+        SourcePath = path;
         var sites = new List<Site>();
         var traceSignedBytes = false;
         foreach (var (raw, index) in File.ReadLines(path).Select((line, i) => (line, i)))

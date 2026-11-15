@@ -6,6 +6,7 @@
 // Fever resets its own tables, and applies the item reserve Item Rain patches into game code.
 // Retro Rewind has no function at 0x81816D88; the Item::Manager wrappers change nothing unpatched.
 
+#include "hle/mod_build.h"
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
 #include "memory.h"
@@ -69,6 +70,7 @@ constexpr FeverTable kResetTables90E0[] = {
 // with them, so a racer 12+ starts each race like racers 0..11.
 extern "C" void ItemFever_ResetRacerTables_81816d88(CpuContext* ctx) {
     MKW_GUEST_NEXT(81816D88)(ctx);
+    if (!ModBuild::IsKnownItemFever()) return;  // another pack (build) has other code here
     for (uint32_t i = 0; i < kFeverShadowRacers; ++i) {
         Memory::Write8(kFeverFlagsShadow + i, 0);
     }
@@ -79,12 +81,14 @@ REGISTER_NATIVE_WRAPPER_AS(0x81816D88, ItemFever_ResetRacerTables_81816d88, "Ite
 
 extern "C" void ItemFever_Reset89F0_81848790(CpuContext* ctx) {
     MKW_GUEST_NEXT(81848790)(ctx);
+    if (!ModBuild::IsKnownItemFever()) return;
     for (const FeverTable& t : kResetTables89F0) CopyResetToShadow(t);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x81848790, ItemFever_Reset89F0_81848790, "ItemFever_Reset89F0_81848790");
 
 extern "C" void ItemFever_Reset90E0_8184c828(CpuContext* ctx) {
     MKW_GUEST_NEXT(8184C828)(ctx);
+    if (!ModBuild::IsKnownItemFever()) return;
     for (const FeverTable& t : kResetTables90E0) CopyResetToShadow(t);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8184C828, ItemFever_Reset90E0_8184c828, "ItemFever_Reset90E0_8184c828");

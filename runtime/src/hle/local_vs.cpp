@@ -8,6 +8,7 @@
 #include "hle/custom_messages.h"
 #include "hle/teams.h"
 #include "hle/rank_icons.h"
+#include "hle/mod_build.h"
 #include "memory.h"
 #include "runtime_config.h"
 #include "runtime_product.h"
@@ -149,7 +150,12 @@ uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows) {
 // Fever) stays at 128 until its own per-racer tables are checked past that: their shadows and the
 // Item Fever `cmpimm 128` guards (array-sites.txt, item_fever.cpp) are sized for racers 0..127.
 constexpr int kModProductMaxRacers = 128;
-int MaxRacers() { return RuntimeProduct::IsRetroRewind() ? kModProductMaxRacers : int(PlayerSlots::kMaxPlayers); }
+// A pack build MKW100's pack fixes were not measured on (mod_build.h) keeps the game's 12.
+constexpr int kUnknownModMaxRacers = 12;
+int MaxRacers() {
+    if (!RuntimeProduct::IsRetroRewind()) return int(PlayerSlots::kMaxPlayers);
+    return ModBuild::Current() == ModBuild::Kind::Unknown ? kUnknownModMaxRacers : kModProductMaxRacers;
+}
 bool SpeedometerEnabled() { return local_vs_detail::speedometer.load(); }
 uint32_t LocalPlayers() {
     const uint32_t rd = Memory::Read32(MKW_GADDR(809BD728));

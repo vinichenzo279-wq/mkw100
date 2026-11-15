@@ -34,6 +34,7 @@
 #include "abi_bridge.h"
 #include "guest_abi/array_overflow.h"
 #include "guest_abi/player_slots.h"
+#include "hle/mod_build.h"
 #include "guest_function_imports.h"
 #include "memory.h"
 #include "runtime_log.h"
@@ -42,20 +43,8 @@
 
 namespace {
 
-constexpr uint32_t kKamekCodeSha1 = 0x800017B0;  // 20 bytes, written by the mod loader
-constexpr uint8_t kKnownRrCodeSha1[20] = {0x50, 0x61, 0x37, 0x4C, 0x93, 0x7B, 0x8E, 0xBE, 0x70, 0xFA,
-                                          0x67, 0xBE, 0xF7, 0xF3, 0x5B, 0x16, 0xF6, 0xE9, 0x22, 0x8B};
-
-// True for the Retro Rewind build these addresses were measured on (checked once, after boot).
-bool KnownRrBuild() {
-    static int known = -1;
-    if (known < 0) {
-        known = 1;
-        for (uint32_t i = 0; i < 20; ++i) known &= Memory::Read8(kKamekCodeSha1 + i) == kKnownRrCodeSha1[i];
-        if (!known) RT_LOGF("rr-skins", "WARNING: unknown Retro Rewind Code.pul; its 12-racer fixes are off\n");
-    }
-    return known == 1;
-}
+// True for the Retro Rewind build these addresses were measured on (mod_build.h).
+bool KnownRrBuild() { return ModBuild::IsKnownRetroRewind(); }
 
 // Toggle: off gives CPUs the stock look, as Retro Rewind itself does. The index fixes stay on.
 constexpr bool kCpuSkins = true;
@@ -111,7 +100,6 @@ constexpr uint32_t kSkinRacersMax = 256;
 constexpr uint32_t kSlotCharacter = 0x34;          // Racedata + slot: character id
 constexpr uint32_t kSlotLocal = 0x2D;              // Racedata + slot: local player index (s8)
 constexpr uint32_t kSkinHumanType = 0;
-constexpr uint32_t kSkinNoCpuSkins = 0xB8C;        // Racedata: Retro Rewind's "CPUs stock" flag
 uint8_t g_raceSkin[kSkinRacersMax];
 
 uint32_t RacerCount() {
@@ -190,7 +178,9 @@ extern "C" void RR_DecideRaceSkins_81832b74(CpuContext* ctx) {
         if (character < kSkinCharacters && type == kSkinHumanType) {
             const int32_t local = int8_t(Memory::Read8(slot + kSlotLocal));
             if (local >= 0 && uint32_t(local) < kSkinRows) skin = Memory::Read8(kSkinChosen + local * kSkinCharacters + character);
-        } else if (character < kSkinCharacters && type == kSkinCpuType && Memory::Read8(racedata + kSkinNoCpuSkins) == 0) {
+        } else if (character < kSkinCharacters && type == kSkinCpuType) {
+            // Every race of a GP alike (the pick is per racer). Racedata +0xB8C, once read here as a
+            // "CPUs stock" flag, is the race scenario's race number: CPUs lost their skins from race 2.
             skin = kCpuSkins ? PickSkin(racer, character) : 0;
         }
         g_raceSkin[racer] = skin;

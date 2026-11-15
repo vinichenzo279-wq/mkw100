@@ -1,0 +1,13 @@
+# Mod builds MKW100's pack-specific fixes were measured on: `profile sha1 # note`.
+#
+# The sha1 is of the region's Kamek code chunk in Code.pul, the same digest the mod loader writes
+# to 0x800017B0 (translate-mod prints it). Sites tagged `profile=NAME` in array-sites.txt and
+# player-slot-sites.txt hold addresses inside exactly these builds. When translate-mod runs a
+# profile listed here on a Code.pul whose digest is not listed, it leaves those sites out and warns
+# instead of failing on the first moved instruction; the runtime then caps that mod at 12 racers
+# (runtime/src/hle/mod_build.cpp keeps the same digests). A profile not listed here is not checked.
+#
+# After a pack update: measure the sites again on the new Code.pul (docs/mkw100/UPDATING.md), then
+# replace its line here and in mod_build.cpp.
+retro-rewind  5061374c937b8ebe70fa67bef7f35b16f6e9228b  # WheelWizard RetroRewind6 (Code.pul SHA-256 d68778e9...)
+item-fever    2c6c40ca2f0605c19391cbfafb97257c8e9ab24c  # Item Fever 1.1.0
