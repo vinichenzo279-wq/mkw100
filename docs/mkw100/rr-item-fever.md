@@ -1,6 +1,6 @@
 # Item Fever's items in Retro Rewind: feasibility
 
-Status: investigation only, no code yet (2026-11-15, branch `rr-item-fever`). Measured on the packs MKW100 supports today:
+Status (2026-11-15, branch `rr-item-fever`): the go/no-go test below **passed**. A headless 12-racer Retro Rewind race runs to the finish with Item Fever's item system in it. Not pushed, not play-tested from the menus. Measured on the packs MKW100 supports today:
 
 - Retro Rewind: WheelWizard RetroRewind6, Kamek code SHA-1 `5061374c...`.
 - Item Fever 1.1.0: SHA-1 `2c6c40ca...`.
@@ -33,6 +33,67 @@ What makes it hard: these are not two add-ons but **two complete copies of the P
 At the same time, the user can ask Item Fever's author for permission and for the item source code. With the source, this becomes a much cleaner source-level merge with Retro Rewind's public `rr-pulsar` (option D).
 
 The licence (see below) rules out a native port of Item Fever's code (option B).
+
+## Go/no-go test: result
+
+**Passed.** It also needed much less than the estimate in option A, because a simpler route turned up: one **combined** Kamek module instead of two translated modules. `translate-mod` and the rest of the build needed no change.
+
+### How it works
+
+- **`scripts/mkw100/combine_pul.py`** builds one raw Kamek chunk from both packs' `Code.pul`:
+  - Retro Rewind at 0x81800000, Item Fever at +0xC0000 (0x818C0000), with Item Fever's bss as the chunk's bss (ends at 0x819978C8, below the player slots at 0x81A00000).
+  - One constructor table holding both packs' 102 constructors.
+  - Its two un-relocated references to its own linked image are moved too.
+  - All of Retro Rewind's patches are kept. Of Item Fever's patches to the game, only those the plan names are kept: **`projects/mkwii/mkw100/rr-item-fever.txt`**.
+  - Since both packs' patches end up in one module, a game function patched by both gets one patched copy containing both.
+- **Pulsar's hook dispatchers** (boot, race load, race frame), which both packs branch to from the same instruction, get a small PowerPC trampoline in the combined module. It calls Retro Rewind's dispatcher, then Item Fever's, with the caller's r3-r5.
+- **The plan** (388 of Item Fever's 1,154 patches are kept):
+  - Item Fever owns every item-system function it patches (`own-func`: the item table expansion, item objects, CPU item use, inventory, item HUD). Retro Rewind's own item patches in those functions (item toggles, its item slot tables) are left out.
+  - Item Fever's patches in item, kart, object and effect functions that Retro Rewind doesn't patch at all are kept.
+  - Item Fever's data writes its items need are kept: vtable slots for its item and object methods, the item property table, sound ids, resource names.
+  - A few patches are taken from Item Fever instead of Retro Rewind: Pulsar's model-file lookup.
+  - Retro Rewind's boot-time check that game code is unmodified ("Error 148") is stubbed: this build patches the game on purpose, and stays offline.
+  - Item Fever's menus, settings pages, save handling (`ifever.dat`), online lock-out and its own heap-size changes are left out.
+- **Item Fever's files**: `scripts/mkw100/stage_rr_item_fever.py` makes `<stage>/ItemFeverItems`, a Riivolution root added to the stage's `UserData/Config.toml` (`[paths] overlay_roots`). It holds:
+  - Item Fever's `Config.pul`, under the name the combined module reads.
+  - `Race/Common.szs` built from Item Fever's `Common.szs` and `CommonAssets2.szs`.
+  - `RaceAssets.szs` built from Retro Rewind's, Item Fever's and its `mkwci` icon textures.
+  - Item Fever's `revo_kart.brsar`.
+
+  All of it comes from the user's own copies of both packs (`scripts/mkw100/merge_szs.py` merges archives).
+- **Build**: `Build-MKW100.ps1 ... -RetroRewind <RetroRewind6> -ItemFeverItems <ItemFever pack>` builds `RetroRewind.exe` from the combined module (profile `rr-item-fever` in `recomp.yml`).
+- **Test hook**: `MKW100_TEST_GIVE_ITEM=<id>` hands every CPU holding nothing that item every 300 frames (`runtime/src/hle/rr_item_fever.cpp`).
+
+### What the headless runs showed (12 racers, Luigi Circuit)
+
+- **Both packs boot.** Retro Rewind starts, then Item Fever logs `*** Item Fever: Pulsar started ***`, loads its config and installs its items ("Ice Flower ready (slot 0x1B ...)", "FEATHER item installed on slot 0x1D", "Golden Mushroom rework active", and others).
+- **Plain race**: it finishes with a full classification. The CPUs pull items from Item Fever's item table. The log shows its Purple Shell, Black Shell, Banzai Bill, Chain Chomp, Rainbow Mushroom, grapple star, throwable banana and Thunder Cloud rework code at work.
+- **Ice Flower** (`MKW100_TEST_GIVE_ITEM=0x1B`): every 5 s about 8 CPUs got one, and by the next round almost all had used it. 13 rounds, and the race finished.
+- The final check ran on a stage made by `stage_rr_item_fever.py`.
+
+### Blockers met on the way, in order
+
+Each fix is in the plan or the stage script:
+
+1. Retro Rewind's code check "Error 148" stopped the boot.
+2. Item Fever needs its `Config.pul` ("Invalid Pulsar Config").
+3. A merged `Common.szs` stored without compression was too large for Pulsar's archive loader.
+4. Fake Item Box crash: Item Fever's data patches (vtable slots, resource names) were missing.
+5. The race scene exited before racing, caused by Item Fever's heap-size patches (now left out).
+6. Retro Rewind's item HUD read past its 19-item tables, until Item Fever took over the item window, item balloon and `GetItemIconPaneName`.
+
+### Open points
+
+- **Not deterministic.** Two runs of the same case agreed up to race frame 4800, then diverged. Not yet known whether Item Fever's code reads wall-clock time, or whether something in the combination does. A pure Retro Rewind run in the same setup has not been compared.
+- **12 racers only.** The combined module's digest is unknown to `mod_build.cpp`, so the build caps at 12 racers and leaves Retro Rewind's racer fixes (`rr_skins.cpp`, `profile=retro-rewind` sites) off. Going past 12 needs:
+  - a `Kind` for this build;
+  - the Retro Rewind sites tagged for the new profile;
+  - Item Fever's 226 sites moved by +0xC0000.
+- **Not checked from the menus**: character select, the item icons on screen, sounds, results, the next race. Headless runs don't show the HUD.
+- **Item Fever's settings stay at their defaults** (Settings.pul in its own NAND folder), with no way to change them in this build. Item Rain and Loot Party are off.
+- **Small asset gaps**: "Boo: animation 3 MISSING". Item Fever's versions of Pulsar's HUD layouts replace Retro Rewind's in the merged `RaceAssets.szs`.
+- **Online must stay off** for this build. Retro Rewind's code check is stubbed, and the items differ from everyone else's.
+- **The licence question** (below) is unchanged: this runs the user's own copy, but the author's permission is still the decent thing to ask for before sharing it.
 
 ## How the two packs run in MKW100 today
 

@@ -13,13 +13,18 @@ param(
     # An Item Fever pack folder (ItemFever, holding Binaries\Code.pul and riivolution\ItemFever.xml):
     # builds the mod product from it instead of Retro Rewind. Both build the RetroRewind target
     # (the mod product), so one checkout holds the base game plus one of them.
-    [string]$ItemFever
+    [string]$ItemFever,
+    # Experimental (docs/mkw100/rr-item-fever.md), with -RetroRewind: an Item Fever pack folder whose
+    # items join Retro Rewind. Builds the RetroRewind product from one combined Kamek module
+    # (scripts/mkw100/combine_pul.py, plan projects/mkwii/mkw100/rr-item-fever.txt).
+    [string]$ItemFeverItems
 )
 # Standalone, isolated Windows fork build. Never calls LocalBuild.ps1, never
 # modifies original Install\Base or the older R13/R23 build cache.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($RetroRewind -and $ItemFever) { throw 'Pass -RetroRewind or -ItemFever, not both.' }
+if ($ItemFeverItems -and -not $RetroRewind) { throw '-ItemFeverItems goes with -RetroRewind.' }
 # The mod product's pack, its recomp.yml profile, where that profile reads Code.pul, and its output.
 $ModPack = $null
 if ($RetroRewind) {
@@ -173,6 +178,30 @@ try {
         New-Item -ItemType Directory -Path $stagedPulDir -Force | Out-Null
         $stagedPul = Join-Path $stagedPulDir 'Code.pul'
         if ([IO.Path]::GetFullPath($stagedPul) -ne $retroPul) { Copy-Item -LiteralPath $retroPul -Destination $stagedPul -Force }
+        if ($ItemFeverItems) {
+            # Both packs' own Code.pul are staged too, so the base translation knows every address
+            # either of them can patch; the combined module only ever patches a subset of those.
+            $ItemFeverItems = [IO.Path]::GetFullPath($ItemFeverItems)
+            $ifPul = Join-Path $ItemFeverItems 'Binaries\Code.pul'
+            Require $ifPul 'Item Fever Code.pul'
+            $ifStaged = Join-Path $Repo 'PulsarPacks\completed\ItemFever\ItemFever\Binaries'
+            New-Item -ItemType Directory -Path $ifStaged -Force | Out-Null
+            if ([IO.Path]::GetFullPath((Join-Path $ifStaged 'Code.pul')) -ne $ifPul) { Copy-Item -LiteralPath $ifPul -Destination (Join-Path $ifStaged 'Code.pul') -Force }
+            $combinedDir = Join-Path $Repo 'PulsarPacks\combined\rr-item-fever'
+            New-Item -ItemType Directory -Path $combinedDir -Force | Out-Null
+            $python = Get-Command python.exe -ErrorAction SilentlyContinue
+            if (-not $python) { throw 'python.exe is needed for -ItemFeverItems (scripts/mkw100/combine_pul.py).' }
+            # keep-func/own-func entries need the game's function ranges, from an earlier build's manifest.
+            $combineArgs = @('-I', (Join-Path $Repo 'scripts\mkw100\combine_pul.py'), '--rr', $stagedPul, '--if', $ifPul,
+                '--plan', (Join-Path $Repo 'projects\mkwii\mkw100\rr-item-fever.txt'), '--out', (Join-Path $combinedDir 'Code.pul'))
+            $prevManifest = Join-Path $Repo 'build\base\mkwii_base_manifest.json'
+            if (Test-Path -LiteralPath $prevManifest) { $combineArgs += @('--manifest', $prevManifest) }
+            $combineOut = & $python.Source @combineArgs
+            if ($LASTEXITCODE -ne 0) { throw 'combine_pul.py failed' }
+            foreach ($line in $combineOut) { Record ('combine_pul: ' + $line) }
+            $ModProfile = 'rr-item-fever'; $ModName = 'Retro Rewind + Item Fever items'; $ModOut = 'build\mods\rr_item_fever_full_cpp'
+            $retroPul = Join-Path $combinedDir 'Code.pul'
+        }
         $pulSha = (Get-FileHash -LiteralPath $retroPul -Algorithm SHA256).Hash.ToLowerInvariant()
         Record ($ModName + ' Code.pul staged, SHA256 ' + $pulSha)
         # The 12-racer fixes for a pack are measured on one Code.pul; another build still runs, without them.
@@ -231,7 +260,7 @@ try {
         New-Item -ItemType Directory -Path $retroOut -Force | Out-Null
         $modArgs = @('--roll-forward','Major',$translatorDll,'translate-mod','--project',$project,'--profile',$ModProfile,
             '--base-manifest',(Join-Path $baseMan 'mkwii_base_manifest.json'),'--base-translation-output-metadata',$metadata,
-            '--code-pul',(Join-Path $ModPack 'Binaries\Code.pul'),'--mod-root',$ModPack,'--mod-name',$ModName,
+            '--code-pul',$retroPul,'--mod-root',$ModPack,'--mod-name',$ModName,
             '--region','P','--out',$retroOut,'--prefer-cached-inputs','--emit-cpp','--threads',"$threads")
         if ($RetroRewind) { $modArgs += '--skip-retro-wfc' }
         InvokeTool $dotnet.Source $modArgs '03b_translate_mod'

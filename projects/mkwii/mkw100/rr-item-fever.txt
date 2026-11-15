@@ -1,0 +1,264 @@
+# Retro Rewind + Item Fever's items: which of Item Fever's patches to the game the combined module
+# keeps (scripts/mkw100/combine_pul.py, docs/mkw100/rr-item-fever.md). Measured on WheelWizard
+# RetroRewind6 (5061374c...) and Item Fever 1.1.0 (2c6c40ca...).
+
+if-offset 0xC0000   # Item Fever's module at 0x818C0000
+
+# Pulsar's hook-list dispatchers, patched by both packs: run Retro Rewind's list, then Item Fever's.
+chain 0x80543BB4    # BootHook::Exec        (RootScene::enter)
+chain 0x80554728    # RaceLoadHook::Exec    (RaceScene::CreateAndInitInstances)
+chain 0x8053369C    # RaceFrameHook::Exec   (Raceinfo::Update)
+
+# Retro Rewind's boot-time check that the game's code is unmodified (it raises "Error 148" when
+# another mod has patched one of the instructions it lists). This build patches the game on
+# purpose, with Item Fever's item code, and stays offline.
+stub-rr 0x818656C8
+
+# Item Fever's Config.pul has the name Retro Rewind's code also looks for; mount it under another.
+rename-string Binaries/Config.pul Binaries/IFCnfg.pul
+
+# Item Fever's item system (item table expansion after mkw-item-expansion, its item objects, the
+# CPUs' item use): Item Fever owns every game function of it that it patches; Retro Rewind's
+# patches in those functions (its item toggles, item slot tables, item fixes) are left out.
+own-func 0x8065C5E8   # RKNet::ITEMHandler::Update; RR patches it too
+own-func 0x8065E0A0   # RKNet::ITEMHandler::UpdateItemStatusAndSums
+own-func 0x8065F6DC   # RKNet::ItemHandler::GetStoredItemCount
+own-func 0x8072FD38   # (unnamed)
+own-func 0x80733BCC   # (unnamed)
+own-func 0x8076EDE4   # Objects::ItemDropper::DropItem
+own-func 0x80790FB8   # Item::ObjProperties::ComputeCapacities
+own-func 0x80791910   # Item::PlayerObj::UseItem; RR patches it too
+own-func 0x80791CC8   # (unnamed)
+own-func 0x80792C68   # Item::PlayerObj::TrailUpdate
+own-func 0x80795350   # Item::PlayerObj::LoseItem
+own-func 0x80795CCC   # Item::ObjHolder::Init
+own-func 0x80795E04   # Item::ObjHolder::Spawn; RR patches it too
+own-func 0x80796470   # Item::ObjHolder::Update; RR patches it too
+own-func 0x8079698C   # (unnamed)
+own-func 0x80797928   # Item::Player::Update; RR patches it too
+own-func 0x8079824C   # (unnamed)
+own-func 0x80798728   # (unnamed)
+own-func 0x80798A30   # Item::Player::LoseItemFromDmg
+own-func 0x80798B8C   # (unnamed)
+own-func 0x80798C38   # Item::Player::DecideItem
+own-func 0x80798F0C   # Item::Player::GetHeldCount
+own-func 0x807992D8   # Item::Manager::__ct
+own-func 0x80799794   # Item::Manager::Init; RR patches it too
+own-func 0x80799850   # Item::Manager::Update
+own-func 0x80799B2C   # (unnamed)
+own-func 0x80799BE8   # Item::Manager::IsThereCapacityForItem
+own-func 0x80799CAC   # Item::Manager::CheckKartCollision
+own-func 0x80799FBC   # Item::Manager::CreateItemDirect
+own-func 0x8079A298   # Item::Manager::SpawnCloudForLocal
+own-func 0x8079A5F4   # Item::Manager::DoSomethingWithFIBObjTevColors
+own-func 0x8079B4AC   # Item::EVENTBuffer::FillOrExtractShoot; RR patches it too
+own-func 0x8079C960   # Item::Obj::SendOrExtractHitDraggedEVENT; RR patches it too
+own-func 0x8079E550   # Item::Obj::Spawn; RR patches it too
+own-func 0x8079EE30   # Item::Obj::RegisterEntity
+own-func 0x8079F934   # (unnamed)
+own-func 0x807A05D0   # Item::Obj::UpdateModelPosition
+own-func 0x807A05F4   # Item::Obj::UpdateModelPositionNoClip
+own-func 0x807A0A68   # Item::Obj::UpdateShadow
+own-func 0x807A0E28   # Item::Obj::OnObjCollision
+own-func 0x807A139C   # (unnamed)
+own-func 0x807A14D4   # Item::Obj::CheckKartCollision
+own-func 0x807A18FC   # Item::Obj::ProcessOtherCollision; RR patches it too
+own-func 0x807A25B0   # Item::Obj::UpdateWithClipping
+own-func 0x807A2E68   # (unnamed)
+own-func 0x807A2F18   # (unnamed)
+own-func 0x807A2F38   # (unnamed)
+own-func 0x807A3790   # Item::Obj::OnPlayerCollision
+own-func 0x807A3E78   # Item::ObjBanana::Update
+own-func 0x807A4070   # Item::ObjBanana::InitSelf; RR patches it too
+own-func 0x807A40F0   # Item::ObjBanana::SpawnModel
+own-func 0x807A45E0   # (unnamed); RR patches it too
+own-func 0x807A4A18   # Item::ObjBomb::SetInitialPosition
+own-func 0x807A5F6C   # Item::ObjBomb::OnKill
+own-func 0x807A6560   # Item::Obj::KillFromOtherCollision
+own-func 0x807A6614   # Item::Obj::KillFromPlayerCollision
+own-func 0x807A7AC0   # Item::ObjFIB::InitSelf
+own-func 0x807AA87C   # Item::ObjKouraRed::Update
+own-func 0x807AAA5C   # Item::ObjKouraRed::UpdateModelPosition
+own-func 0x807AAAFC   # Item::ObjKouraRed::UpdateModelPositionNoClip
+own-func 0x807AACCC   # (unnamed)
+own-func 0x807AB38C   # Item::ObjKouraRed::InitSelf; RR patches it too
+own-func 0x807AB788   # Item::ObjKouraRed::OnKill
+own-func 0x807AB854   # Item::ObjKouraRed::SpawnModel
+own-func 0x807ABF70   # Item::ObjKouraTogezo::SpawnModel
+own-func 0x807AC008   # Item::ObjKouraTogezo::InitSelf
+own-func 0x807AC1A8   # Item::ObjKouraTogezo::CalcTargetedPlayerId; RR patches it too
+own-func 0x807AC7D4   # Item::ObjKouraTogezo::UpdateModelPosition
+own-func 0x807AC9EC   # Item::ObjKouraTogezo::UpdateModelPositionNoClip
+own-func 0x807AD118   # Item::ObjKouraTogezo::Update
+own-func 0x807AD5A4   # (unnamed)
+own-func 0x807AD5EC   # Item::ObjKouraTogezo::UpdateRouteFlying
+own-func 0x807AD824   # Item::ObjKouraTogezo::UpdateHomeIn
+own-func 0x807AD958   # Item::ObjKouraTogezo::UpdateDiveIn
+own-func 0x807ADC5C   # Item::ObjKouraTogezo::UpdateHover
+own-func 0x807ADFA4   # (unnamed)
+own-func 0x807AE180   # Item::ObjKouraTogezo::807ae180_; RR patches it too
+own-func 0x807AE34C   # Item::ObjKouraTogezo::UpdateExplosion
+own-func 0x807AE414   # Item::ObjKouraTogezo::OnKill
+own-func 0x807AEC64   # Item::ObjKouraGreen::Update
+own-func 0x807AED2C   # Item::ObjKouraGreen::UpdateModelPosition
+own-func 0x807AEDCC   # Item::ObjKouraGreen::UpdateModelPositionNoClip
+own-func 0x807AEFB4   # Item::ObjKouraGreen::InitSelf; RR patches it too
+own-func 0x807AF034   # Item::ObjKouraGreen::OnKill
+own-func 0x807AF100   # Item::ObjKouraGreen::SpawnModel
+own-func 0x807AF200   # Item::ObjKumo::SpawnModel
+own-func 0x807AF234   # (unnamed)
+own-func 0x807AF39C   # Item::ObjKumo::UpdateModelPosition
+own-func 0x807AF534   # Item::ObjKumo::InitSelf; RR patches it too
+own-func 0x807AF5A0   # (unnamed)
+own-func 0x807AF76C   # Item::ObjKumo::Update
+own-func 0x807B123C   # Item::ObjKumo::OnKill
+own-func 0x807B2F54   # (unnamed)
+own-func 0x807B3BAC   # (unnamed)
+own-func 0x807B4D2C   # (unnamed); RR patches it too
+own-func 0x807B54F4   # (unnamed)
+own-func 0x807B62B8   # (unnamed)
+own-func 0x807B64F8   # (unnamed)
+own-func 0x807B6910   # Item::ObjThrowable::OnFinishThrow
+own-func 0x807B6BFC   # KouraGreen_07b6bfc_
+own-func 0x807B7B7C   # Item::Player::UseThunder
+own-func 0x807B9FB0   # Item::PlayerRoulette::DecideItem; RR patches it too
+own-func 0x807BA9D8   # Item::SlotData::ProcessTable
+own-func 0x807BAD20   # Item::SlotData::PostProcessVSTable
+own-func 0x807BAF48   # Item::SlotData::Init; RR patches it too
+own-func 0x807BB42C   # Item::SlotData::DecideItem; RR patches it too
+own-func 0x807BB8D0   # Item::SlotData::DecideRouletteItem; RR patches it too
+own-func 0x807BBB00   # Item::SlotData::SetupBattleModeProbabilities; RR patches it too
+own-func 0x807BBD60   # Item::SlotData::SetupOnlineVSProbabilities; RR patches it too
+own-func 0x807BBEF8   # Item::SlotData::SetupVSProbabilities; RR patches it too
+own-func 0x807BC350   # Item::PlayerInventory::EjectItems
+own-func 0x807BC610   # Item::PlayerInventory::LoseItemFromDmg; RR patches it too
+own-func 0x807BC6E8   # Item::PlayerInventory::Update
+own-func 0x807BC830   # (unnamed)
+own-func 0x807BC908   # (unnamed)
+own-func 0x807BC940   # Item::PlayerInventory::SetItem; RR patches it too
+
+# Item Fever patches in item, kart, object and effect functions that Retro Rewind does not patch
+# at all (no clash); Item Fever's item code relies on them (its anim holders, damage kinds, ...).
+keep-func 0x80557340   # ModelTransformator::GetAnmHolderByType
+keep-func 0x805573CC   # ModelTransformator::PlayAnmNoBlend
+keep-func 0x805675DC   # Kart::Damage::SetDamage
+keep-func 0x80567D3C   # Kart::Damage::ApplySpinDamage
+keep-func 0x80568064   # Kart::Damage::ApplyPOWDamage
+keep-func 0x8056865C   # Kart::Damage::ApplyShellFIBDamage
+keep-func 0x80568718   # Kart::Damage::ApplyStarDamage
+keep-func 0x80568CB8   # Kart::Damage::ApplyChompDamage
+keep-func 0x80568FA4   # Kart::Damage::ApplyCarDamage
+keep-func 0x80569024   # Kart::Damage::ApplyBulletDamage
+keep-func 0x805690A0   # Kart::Damage::ApplyLaunchDamage
+keep-func 0x80569774   # Kart::Damage::ApplyThwompDamage
+keep-func 0x80569818   # Kart::Damage::ApplyMegaDamage
+keep-func 0x805698BC   # Kart::Damage::ApplySquishRespawnDamage
+keep-func 0x80569978   # Kart::Damage::ApplyCarSquishDamage
+keep-func 0x8056B218   # Kart::ScaleAnmController::Update
+keep-func 0x80572C20   # Kart::Collision::UpdateCollisions
+keep-func 0x80573190   # Kart::Collision::HandleShellCollision
+keep-func 0x805731B0   # Kart::Collision::HandleBlueShellCollision
+keep-func 0x80575D7C   # Kart::Trick::TryStart
+keep-func 0x80577E00   # Kart::BRRESHandle::LoadKillerModels
+keep-func 0x8057DA5C   # Kart::Movement::Hop
+keep-func 0x8057F7A8   # Kart::Movement::EndTrick
+keep-func 0x8057FD18   # Kart::Movement::TryStartJumpPad
+keep-func 0x80580778   # Kart::Movement::ApplyShockEffect
+keep-func 0x80580B14   # Kart::Movement::ActivateMega
+keep-func 0x8058160C   # Kart::Movement::UpdateScale
+keep-func 0x80581A28   # Kart::Movement::ActivateTC
+keep-func 0x80586FA8   # Kart::Movement::UpdateSlipStream
+keep-func 0x80588350   # Kart::MovementBike::StartWheelie
+keep-func 0x80589480   # Kart::MovementBikeRealLocal::StartWheelie
+keep-func 0x80590650   # Kart::Link::IsLocal
+keep-func 0x805959D4   # Kart::Status::ComputeStartBoost
+keep-func 0x80599690   # WheelPhysics::UpdateCollision
+keep-func 0x8059B658   # Kart::Killer::__ct
+keep-func 0x8059B7B8   # Kart::Killer::Activate
+keep-func 0x8059BE8C   # Kart::Killer::Init
+keep-func 0x8059CC60   # Kart::Killer::UpdateDuration
+keep-func 0x805B5170   # Kart::Physics::Update
+keep-func 0x8068D3F0   # Effects::Items::FadeKouraTailGEffect
+keep-func 0x8068D41C   # Effects::Items::FadeKouraTailREffect
+keep-func 0x8068D448   # Effects::Items::FadeKouraTailBEffect
+keep-func 0x8068D474   # Effects::Items::KillKouraTailGEffect
+keep-func 0x8068D4A0   # Effects::Items::KillKouraTailREffect
+keep-func 0x8068D4CC   # Effects::Items::KillKouraTailBEffect
+keep-func 0x80693D84   # Effects::Player::Update
+keep-func 0x806B5AC8   # Effects::Mgr::CreateOneTimeEffect(pos)
+keep-func 0x806DBA98   # Objects::Kuribo::OnItemCollision
+keep-func 0x806E9CAC   # Objects::HwanwanBall::OnCollision
+keep-func 0x806E9D6C   # Objects::HwanwanBall::OnItemCollision
+keep-func 0x8073CD3C   # AI::ENPTController::CalcNext
+keep-func 0x8076CEFC   # Objects::W_Itembox::Box::OnCollision
+keep-func 0x8076E0BC   # Objects::W_Itemboxline::Box::OnCollision
+keep-func 0x80778C0C   # Objects::Dokan_sfc::OnCollision
+keep-func 0x8078DFE8   # CourseMgr::CreateInstance
+keep-func 0x807C0F00   # KCLController::IsCollidingFromCurCopyPosition
+keep-func 0x807C1DE8   # KCLController::GetTrianglesListReuse
+keep-func 0x807C24C0   # KCLController::Update
+keep-func 0x807C293C   # KCLManager::Update
+keep-func 0x807F1DB4   # RaceBalloons::OnItemObjTargeting
+keep-func 0x807F22BC   # CtrlRaceItemBalloon::OnUpdate
+keep-func 0x807F368C   # CtrlRaceItemBalloon::UpdatePositionForPlayer
+
+# Pulsar's model-file lookup (ModelDirector::BindBRRES*), patched by both packs: Item Fever's version
+# finds its item models; Retro Rewind's bound them to the wrong resource (Fake Item Box crash).
+keep 0x8055B6D8     # ModelDirector::BindBRRESFallback
+keep 0x8055B810     # ModelDirector::BindBRRESImpl
+keep 0x8055B81C     # ModelDirector::BindBRRESImpl
+keep 0x8055B838     # ModelDirector::BindBRRESImpl
+keep 0x8055B854     # ModelDirector::BindBRRESImpl
+keep 0x8055BA24     # ModelDirector::BRRESExists
+
+# Item Fever's writes to game data that its items need (none of them written by Retro Rewind).
+# Vtable slots it points at its own methods:
+keep 0x808D1A58     # Item::ObjBanana::SetInitialPosition
+keep 0x808D1D6C     # Item::ObjFIB::InitSelf
+keep 0x808D1D78     # Item::ObjFIB::SpawnModel
+keep 0x808B2DC8     # Input::AIControllerHolder::CopyCPUInputs (CPU item use)
+keep 0x808B3554     # GMDataCoinBattle::OnKartCollision
+keep 0x808B36C8     # GMDataCoinBattle::OnKartCollision
+keep 0x808B3714     # GMDataBalloonBattle::OnKartCollision
+keep 0x808B4254     # RaceScene::OnExit
+keep 0x808C40B8     # Objects::Itembox::OnCollision
+keep 0x808C41A8     # Objects::Itembox::OnCollision
+keep 0x808D0F90     # Objects::Itembox::OnCollision
+keep 0x808D7AA0     # Objects::Itembox::OnCollision
+keep 0x808D7B90     # Objects::Itembox::OnCollision
+keep 0x808D7C80     # Objects::Itembox::OnCollision
+keep 0x808C59A8     # Objects::HighwayCar::OnCollision
+keep 0x808C5ED0     # Objects::Kuribo::OnCollision
+keep 0x808CFE0C     # Objects::Penguin::OnItemCollision
+keep 0x808D000C     # Objects::Penguin::OnItemCollision
+keep 0x808D0118     # Objects::Penguin::OnItemCollision
+keep 0x808D0314     # Objects::Penguin::OnItemCollision
+keep 0x808D38B8     # CtrlRace2DMapCharacter::OnUpdate (items on the minimap)
+keep 0x808D3974     # LayoutUIControl::Draw (minimap)
+keep 0x808D397C     # CtrlRace2DMap::OnUpdate
+keep 0x808D3E38     # CtrlRaceItemBalloon::OnUpdate (incoming-item warning)
+keep 0x808D3E6C     # LayoutUIControl::Draw (item balloon)
+keep 0x808D3B04     # CtrlRaceBattleTotalPoint::OnUpdate
+# Item properties, sound ids, the Fake Item Box resource names:
+keep-range 0x808D1D20 0x808D1D50
+keep-range 0x80895670 0x80895680
+keep-range 0x80895840 0x80895850
+keep-range 0x808A5770 0x808A5840
+
+# Left out: Item Fever's heap sizes (0x808A13B4: 10 -> 8 MiB, 0x808A1FA8: 6 -> 10 MiB) and its
+# entry in a table of name pointers (0x808B3228); with them the race scene exits before racing.
+
+# The race HUD's item window and incoming-item balloon: Item Fever draws its items' icons (from its
+# PULitem icon bank); Retro Rewind's versions only know the game's 19 items.
+own-func 0x807EEF64   # CtrlRaceItemWindow::OnUpdate; RR patches it too
+own-func 0x807F34EC   # CtrlRaceItemBalloon::UpdateIcon; RR patches it too
+# Item Fever patches in game functions Retro Rewind does not patch, that its items or their HUD use:
+keep-func 0x80860AF0  # GetItemIconPaneName (item id -> icon; the game's table has 19 items)
+keep-func 0x8063E0F0  # LayoutUIControl::SetPicturePane (Item Fever's icon bank)
+keep-func 0x8082B4E0  # ObjectCollisionManager::GetPlayerItemState
+keep-func 0x8055472C  # RaceScene::OnEnterEnd
+keep-func 0x8055C9F0  # ModelDirector::ToggleVisible (Boo)
+keep-func 0x80562444  # ScnMgr::CreateScnGroup (room for more models)
+keep-func 0x805638FC  # ScnMgr::CreateScnGroupEx
+keep-func 0x8078746C  # ClipInfoMgr::CreateInstance
+keep-func 0x807875EC  # ClipInfoMgr::__ct

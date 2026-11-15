@@ -91,3 +91,6 @@ output.txt
 
 # upstream WiiCompiled
 /native-build-macos*/
+/play-rrif/
+/build-logs-rrif.txt
+/PulsarPacks/

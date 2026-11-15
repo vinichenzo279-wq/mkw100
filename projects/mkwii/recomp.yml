@@ -69,6 +69,24 @@ profiles:
         - section: Retro Rewind
           option: Pack
           choice: 1
+  # Experimental: Retro Rewind with Item Fever's items, one combined module built by
+  # scripts/mkw100/combine_pul.py (Build-MKW100.ps1 -RetroRewind ... -ItemFeverItems ...).
+  rr-item-fever:
+    enabled: true
+    requires_game_id: RMCP01
+    requires_dol_sha256: 80d18895b39c63bd80f457398bfcbb91b7d16ac116a41a88967e954080155b05
+    code_pul: PulsarPacks/combined/rr-item-fever/Code.pul
+    mod_root: PulsarPacks/completed/RetroRewind/RetroRewind6
+    region: P
+    module_guest_base: 0x81800000
+    module_link_base: 0x803992E0
+    output: build/mods/rr_item_fever_full_cpp
+    riivolution:
+      xml: xml/RetroRewind6.xml
+      options:
+        - section: Retro Rewind
+          option: Pack
+          choice: 1
   item-fever:
     enabled: true
     requires_game_id: RMCP01
