@@ -15,4 +15,8 @@ bool Available(uint32_t place);
 // icon. Allocates in the race scene's heap through `ctx` and restores it.
 bool Show(CpuContext* ctx, uint32_t control, uint32_t place);
 
+// A race is being built (Raceinfo's constructor): forget the last race's buffers and counters,
+// which lived in its scene heaps.
+void NewRace();
+
 } // namespace RankIcons

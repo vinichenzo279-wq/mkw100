@@ -26,6 +26,7 @@
 #include "guest_abi/player_slots.h"
 #include "guest_function_imports.h"
 #include "memory.h"
+#include "hle/rank_icons.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -468,6 +469,7 @@ constexpr uint32_t kTimerLimitMs = 0x44;
 }
 
 extern "C" void Raceinfo_ct_805327a0(CpuContext* ctx) {
+    RankIcons::NewRace();  // every race, battle or not: the old scene's icon buffers are gone
     MKW_GUEST_NEXT(805327A0)(ctx);
     const uint32_t raceinfo = ctx->gpr[3];
     const uint32_t racedata = Memory::Read32(kBalloonRacedata);

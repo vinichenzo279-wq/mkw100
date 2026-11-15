@@ -542,7 +542,12 @@ void PrepareRace(uint32_t rd) {
     if (first) {
         seriesCount=desiredCount.load();
         { std::lock_guard lock(standingsMutex); standings.clear(); }
-        DealSeriesRoster();
+        // The course intro (gameType 5) and the race after it are both race 0 and the intro loads
+        // the karts: the race keeps the intro's deal, or it waited for karts never loaded (black
+        // screen after the intro).
+        static bool rosterDealtInPreview = false;
+        if (!rosterDealtInPreview || preview) DealSeriesRoster();
+        rosterDealtInPreview = preview;
     }
     for (uint32_t i=0;i<PlayerSlots::kMaxPlayers;++i) {
         const uint32_t p=Player(menu,i);

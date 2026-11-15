@@ -145,7 +145,6 @@ constexpr uint32_t kLastStock = 11;       // the 12th place's entry
 // One per local player's counter (split screen: up to 4): its table entry and original TPL.
 struct IconCounter { uint32_t control = 0, entry = 0, stock = 0; };
 std::array<IconCounter, 4> g_counters{};
-uint32_t g_race = 0;      // the Raceinfo instance the copies belong to
 
 IconCounter& CounterFor(uint32_t control) {
     for (auto& c : g_counters) if (c.control == control) return c;
@@ -168,15 +167,18 @@ uint32_t TableEntry(uint32_t control) {
 }
 } // namespace
 
+// A new race: its scene heaps hold none of our copies, and its counters are new. Split screen has
+// a counter per player, which share the copies (one set per race). Called from Raceinfo's
+// constructor: the Raceinfo address alone did not tell races apart, as a restarted scene (the
+// course intro, then the race; the next race of a series) builds it at the same address, and the
+// last race's buffers, freed with its heaps, were handed to the counter (a TPLBind panic, "invalid
+// version number for texture palette", on the position counter).
+void NewRace() {
+    g_counters.fill(IconCounter{});
+    g_slots.fill(IconSlot{});
+}
+
 bool Show(CpuContext* ctx, uint32_t control, uint32_t place) {
-    // A new race (a new Raceinfo): its scene heaps hold none of our copies, and its counters are
-    // new. Split screen has a counter per player, which share the copies (one set per race).
-    const uint32_t race = Memory::Read32(0x809BD730);
-    if (race != g_race) {
-        g_race = race;
-        g_counters.fill(IconCounter{});
-        g_slots.fill(IconSlot{});
-    }
     IconCounter& counter = CounterFor(control);
     if (place < kFirstPlace) {
         if (counter.entry) Memory::Write32(counter.entry, counter.stock);
