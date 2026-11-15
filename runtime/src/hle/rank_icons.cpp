@@ -1,10 +1,12 @@
 // mkw100: position icons for 13th..255th on the race HUD's position counter (CtrlRaceRankNum).
 //
 // The game's counter only has pictures for 1st..12th. rank_icons/rank013.tpl .. rank255.tpl next
-// to the executable (runtime/assets/rank_icons: 13-24 by hammerbro101, 25-255 generated; see the
-// README there) are read once, and each race copies the ones it needs into the race scene's
-// structsDebug heap (MEM2) and binds them as TPLBind does, then hands them to the counter's own
-// texture pattern animation (see Show). Textures must sit in MEM1/MEM2: the GX layer rejects
+// to the executable (runtime/assets/rank_icons, 180x128 like the game's own; see the README there)
+// are read once. Each race keeps a few buffers (kSlots) in the race scene's structsDebug heap
+// (MEM2): a place shown is copied into one and bound as TPLBind does, then handed to the
+// counter's own texture pattern animation (see Show). A buffer goes to another place once no
+// counter shows it and it has not been shown for kReuseAfter (the GX layer is told its bytes
+// changed), so a 255-racer race needs a few hundred KB however many places a player passes. Textures must sit in MEM1/MEM2: the GX layer rejects
 // texture data outside them (a fixed runtime span gave "GXLoadTexObj rejected data-out-of-range").
 // When the files are missing the HUD overlay's vector digits are used instead.
 
@@ -12,11 +14,13 @@
 
 #include "abi_bridge.h"
 #include "guest_abi/player_slots.h"
+#include "gx_guest_write.h"
 #include "memory.h"
 #include "runtime_config.h"
 #include "runtime_log.h"
 
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <vector>
@@ -25,7 +29,7 @@ namespace {
 
 constexpr uint32_t kFirstPlace = 13;
 constexpr uint32_t kLastPlace = PlayerSlots::kMaxPlayers;
-constexpr uint32_t kMaxTplBytes = 0x4100;  // a 64x64 RGBA8 TPL is 0x4040 bytes
+constexpr uint32_t kMaxTplBytes = 0xB440;  // a 180x128 RGB5A3 TPL is 0xB440 bytes (64x64 RGBA8: 0x4040)
 constexpr uint32_t kIconRkSystem = 0x802A4080;
 constexpr uint32_t kIconSceneManager = 0x54;    // EGG::SceneManager*: current scene at +0xC
 constexpr uint32_t kIconStructsDebug = 0xC90;   // GameScene: EGG::ExpHeap* (MEM2; see race_heap.cpp)
@@ -34,7 +38,11 @@ constexpr uint32_t kIconAllocFromExpHeap = 0x80198D88;  // MEMAllocFromExpHeapEx
 
 std::array<int8_t, kLastPlace + 1> g_file{};          // 0 unread, 1 read, -1 missing
 std::array<std::vector<uint8_t>, kLastPlace + 1> g_bytes;
-std::array<uint32_t, kLastPlace + 1> g_guest{};       // this race's bound copy, 0 if none
+// This race's buffers: the bound copy of `place` at `tpl` (0: not allocated yet).
+constexpr uint32_t kSlots = 12;
+constexpr auto kReuseAfter = std::chrono::milliseconds(250);
+struct IconSlot { uint32_t tpl = 0, place = 0; std::chrono::steady_clock::time_point shown{}; };
+std::array<IconSlot, kSlots> g_slots{};
 bool g_anyMissingLogged = false;
 
 bool ReadFile(uint32_t place) {
@@ -61,23 +69,41 @@ bool ReadFile(uint32_t place) {
     return true;
 }
 
-// This race's bound copy of `place`'s TPL in structsDebug, allocated on first use.
-uint32_t GuestCopy(CpuContext* ctx, uint32_t place) {
-    if (g_guest[place] != 0) return g_guest[place];
+uint32_t AllocBuffer(CpuContext* ctx) {
     const uint32_t manager = Memory::Read32(kIconRkSystem + kIconSceneManager);
     const uint32_t scene = manager ? Memory::Read32(manager + 0xC) : 0;
     const uint32_t debug = scene ? Memory::Read32(scene + kIconStructsDebug) : 0;
     const uint32_t heap = debug ? Memory::Read32(debug + kIconRvlHeap) : 0;
     if (heap < 0x80000000u) return 0;
-    const auto& bytes = g_bytes[place];
     const CpuContext entry = *ctx;
     ctx->gpr[3] = heap;
-    ctx->gpr[4] = uint32_t(bytes.size());
+    ctx->gpr[4] = kMaxTplBytes;
     ctx->gpr[5] = 32;
     InvokeIndirectCpu(kIconAllocFromExpHeap, ctx);
     const uint32_t tpl = ctx->gpr[3];
     *ctx = entry;
-    if (tpl < 0x80000000u) return 0;
+    return tpl >= 0x80000000u ? tpl : 0;
+}
+
+// This race's bound copy of `place`'s TPL: a buffer that holds it already, else a free one, else
+// the one shown longest ago that no counter shows (`shown`: the copies the counters hold now).
+uint32_t GuestCopy(CpuContext* ctx, uint32_t place, const std::array<uint32_t, 4>& shown) {
+    const auto now = std::chrono::steady_clock::now();
+    for (IconSlot& s : g_slots) {
+        if (s.tpl != 0 && s.place == place) { s.shown = now; return s.tpl; }
+    }
+    IconSlot* pick = nullptr;
+    for (IconSlot& s : g_slots) {
+        if (s.tpl == 0) { pick = &s; break; }
+        bool held = false;
+        for (uint32_t t : shown) held |= t == s.tpl;
+        if (held || now - s.shown < kReuseAfter) continue;
+        if (!pick || s.shown < pick->shown) pick = &s;
+    }
+    if (!pick) return 0;  // every buffer just shown: the overlay digits this once
+    if (pick->tpl == 0 && (pick->tpl = AllocBuffer(ctx)) == 0) return 0;
+    const uint32_t tpl = pick->tpl;
+    const auto& bytes = g_bytes[place];
     for (uint32_t i = 0; i < bytes.size(); ++i) Memory::Write8(tpl + i, bytes[i]);
     // Bind as TPLBind does: the game's texture tables hold bound TPLs, whose offsets are pointers.
     // Header: version, image count, descriptor table offset; descriptor: image header, palette
@@ -89,7 +115,9 @@ uint32_t GuestCopy(CpuContext* ctx, uint32_t place) {
     if (Memory::Read32(descriptors + 4) != 0) Memory::Write32(descriptors + 4, tpl + Memory::Read32(descriptors + 4));
     Memory::Write32(header + 8, tpl + Memory::Read32(header + 8));
     Memory::Write8(header + 0x23, 1);
-    g_guest[place] = tpl;
+    GxGuestWrite::NotifyWrite(tpl, uint32_t(bytes.size()));  // a reused buffer: re-read the texture
+    pick->place = place;
+    pick->shown = now;
     return tpl;
 }
 
@@ -147,7 +175,7 @@ bool Show(CpuContext* ctx, uint32_t control, uint32_t place) {
     if (race != g_race) {
         g_race = race;
         g_counters.fill(IconCounter{});
-        g_guest.fill(0);
+        g_slots.fill(IconSlot{});
     }
     IconCounter& counter = CounterFor(control);
     if (place < kFirstPlace) {
@@ -162,7 +190,13 @@ bool Show(CpuContext* ctx, uint32_t control, uint32_t place) {
         counter.entry = entry;
         counter.stock = Memory::Read32(entry);
     }
-    const uint32_t tpl = GuestCopy(ctx, place);
+    // The copies the other counters hold (split screen) stay put; this counter's own may be reused.
+    std::array<uint32_t, 4> shown{};
+    for (size_t i = 0; i < g_counters.size(); ++i) {
+        const IconCounter& c = g_counters[i];
+        if (&c != &counter && c.entry) shown[i] = Memory::Read32(c.entry);
+    }
+    const uint32_t tpl = GuestCopy(ctx, place, shown);
     if (!tpl) return false;
     Memory::Write32(entry, tpl);
     return true;
