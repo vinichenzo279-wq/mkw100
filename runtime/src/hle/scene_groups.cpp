@@ -13,6 +13,7 @@
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
 #include "memory.h"
+#include "runtime_log.h"
 
 #include <cstdint>
 
@@ -79,3 +80,14 @@ extern "C" void ScnRoot_Construct_8006f1a0(CpuContext* ctx) {
     MKW_GUEST_NEXT(8006F1A0)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8006F1A0, ScnRoot_Construct_8006f1a0, "ScnRoot_Construct_8006f1a0");
+
+// A model a full group turned away is never drawn (an item on the ground can then be invisible
+// yet still collide); counted in the log so a full group shows up.
+extern "C" void ScnGroup_Insert_8006eb60(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8006EB60)(ctx);
+    static uint32_t failed = 0;
+    if (ctx->gpr[3] == 0 && (failed++ % 1000) == 0) {
+        RT_LOGF("scene", "a model could not join its scene group (group full); %u so far\n", failed);
+    }
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8006EB60, ScnGroup_Insert_8006eb60, "ScnGroup_Insert_8006eb60");
