@@ -26,6 +26,7 @@ Plan file, one entry per line (# comments):
     own-func 0xADDRESS         # the same, and drop all of RR's patches inside that function
     rename-string OLD NEW      # replace a NUL-terminated string in IF's module (same length)
     stub-rr 0xADDRESS          # make the RR function at this guest address return at once (blr)
+    drop-rr 0xADDRESS          # leave out RR's patch at this game address (the game's code runs)
 """
 import argparse
 import hashlib
@@ -43,7 +44,7 @@ LINK_BASE = 0x803992E0  # where the Pulsar loader puts Code.pul on a PAL Wii (re
 
 def read_plan(path):
     plan = {'if-offset': 0xC0000, 'chain': [], 'keep': set(), 'keep-func': set(), 'own-func': set(),
-            'rename-string': [], 'stub-rr': [], 'keep-range': []}
+            'rename-string': [], 'stub-rr': [], 'keep-range': [], 'drop-rr': set()}
     for raw in open(path, encoding='utf-8'):
         line = raw.split('#', 1)[0].split()
         if not line:
@@ -61,7 +62,7 @@ def read_plan(path):
             plan[key] = value
         elif key in ('chain', 'stub-rr'):
             plan[key].append(value)
-        elif key in ('keep', 'keep-func', 'own-func'):
+        elif key in ('keep', 'keep-func', 'own-func', 'drop-rr'):
             plan[key].add(value)
         else:
             raise SystemExit(f'{path}: unknown entry {key}')
@@ -231,8 +232,11 @@ def main():
         cmds.append((kind, True, site, (at,)))
     kept = 0
     for site, idxs in rr_abs.items():
-        if func_of(site) in plan['own-func'] and site not in plan['chain']:
+        if (func_of(site) in plan['own-func'] or site in plan['drop-rr']) and site not in plan['chain']:
             drop.update(idxs)
+    missing = sorted(a for a in plan['drop-rr'] if a not in rr_abs)
+    if missing:
+        raise SystemExit('drop-rr: RR has no patch at ' + ', '.join(f'0x{a:08x}' for a in missing))
     for site, entries in sorted(if_abs.items()):
         if site in plan['chain']:
             continue

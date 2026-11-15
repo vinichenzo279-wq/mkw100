@@ -274,3 +274,23 @@ keep 0x80567F84       # Kart::Damage::ApplyBananaDamage (Retro Rewind: Battle Ro
 keep 0x805967AC       # Kart::Sub::Update: Feather (Item Fever's Feather item, slot 0x1D)
 keep 0x805973B4       # Kart::Player::ApplyPhysics: Feather
 keep 0x805B68DC       # Kart::Collision::UpdateCollisionsInner: Feather
+
+# Sound. Retro Rewind replaces the race's sound heap with a tiny one and loads race sounds into the
+# scene heaps (MiscSound.cpp: its big course and UI archives leave no 10 MiB of contiguous MEM2).
+# Item Fever's sound archive has larger race groups, which did not fit there: a silent countdown and
+# start, item sounds with a null handle. The race gets the game's own sound heap back, as in Item
+# Fever:
+drop-rr 0x805542D8    # RaceScene::CreateAndInitInstances: the race sound heap's creation (size)
+drop-rr 0x806FE024    # Audio::GameHeap::Initialize
+drop-rr 0x800A2FF0    # nw4r::snd::SoundHeap::Alloc(virtual): to the scene heaps
+drop-rr 0x800A3060    # nw4r::snd::SoundHeap::Alloc
+# Item Fever's own sound heap at boot (Audio::Manager::Init 0x80717150, InitSelf 0x8071724C: 6 -> 10
+# MiB from MEM2) is left out: with Retro Rewind it stopped the boot (SoundArchivePlayer::Setup).
+# Item Fever's patches in sound functions Retro Rewind does not patch (item sounds):
+keep-func 0x8070FD10  # Audio::ItemAlterationMgr::Update
+keep-func 0x8070FEC8  # Audio::ItemAlterationMgr::UpdateStatus
+keep-func 0x8071007C  # Audio::ItemAlterationMgr::SetAudioAlteration
+keep-func 0x80710308  # Audio::ItemAlterationMgr::PlayMegaMusic
+keep-func 0x8070BE0C  # Audio::KartActor::SetNonLocalVolumeAndPriority
+keep-func 0x8009C410  # nw4r::snd::Sound3DActor::SetupSound
+keep-func 0x8008EF20  # nw4r::snd::detail::BasicSound::UpdateParam
