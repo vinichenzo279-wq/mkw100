@@ -10,9 +10,12 @@
 // search results, and with it every race up to 256 units, is unchanged.
 //
 // The guest object keeps the fields other code reads: the unit pool and search results move to
-// kPool / kResults (pointers +0x18 / +0x1C), the count, maxID and the search cache stay where
-// they were. The four iterators (+0x428..+0x434) hold 256 at their end as the game's callers
-// expect (callers test them against 256), else a small value; the real index is kept here.
+// kPool / kResults (pointers +0x18 / +0x1C); the count, maxID, the search cache and the four
+// iterators (+0x428..+0x434) stay where they were and keep their meaning, because Pulsar packs
+// read and write them too (Retro Rewind replaces UpdateIndexes, 0x80785F2C, with its own that
+// reorders the results and sets the iterators). An iterator is a result index, 256 at its end as
+// the game's callers test; past 256 results, result 256 itself is skipped so it cannot read as
+// the end.
 //
 // Guest layout (EntityManager, from its constructor 0x807856E0):
 //   +0x10 high points*  +0x14 low points*  +0x18 unit pool*  +0x1C search results*
@@ -31,6 +34,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <numeric>
 #include <utility>
@@ -66,7 +70,6 @@ struct Manager {
     std::vector<LowPoint> low;
     std::vector<int> unitIds;
     int count = 0, nextUnitId = 0, maxId = 0;
-    int iter[4] = {};
     bool overLogged = false;
 };
 Manager g_mgr;
@@ -80,11 +83,6 @@ void W32(uint32_t a, uint32_t v) { Memory::Write32(a, v); }
 int RS16(uint32_t a) { return int(int16_t(Memory::Read16(a))); }
 void WS16(uint32_t a, int v) { Memory::Write16(a, uint16_t(int16_t(v))); }
 void AddS16(uint32_t a, int d) { WS16(a, RS16(a) + d); }
-
-// The real iterator index; the guest field holds 256 at the end, else 0.
-void PublishIterator(int which) {
-    W32(g_mgr.guest + kIterators + 4 * which, g_mgr.iter[which] == int(kMaxUnits) ? kGameMaxUnits : 0);
-}
 
 void SetCount(int count) {
     g_mgr.count = count;
@@ -112,38 +110,38 @@ void Adopt(uint32_t mgr) {
     W32(mgr + kUnitList, kResults);
     SetCount(int(R32(mgr + kCount)));  // 0: the constructor inserts before anything else
     g_mgr.nextUnitId = int(R32(mgr + kNextUnit));
-    for (int i = 0; i < 4; ++i) g_mgr.iter[i] = int(kMaxUnits);
 }
 
 bool Ours(uint32_t mgr) { return mgr != 0 && mgr == g_mgr.guest && R32(mgr + kUnitPool) == kPool; }
 
-void Iterate(int which) {
-    int& it = g_mgr.iter[which];
-    while (++it < g_mgr.maxId) {
-        if ((R32(R32(kResults + 4 * uint32_t(it)) + kUFlag) & kIteratorFlags[which]) != 0) return;
+uint32_t IteratorField(int which) { return g_mgr.guest + kIterators + 4 * uint32_t(which); }
+
+// The next result after `from` with the iterator's flags, or 256.
+void Iterate(int which, int from) {
+    for (int it = from + 1; it < g_mgr.maxId; ++it) {
+        if (it == int(kGameMaxUnits)) continue;  // 256 is the end marker
+        if ((R32(R32(kResults + 4 * uint32_t(it)) + kUFlag) & kIteratorFlags[which]) != 0) {
+            W32(IteratorField(which), uint32_t(it));
+            return;
+        }
     }
-    it = int(kMaxUnits);
+    W32(IteratorField(which), kGameMaxUnits);
 }
 
 void ResetIterators() {
-    for (int i = 0; i < 4; ++i) {
-        g_mgr.iter[i] = -1;
-        Iterate(i);
-        PublishIterator(i);
-    }
+    for (int i = 0; i < 4; ++i) Iterate(i, -1);
 }
 
 uint32_t GetNext(int which) {
-    int& it = g_mgr.iter[which];
-    if (it == int(kMaxUnits)) return 0;
+    const int it = int(R32(IteratorField(which)));
+    if (it == int(kGameMaxUnits) || it < 0 || it >= g_mgr.maxId) return 0;
     const uint32_t unit = R32(kResults + 4 * uint32_t(it));
-    Iterate(which);
-    PublishIterator(which);
+    Iterate(which, it);
     return R32(unit + kUData);
 }
 
 void Clear() {
-    for (int i = 0; i < 4; ++i) { g_mgr.iter[i] = int(kMaxUnits); PublishIterator(i); }
+    for (int i = 0; i < 4; ++i) W32(IteratorField(i), kGameMaxUnits);
     SetMaxId(0);
     W32(g_mgr.guest + kCacheUnit, 0);
     WF(g_mgr.guest + kCacheRadius, -1.0f);
@@ -424,6 +422,9 @@ REGISTER_NATIVE_WRAPPER_AS(0x807854E4, EntityManager_Dt_807854e4, "EntityManager
 // InsertEntity(this, f1 radius, f2 maxSpeed, r4 pos, r5 flag, r6 userData) -> unit or null
 extern "C" void EntityManager_InsertEntity_80786134(CpuContext* ctx) {
     const uint32_t mgr = ctx->gpr[3];
+    // MKW100_TEST_GAME_ENTITIES (tests only): keep the game's own 256-unit manager.
+    static const bool gameEntities = std::getenv("MKW100_TEST_GAME_ENTITIES") != nullptr;
+    if (gameEntities) { MKW_GUEST_NEXT(80786134)(ctx); return; }
     if (!Ours(mgr)) Adopt(mgr);
     ctx->gpr[3] = Insert(float(ctx->fpr[1].d), float(ctx->fpr[2].d), ctx->gpr[4], ctx->gpr[5], ctx->gpr[6]);
 }
@@ -451,12 +452,6 @@ extern "C" void EntityManager_Update_807859b0(CpuContext* ctx) {
     Calc();
 }
 REGISTER_NATIVE_WRAPPER_AS(0x807859B0, EntityManager_Update_807859b0, "EntityManager_Update_807859b0");
-
-extern "C" void EntityManager_UpdateIndexes_80785f2c(CpuContext* ctx) {
-    if (!Ours(ctx->gpr[3])) { MKW_GUEST_NEXT(80785F2C)(ctx); return; }
-    ResetIterators();
-}
-REGISTER_NATIVE_WRAPPER_AS(0x80785F2C, EntityManager_UpdateIndexes_80785f2c, "EntityManager_UpdateIndexes_80785f2c");
 
 // The iterators (written out: the build finds wrappers by their REGISTER_NATIVE_WRAPPER_AS text).
 // GetNextKartPlayer
