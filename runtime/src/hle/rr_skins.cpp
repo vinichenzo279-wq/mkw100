@@ -14,17 +14,18 @@
 //
 // The path builder reads row <racer> of the [4][24] table. A CPU racer never picked a skin, and
 // past row 3 that read was outside the table. For every CPU racer, and every racer past 3, row 3
-// is filled with a skin per character for the call and restored after it: picked from the skins
-// that exist, or the stock look as one more choice, by a hash of the racer index. The pick is
-// deterministic, so a race replays the same field. Retro Rewind product only: the base game
-// never calls these addresses.
+// is filled with a skin per character for the call and restored after it: in a menu series the
+// skin dealt to the racer for the series (DealSeriesSkins), in a direct-boot race (tests) one
+// picked from the skins that exist, or the stock look as one more choice, by a hash of the racer
+// index, so a test replays the same field. Retro Rewind product only: the base game never calls
+// these addresses.
 //
 // In a race the path builder is not what picks the skin: 0x81832B74 decides one skin per racer into
 // a 12-byte table (0x8189F3EC; CPUs get a random existing skin) and the getter 0x818329A0 reads it
 // back for 0x81832CC4. The decider walks the 12-slot scenario player array and wrote past the
 // table, and the getter sends racers 12+ to a local player's row, so only about 12 racers got
 // skins. More than 12 racers: both run natively over a per-racer table here (racers 0-11 also
-// written to Retro Rewind's own table); a CPU's pick is PickSkin's.
+// written to Retro Rewind's own table); a CPU's pick is CpuSkin's, the same as the path builder's.
 //
 // Every address here belongs to one Retro Rewind build: the WheelWizard RetroRewind6 Code.pul,
 // SHA-256 d68778e9..., whose PAL Kamek code has the SHA-1 below. The loader writes that SHA-1 to
@@ -36,10 +37,16 @@
 #include "guest_abi/player_slots.h"
 #include "hle/mod_build.h"
 #include "guest_function_imports.h"
+#include "local_vs.h"
 #include "memory.h"
 #include "runtime_log.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
+#include <numeric>
+#include <random>
+#include <vector>
 
 namespace {
 
@@ -117,6 +124,65 @@ bool IsCpu(uint32_t racer) {
            Memory::Read32(racedata + MKW100_PlayerSlotOffset(racer) + kSkinPlayerType) == kSkinCpuType;
 }
 
+// Menu series (LocalVs::SeriesId() > 0): the CPUs' skins are dealt at random once per series and
+// kept for its races, so every series brings new looks. Each character has a shuffled bag of its
+// looks (every existing skin and the stock look); a CPU of that character takes the next one, so
+// all of a character's looks are on track before any repeats. The skin budget stays: at most
+// kSkinnedRacers CPUs get a skin, the racers asked in random order so the skins are spread over
+// the grid; a CPU over the budget takes the stock look and its skin goes back in the bag.
+// Direct-boot races (tests) keep PickSkin's fixed picks.
+uint32_t g_dealtSeries = 0;
+uint8_t g_dealtSkin[kSkinRacersMax];
+uint8_t g_dealtCharacter[kSkinRacersMax];
+
+void DealSeriesSkins() {
+    const uint32_t series = LocalVs::SeriesId();
+    if (series == 0 || series == g_dealtSeries) return;
+    const uint32_t racedata = Memory::Read32(kSkinRacedata);
+    const uint32_t count = std::min<uint32_t>(RacerCount(), kSkinRacersMax);
+    if (racedata == 0 || count == 0) return;
+    g_dealtSeries = series;
+    std::mt19937 random(uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()) ^ series);
+    std::vector<uint32_t> order(count);
+    std::iota(order.begin(), order.end(), 0u);
+    std::shuffle(order.begin(), order.end(), random);
+    std::vector<uint8_t> bags[kSkinCharacters];
+    uint32_t skinned = 0;
+    for (const uint32_t racer : order) {
+        const uint32_t character = Memory::Read32(racedata + MKW100_PlayerSlotOffset(racer) + kSlotCharacter);
+        g_dealtCharacter[racer] = uint8_t(character);
+        g_dealtSkin[racer] = 0;
+        if (character >= kSkinCharacters || !IsCpu(racer)) continue;
+        std::vector<uint8_t>& bag = bags[character];
+        if (bag.empty()) {
+            bag.push_back(0);
+            for (uint32_t n = 1; n <= kSkinMax; ++n) {
+                if (SkinExists(character, n)) bag.push_back(uint8_t(n));
+            }
+            std::shuffle(bag.begin(), bag.end(), random);
+        }
+        uint8_t skin = bag.back();
+        bag.pop_back();
+        if (skin != 0 && skinned >= kSkinnedRacers) {
+            bag.insert(bag.begin(), skin);
+            skin = 0;
+        }
+        skinned += skin != 0;
+        g_dealtSkin[racer] = skin;
+    }
+    RT_LOGF("rr-skins", "series %u: skins dealt to %u of %u racers\n", series, skinned, count);
+}
+
+// A CPU racer's skin for `character`: the series' deal, or PickSkin's in direct-boot races.
+uint8_t CpuSkin(uint32_t racer, uint32_t character) {
+    DealSeriesSkins();
+    if (g_dealtSeries != 0 && g_dealtSeries == LocalVs::SeriesId() && racer < kSkinRacersMax &&
+        g_dealtCharacter[racer] == character) {
+        return g_dealtSkin[racer];
+    }
+    return PickSkin(racer, character);
+}
+
 // The stubs: r30 ArchiveMgr, r31 the element; r10 the racer for 0x81832CC4.
 void ArchiveStub(CpuContext* ctx, uint32_t origin) {
     const uint32_t element = ctx->gpr[31];
@@ -153,7 +219,7 @@ extern "C" void RR_KartSkinPath_818026fc(CpuContext* ctx) {
     uint8_t saved[kSkinCharacters];
     for (uint32_t c = 0; c < kSkinCharacters; ++c) {
         saved[c] = Memory::Read8(borrow + c);
-        Memory::Write8(borrow + c, kCpuSkins && cpu ? PickSkin(racer, c) : 0);
+        Memory::Write8(borrow + c, kCpuSkins && cpu ? CpuSkin(racer, c) : 0);
     }
     const uint32_t archive = Memory::Read32(ArrayOverflow::Class(kArchiveClass).instanceGlobal);
     ctx->gpr[7] = archive + kArchiveModels + kSkinBorrowRow * kArchiveStride;
@@ -181,7 +247,7 @@ extern "C" void RR_DecideRaceSkins_81832b74(CpuContext* ctx) {
         } else if (character < kSkinCharacters && type == kSkinCpuType) {
             // Every race of a GP alike (the pick is per racer). Racedata +0xB8C, once read here as a
             // "CPUs stock" flag, is the race scenario's race number: CPUs lost their skins from race 2.
-            skin = kCpuSkins ? PickSkin(racer, character) : 0;
+            skin = kCpuSkins ? CpuSkin(racer, character) : 0;
         }
         g_raceSkin[racer] = skin;
         if (racer < kSkinInline) Memory::Write8(kSkinDecided + racer, skin);

@@ -73,6 +73,29 @@ struct Entry { uint32_t id, character, place, earned, total; };
 std::mutex standingsMutex;
 std::vector<Entry> standings;
 constexpr std::array<uint32_t,24> weights{{1,0,2,2,0,0,0,1,0,2,1,2,0,0,0,1,1,1,1,2,1,2,2,2}};
+// CPU characters and vehicles of the current menu series (racers 12+, and all CPUs with the varied
+// roster): dealt at random when a series starts and kept for its races, so every series brings a
+// new field. Characters come from a shuffled set of all 24, each once before any repeats; a vehicle
+// is one of the 12 of the character's weight class. Direct-boot races (tests) never come here and
+// keep their fixed roster. seriesId counts the deals (0: none yet), for rr_skins.cpp.
+std::array<uint8_t, PlayerSlots::kMaxPlayers> seriesCharacter{};
+std::array<uint8_t, PlayerSlots::kMaxPlayers> seriesVehicle{};
+std::atomic<uint32_t> seriesId{0};
+void DealSeriesRoster() {
+    std::mt19937 random(uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()) ^ (seriesId.load() * 0x9E3779B9u));
+    std::array<uint8_t, 24> bag{};
+    uint32_t left = 0;
+    for (uint32_t i = 0; i < seriesCharacter.size(); ++i) {
+        if (left == 0) {
+            std::iota(bag.begin(), bag.end(), uint8_t(0));
+            std::shuffle(bag.begin(), bag.end(), random);
+            left = uint32_t(bag.size());
+        }
+        seriesCharacter[i] = bag[--left];
+        seriesVehicle[i] = uint8_t(random() % 12);
+    }
+    seriesId.fetch_add(1);
+}
 constexpr std::array<const char*,24> names{{"Mario","Baby Peach","Waluigi","Bowser","Baby Daisy","Dry Bones","Baby Mario","Luigi","Toad","Donkey Kong","Yoshi","Wario","Baby Luigi","Toadette","Koopa Troopa","Daisy","Peach","Birdo","Diddy Kong","King Boo","Bowser Jr.","Dry Bowser","Funky Kong","Rosalina"}};
 uint32_t Player(uint32_t scenario, uint32_t id) {
     return PlayerSlots::PlayerAddress(Memory::Read32(MKW_GADDR(809BD728)), scenario, id);
@@ -171,6 +194,7 @@ void SetDesiredCount(int count) {
     RuntimeConfigFile::WriteSetting("local_vs", "players", std::to_string(count));
 }
 bool UnlocksEnabled() { return !BootRace::Scripted() && local_vs_detail::unlocks.load(); }
+uint32_t SeriesId() { return local_vs_detail::seriesId.load(); }
 void DrawSettings() {
     using namespace local_vs_detail;
     int count = desiredCount.load();
@@ -518,16 +542,17 @@ void PrepareRace(uint32_t rd) {
     if (first) {
         seriesCount=desiredCount.load();
         { std::lock_guard lock(standingsMutex); standings.clear(); }
+        DealSeriesRoster();
     }
-    const uint32_t humanCharacter=Memory::Read32(Player(menu,0)+0xC);
     for (uint32_t i=0;i<PlayerSlots::kMaxPlayers;++i) {
         const uint32_t p=Player(menu,i);
         Memory::Write32(p+0x10, i>=seriesCount ? 5 : i==0 ? firstType : i<locals ? Memory::Read32(p+0x10) : 1);
         if (i>=locals && i<seriesCount && (diversity.load() || i>=12)) {
-            const uint32_t character=(humanCharacter+ i)%24;
-            // Any vehicle of the character's weight, battles too: a vehicle without team-coloured
-            // archives loads its normal one there (LocalVs_BattleKartArchive below).
-            const uint32_t vehicle = weights[character]+3*((i/3)%12);
+            // The series' deal (DealSeriesRoster); any vehicle of the character's weight, battles
+            // too: a vehicle without team-coloured archives loads its normal one there
+            // (LocalVs_BattleKartArchive below).
+            const uint32_t character=seriesCharacter[i];
+            const uint32_t vehicle = weights[character]+3*seriesVehicle[i];
             Memory::Write32(p+0xC,character); Memory::Write32(p+8,vehicle);
         }
         if (first) {
@@ -572,8 +597,9 @@ void PrepareRace(uint32_t rd) {
         }
         RT_LOGF("local-vs", "team vs: red %u blue %u\n", size[0], size[1]);
     }
-    RT_LOGF("local-vs", "menu race: course=0x%02X racers=%u raceNumber=%u humanCharacter=%u\n",
-            Memory::Read32(menu+0xB48),seriesCount,Memory::Read8(menu+0xB6C),humanCharacter);
+    RT_LOGF("local-vs", "menu race: course=0x%02X racers=%u raceNumber=%u humanCharacter=%u series=%u\n",
+            Memory::Read32(menu+0xB48),seriesCount,Memory::Read8(menu+0xB6C),Memory::Read32(Player(menu,0)+0xC),
+            seriesId.load());
 }
 }
 

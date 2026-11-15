@@ -10,9 +10,12 @@
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
 #include "memory.h"
+#include "local_vs.h"
 #include "recomp_mod_loader.h"
+#include "runtime_log.h"
 
 #include <cstdint>
+#include <cstdlib>
 
 namespace {
 
@@ -63,6 +66,8 @@ constexpr FeverTable kResetTables90E0[] = {
     {0x818B91AC, 1, 0x82D25600},
 };
 
+void LogFeverUnlocks(CpuContext* ctx);  // below, with Item Fever's unlocks
+
 } // namespace
 
 // Item Fever's race-load hook (node 0x818A2D80): clears its float[12] at 0x818A2D40 and u8[12] at
@@ -76,6 +81,7 @@ extern "C" void ItemFever_ResetRacerTables_81816d88(CpuContext* ctx) {
     }
     CopyResetToShadow({0x818A2D40, 4, kFeverTimerShadow});
     CopyResetToShadow({0x818A2D70, 1, kFeverStateShadow});
+    LogFeverUnlocks(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x81816D88, ItemFever_ResetRacerTables_81816d88, "ItemFever_ResetRacerTables_81816d88");
 
@@ -92,6 +98,98 @@ extern "C" void ItemFever_Reset90E0_8184c828(CpuContext* ctx) {
     for (const FeverTable& t : kResetTables90E0) CopyResetToShadow(t);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8184C828, ItemFever_Reset90E0_8184c828, "ItemFever_Reset90E0_8184c828");
+
+// Item Fever's unlocks, available from the start while "All characters, vehicles and cups
+// available" (local_vs unlock_all, on by default) is on:
+//   200cc: Item Fever opens its 200cc class (picked like mirror) for a license once all 8 cups are
+//       gold on Very Hard. It keeps that as bit <license> of a flags word in its save (ifever.dat:
+//       *(0x818A2D28) +0x40 -> buffer, buffer + *(buffer + 0x14) + 0x30; bit 4+n: "200cc unlocked"
+//       shown, 12+n: Meteor Storm shown, 16+n: dark theme shown) and several menu functions test
+//       that bit inline, so the bit is set: for every license, whenever Item Fever asks for the
+//       current license (0x8180A38C), which every one of those tests does first. Item Fever saves
+//       the buffer, so the bit then stays in ifever.dat.
+//   Meteor Storm: the secret reward for a bronze or better in all 8 cups of a license's 200cc row,
+//       tested by 0x8180B730(license) and nowhere else; it answers yes. Item Fever then shows its
+//       one-time "unlocked" notice once, as if the trophies had just been won.
+//   Dark theme: the reward for all 8 of those cups gold, tested by 0x8180B854(license); it answers
+//       yes too, with the same one-time notice.
+// MKW100_TEST_IF_UNLOCKS (tests only) applies them in scripted runs, which otherwise keep the save
+// as it is, and logs at race load what Item Fever's own tests answer.
+namespace {
+
+constexpr uint32_t kFeverSave = 0x818A2D28;
+constexpr uint32_t kFeverUnlockFlags = 0x30;
+constexpr uint32_t kFever200ccBits = 0xF;  // bit n: license n
+
+bool FeverUnlocksOn() {
+    if (!ModBuild::IsKnownItemFever()) return false;
+    static const bool test = std::getenv("MKW100_TEST_IF_UNLOCKS") != nullptr;
+    return test || LocalVs::UnlocksEnabled();
+}
+
+// The flags word of Item Fever's loaded save, or 0 before the save is loaded.
+uint32_t FeverUnlockFlagsAddress() {
+    const uint32_t save = Memory::Read32(kFeverSave);
+    if (save < 0x80000000u || !Memory::Contains(save + 0x40, 4)) return 0;
+    const uint32_t buffer = Memory::Read32(save + 0x40);
+    if (buffer < 0x80000000u || !Memory::Contains(buffer + 0x14, 4)) return 0;
+    const uint32_t flags = buffer + Memory::Read32(buffer + 0x14) + kFeverUnlockFlags;
+    return Memory::Contains(flags, 4) ? flags : 0;
+}
+
+} // namespace
+
+// Item Fever: the current license, 0..3 (SaveManager +0x36).
+extern "C" void ItemFever_CurrentLicense_8180a38c(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8180A38C)(ctx);
+    if (!FeverUnlocksOn()) return;
+    const uint32_t flags = FeverUnlockFlagsAddress();
+    if (flags == 0) return;
+    const uint32_t value = Memory::Read32(flags);
+    if ((value & kFever200ccBits) == kFever200ccBits) return;
+    Memory::Write32(flags, value | kFever200ccBits);
+    RT_LOGF("item-fever", "200cc unlocked for every license (flags %08X -> %08X)\n", value, value | kFever200ccBits);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8180A38C, ItemFever_CurrentLicense_8180a38c, "ItemFever_CurrentLicense_8180a38c");
+
+// Item Fever: Meteor Storm earned by `license` (r3), 1 or 0.
+extern "C" void ItemFever_MeteorStormEarned_8180b730(CpuContext* ctx) {
+    if (!FeverUnlocksOn()) { MKW_GUEST_NEXT(8180B730)(ctx); return; }
+    static bool logged = false;
+    if (!logged) { logged = true; RT_LOGF("item-fever", "Meteor Storm unlocked\n"); }
+    ctx->gpr[3] = 1;
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8180B730, ItemFever_MeteorStormEarned_8180b730, "ItemFever_MeteorStormEarned_8180b730");
+
+// Item Fever: dark theme earned by `license` (r3), 1 or 0.
+extern "C" void ItemFever_DarkThemeEarned_8180b854(CpuContext* ctx) {
+    if (!FeverUnlocksOn()) { MKW_GUEST_NEXT(8180B854)(ctx); return; }
+    static bool logged = false;
+    if (!logged) { logged = true; RT_LOGF("item-fever", "dark theme unlocked\n"); }
+    ctx->gpr[3] = 1;
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8180B854, ItemFever_DarkThemeEarned_8180b854, "ItemFever_DarkThemeEarned_8180b854");
+
+namespace {
+// MKW100_TEST_IF_UNLOCKS: Item Fever's own answers, logged at race load (no menus run headless).
+//   0x8180A3B8(): the GP classes offered, 3 or 4 with 200cc;
+//   0x8180B7AC() / 0x8180B8CC(): Meteor Storm / dark theme earned by the current license.
+void LogFeverUnlocks(CpuContext* ctx) {
+    static const bool test = std::getenv("MKW100_TEST_IF_UNLOCKS") != nullptr;
+    if (!test || !ModBuild::IsKnownItemFever()) return;
+    const CpuContext saved = *ctx;
+    uint32_t answer[3];
+    const uint32_t calls[3] = {0x8180A3B8, 0x8180B7AC, 0x8180B8CC};
+    for (int i = 0; i < 3; ++i) {
+        InvokeIndirectCpu(calls[i], ctx);
+        answer[i] = ctx->gpr[3];
+        *ctx = saved;
+    }
+    const uint32_t flags = FeverUnlockFlagsAddress();
+    RT_LOGF("item-fever", "test: classes %u, Meteor Storm %u, dark theme %u, flags %08X\n", answer[0], answer[1],
+            answer[2], flags ? Memory::Read32(flags) : 0u);
+}
+} // namespace
 
 // Item::Manager +0x42C is the sum of the item pools' capacities minus 30, set by `addi r0, rN, -30`
 // at 0x8079992C (Update) and 0x80799AB0 (UpdateTotalItemCountMinus30). Item Fever rewrites both

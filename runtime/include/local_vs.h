@@ -14,6 +14,8 @@ void PrepareRace(uint32_t racedata);
 // After RaceConfig::InitRace: past 12 racers in GP, every racer's start position from the cup standings.
 void AfterInitRace(uint32_t racedata);
 bool UnlocksEnabled();
+// The menu series whose CPU roster is dealt (1, 2, ...; 0 before the first). Direct-boot races keep 0.
+uint32_t SeriesId();
 // "Impossible CPUs": Hard CPUs get the faster speed and always-on action tables of ai_impossible.cpp.
 bool ImpossibleCpus();  // CpuTier() > 0
 // Above Hard (ai_impossible.cpp): 0 none, 1 Very Hard, 2 Impossible. The CPU row's top options.
