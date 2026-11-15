@@ -305,6 +305,46 @@ extern "C" void RaceHeap_GameSceneEnter_8051ab58(CpuContext* ctx) {
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8051AB58, RaceHeap_GameSceneEnter_8051ab58, "RaceHeap_GameSceneEnter_8051ab58");
 
+// The current scene's EGG::ExpHeap* at `field` (kStructsMem1/2, kStructsDebug), 0 without a scene.
+uint32_t RaceHeap_CurrentSceneHeap(uint32_t field) {
+    const uint32_t scene = CurrentGameScene();
+    return scene == 0 ? 0 : Memory::Read32(scene + field);
+}
+
+// For pack code that checks a scene heap's free space before it allocates (Item Fever's item rain
+// models): what the fallback below still has behind the EGG::ExpHeap `egg` in races of more than
+// 12 players (structsMem2 and structsDebug behind structsMem1, structsDebug behind structsMem2),
+// else 0. EGG::ExpHeap::getTotalFreeSize (0x80226C88) per heap; `ctx` is restored.
+uint32_t RaceHeap_FallbackFree(CpuContext* ctx, uint32_t egg) {
+    const uint32_t racedata = Memory::Read32(kRaceHeapRacedataGlobal);
+    if (egg == 0 || racedata == 0 || Memory::Read8(racedata + kRaceHeapPlayerCount) <= kRaceHeapInlinePlayers) {
+        return 0;
+    }
+    const uint32_t scene = CurrentGameScene();
+    if (scene == 0) {
+        return 0;
+    }
+    const uint32_t heap = Memory::Read32(egg + kRvlHeap);
+    const uint32_t mem1 = SceneRvlHeap(scene, kStructsMem1);
+    const uint32_t mem2 = SceneRvlHeap(scene, kStructsMem2);
+    std::vector<uint32_t> behind;
+    if (heap != 0 && heap == mem1) {
+        behind = {kStructsMem2, kStructsDebug};
+    } else if (heap != 0 && heap == mem2) {
+        behind = {kStructsDebug};
+    }
+    uint64_t free = 0;
+    const CpuContext saved = *ctx;
+    for (const uint32_t field : behind) {
+        if (SceneRvlHeap(scene, field) == 0) continue;
+        ctx->gpr[3] = Memory::Read32(scene + field);
+        InvokeIndirectCpu(0x80226C88, ctx);
+        free += ctx->gpr[3];
+        *ctx = saved;
+    }
+    return uint32_t(std::min<uint64_t>(free, 0x7FFFFFFFu));
+}
+
 // MEMAllocFromExpHeapEx(heap, size, alignment)
 extern "C" void MEM_AllocFromExpHeapEx_80198d88(CpuContext* ctx) {
     const uint32_t heap = ctx->gpr[3];

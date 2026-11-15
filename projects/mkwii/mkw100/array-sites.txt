@@ -131,6 +131,15 @@
 0x818171CC  0  cmpimm  128  0x0  profile=item-fever  # racer < 12 (state)
 0x818171E8  0  cmpimm  128  0x0  profile=item-fever  # racer < 12 (state, timer)
 
+# Item Fever's special (purple) shells, which fly to the nearest racer ahead of the thrower
+# (blue_shell.cpp): registering one needs its thrower < 12 (0x8184AAC8, then ItemPlayer +0x248 by
+# thrower), and the pick (0x8184A9C0) took the thrower itself as the target when the thrower or a
+# racer it walked past was 12 or more. The tables behind these guards (Item::Manager players,
+# Raceinfo players and ranking) hold every racer.
+0x8184AB20  0  cmpimm  128  0x0  profile=item-fever  # thrower < 12 (special shell registration)
+0x8184A9F0  0  cmpimm  128  0x0  profile=item-fever  # thrower < 12 (pick)
+0x8184AA5C  0  cmpimm  128  0x0  profile=item-fever  # racer ahead < 12 (pick)
+
 # Item Fever, all racers (profile item-fever): two structs of per-racer [12] arrays, 0x818B89F0
 # (16 tables, functions 0x81848790..0x8184A0FC) and 0x818B90E0 (11 tables, the per-kart routine
 # hooked into Kart::Sub::Update). Generated from the relocated Code.pul: every X-form access whose

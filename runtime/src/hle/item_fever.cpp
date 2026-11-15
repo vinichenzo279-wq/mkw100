@@ -10,10 +10,12 @@
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
 #include "memory.h"
+#include "hle/race_heap.h"
 #include "local_vs.h"
 #include "recomp_mod_loader.h"
 #include "runtime_log.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 
@@ -190,6 +192,32 @@ void LogFeverUnlocks(CpuContext* ctx) {
             answer[2], flags ? Memory::Read32(flags) : 0u);
 }
 } // namespace
+
+// Item Rain's dropped items get models (MKWCI-DROP, 0x81878xxx) only while the scene heap
+// (ScnMgr::sInstance[0] +0x10, the race scene's structsMem1) has about 900 KB free (0x8187892C),
+// and each extra copy needs about 700 KB of the scene's structsMem2 (0x8187896C). Past 12 racers
+// the karts fill structsMem1, and race_heap.cpp places what does not fit there in structsMem2 and
+// structsDebug instead, but these checks only saw structsMem1's last bytes: 80 racers, "scene space
+// exhausted (768 bytes): drop models stopped at type 0", so the rain's items had no model and lay
+// on the track invisible (a Mega Mushroom picked up out of nowhere). The checks now count what the
+// fallback still has behind those heaps.
+extern "C" void ItemFever_SceneFree_8187892c(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8187892C)(ctx);
+    if (!ModBuild::IsKnownItemFever() || ctx->gpr[3] == 0xFFFFFFFFu) return;
+    const uint32_t scn = Memory::Read32(0x809C1850);  // ScnMgr::sInstance[0]
+    const uint32_t egg = scn >= 0x80000000u ? Memory::Read32(scn + 0x10) : 0;
+    const uint32_t extra = RaceHeap_FallbackFree(ctx, egg);
+    ctx->gpr[3] = uint32_t(std::min<uint64_t>(uint64_t(ctx->gpr[3]) + extra, 0x7FFFFFFFu));
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8187892C, ItemFever_SceneFree_8187892c, "ItemFever_SceneFree_8187892c");
+
+extern "C" void ItemFever_SceneMem2Free_8187896c(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8187896C)(ctx);
+    if (!ModBuild::IsKnownItemFever() || ctx->gpr[3] == 0xFFFFFFFFu) return;
+    const uint32_t extra = RaceHeap_FallbackFree(ctx, RaceHeap_CurrentSceneHeap(0xC8C));
+    ctx->gpr[3] = uint32_t(std::min<uint64_t>(uint64_t(ctx->gpr[3]) + extra, 0x7FFFFFFFu));
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8187896C, ItemFever_SceneMem2Free_8187896c, "ItemFever_SceneMem2Free_8187896c");
 
 // Item::Manager +0x42C is the sum of the item pools' capacities minus 30, set by `addi r0, rN, -30`
 // at 0x8079992C (Update) and 0x80799AB0 (UpdateTotalItemCountMinus30). Item Fever rewrites both
