@@ -231,8 +231,12 @@ extern "C" void Raceinfo_Update_805331b4(CpuContext* ctx) {
         std::this_thread::sleep_for(std::chrono::microseconds(kHostDelayMicros));
     }
     if (g_framesSeen % kCheckpointFrames == 0) {
-        std::printf("[race-oracle] frame %u trajectory %016llx lag %u\n", g_framesSeen,
-                    static_cast<unsigned long long>(g_trajectory), g_lagFrames);
+        uint32_t finished = 0;  // a stalled race shows whether racers stop finishing or the race does not end
+        for (uint32_t id = 0; id < playerCount; ++id) {
+            finished += (Memory::Read32(Memory::Read32(players + id * 4) + kPlayerStateFlags) & 0x2) != 0;
+        }
+        std::printf("[race-oracle] frame %u trajectory %016llx lag %u finished %u/%u\n", g_framesSeen,
+                    static_cast<unsigned long long>(g_trajectory), g_lagFrames, finished, playerCount);
         std::fflush(stdout);
     }
     if (stage >= kStageFinished) {
@@ -242,6 +246,14 @@ extern "C" void Raceinfo_Update_805331b4(CpuContext* ctx) {
     if (g_framesSeen >= kFrameLimit) {
         g_done = true;
         std::printf("[race-oracle] FAIL: no finish after %u frames, stage %u\n", g_framesSeen, stage);
+        for (uint32_t id = 0, shown = 0; id < playerCount && shown < 64; ++id) {  // who is still racing
+            const uint32_t player = Memory::Read32(players + id * 4);
+            if ((Memory::Read32(player + kPlayerStateFlags) & 0x2) != 0) continue;
+            ++shown;
+            std::printf("[race-oracle] unfinished racer %u pos %u lap %u comp %.3f flags %08x\n", id,
+                        Memory::Read8(player + kPlayerPosition), Memory::Read16(player + kPlayerLap),
+                        Memory::ReadFloat32(player + kPlayerCompletion), Memory::Read32(player + kPlayerStateFlags));
+        }
         std::fflush(stdout);
         RuntimeFlushAndExit(2);
     }

@@ -33,8 +33,8 @@
 // the system's), and destroys them with the scene, so nothing put there outlives the scene. It is
 // taken once from the end of the system's debug heap, before the root scene's heaps take all of
 // that, and never freed; every scene's debug heap is that much shorter and starts where it always
-// did. Only the base game has it: Retro Rewind and Item Fever stop at 128 racers, where the
-// archives fit, and keep the whole debug heap.
+// did. The Pulsar packs (Retro Rewind, Item Fever) have it too since they go past 128 racers: at
+// 255 their archive loader (Pulsar's ArchiveFile::Decompress) ran out of archive heap without it.
 //
 // A new scene object is built where the last one was, and its heap fields (+0xC80..+0xC90) still
 // hold the old scene's heaps until GameScene::enter stores the new ones, after the archives are
@@ -284,7 +284,7 @@ void CreateArena(CpuContext* ctx, uint32_t parent) {
 
 // EGG::SceneManager::createScene(this, id, parent): before the first scene's heaps exist.
 extern "C" void RaceHeap_CreateScene_8023b0e4(CpuContext* ctx) {
-    if (g_arena == 0 && !RuntimeProduct::IsRetroRewind()) {
+    if (g_arena == 0) {
         CreateArena(ctx, ctx->gpr[5]);
     }
     MKW_GUEST_NEXT(8023B0E4)(ctx);

@@ -169,13 +169,14 @@ uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows) {
 // then ARCInitHandle panics).
 // The mod product once stopped at 100 (Retro Rewind's per-racer skin archives ran out of memory at
 // 128); rr_skins.cpp now budgets the skins, so every product goes to 128.
-// The base game goes to 255 (docs/mkw100/255-racers.md). The Pulsar packs stay at 128: at 255
-// Pulsar's archive loader (ArchiveFile::Decompress, its own allocation, not race_heap's fallback)
-// runs out of memory for the kart archives (Retro Rewind: "Decompress allocation failed"; Item
-// Fever: ArchiveFile::Load then calls through a bad pointer). Item Fever's own tables are ready for
-// 255 (array-sites.txt shadows hold racers 12..254, its guards compare with 255).
-constexpr int kItemFeverMaxRacers = 128;
-constexpr int kRetroRewindMaxRacers = 128;
+// The base game goes to 255 (docs/mkw100/255-racers.md), and so does Item Fever: its shadows
+// (array-sites.txt) hold racers 12..254, its guards compare with 255, and race_heap's arena (now
+// made for the Pulsar packs too) takes the kart archives Pulsar's loader could not fit past 128
+// ("Decompress allocation failed"). Retro Rewind goes to 160: at 200, on both of its courses tried
+// (0x08, 0x01), 46 racers in the last grid blocks (and two slots of some others) never left the
+// grid and the race never ended (start_grid.cpp's blocks past about 150 karts on those courses).
+constexpr int kItemFeverMaxRacers = 255;
+constexpr int kRetroRewindMaxRacers = 160;
 // A pack build MKW100's pack fixes were not measured on (mod_build.h) keeps the game's 12.
 constexpr int kUnknownModMaxRacers = 12;
 int MaxRacers() {
