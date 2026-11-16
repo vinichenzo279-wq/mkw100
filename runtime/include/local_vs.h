@@ -30,6 +30,9 @@ uint32_t LocalPlayers();
 // [local_vs] speedometer (F10): the race HUD speedometer (hud_speedometer.cpp; ImGui in mod products).
 bool SpeedometerEnabled();
 void SetDesiredCount(int count);
+// [local_vs] laps (F10): laps for offline GP and VS races, 1..9; 0 keeps the game's 3 (race_laps.cpp).
+int Laps();
+void SetBootLaps(int laps);  // --race-laps, for this run only
 // Expanded (13+) offline VS balancing, F10 and Config.toml [local_vs] scoring / item_distribution.
 enum class Scoring : uint32_t { ClassicSpread, ClassicTop12, Linear };
 enum class ItemDistribution : uint32_t { Even, Generous, Tight, ClassicTop11 };

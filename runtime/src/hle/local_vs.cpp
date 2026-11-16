@@ -38,6 +38,8 @@ std::atomic<bool> diversity{true};
 std::atomic<bool> thirtyFps{false};
 std::atomic<bool> adaptiveFps{true};
 std::atomic<bool> instantBoxes{true};
+std::atomic<int> laps{0};      // [local_vs] laps; 0: the game's count
+std::atomic<int> bootLaps{0};  // --race-laps
 std::atomic<int> cpuTier{0};   // this race: 1 Very Hard, 2 Impossible, from the CPU row (PrepareRace)
 std::atomic<int> bootTier{0};  // --race-very-hard / --race-impossible; Initialize runs after arguments and must not clear it
 std::atomic<uint32_t> scoring{uint32_t(LocalVs::Scoring::ClassicSpread)};
@@ -120,6 +122,7 @@ void Initialize() {
     local_vs_detail::thirtyFps = c.localVsThirtyFps.value_or(false);
     local_vs_detail::adaptiveFps = c.localVsAdaptiveFps.value_or(true);
     local_vs_detail::instantBoxes = c.localVsInstantBoxes.value_or(true);
+    local_vs_detail::laps = std::clamp(int(c.localVsLaps.value_or(0)), 0, 9);
     local_vs_detail::speedometer = c.localVsSpeedometer.value_or(true);
     local_vs_detail::scoring = local_vs_detail::ParseKey(c.localVsScoring, local_vs_detail::scoringKeys);
     local_vs_detail::itemDistribution = local_vs_detail::ParseKey(c.localVsItemDistribution, local_vs_detail::itemKeys);
@@ -195,6 +198,8 @@ uint32_t LocalPlayers() {
     for (uint32_t i = 0; i < 4; ++i) humans += Memory::Read32(local_vs_detail::Player(rd + 0xC10, i) + 0x10) == 0;
     return humans;
 }
+int Laps() { return local_vs_detail::bootLaps.load() ? local_vs_detail::bootLaps.load() : local_vs_detail::laps.load(); }
+void SetBootLaps(int n) { local_vs_detail::bootLaps = std::clamp(n, 1, 9); }
 int DesiredCount() { return std::min(local_vs_detail::desiredCount.load(), MaxRacers()); }
 void SetDesiredCount(int count) {
     count = std::clamp(count, 1, MaxRacers());
@@ -211,6 +216,15 @@ void DrawSettings() {
         SetDesiredCount(count);
     }
     ImGui::TextUnformatted("Applies when starting a new single-player VS series.");
+    int lapCount = laps.load();
+    if (!RuntimeProduct::IsRetroRewind()) {
+        ImGui::SetNextItemWidth(240);
+        if (ImGui::SliderInt("Laps", &lapCount, 0, 9, lapCount == 0 ? "Default (3)" : "%d", ImGuiSliderFlags_AlwaysClamp)) {
+            laps = lapCount;
+            RuntimeConfigFile::WriteSetting("local_vs", "laps", std::to_string(lapCount));
+        }
+        ImGui::TextUnformatted("Offline GP and VS races, from the next race.");
+    }
     bool varied = diversity.load();
     if (ImGui::Checkbox("Varied CPU characters, karts and bikes", &varied)) {
         diversity = varied;
@@ -541,12 +555,19 @@ void PrepareRace(uint32_t rd) {
     // Offline GP, VS or battle (gameMode 0, 1, 3: battles are always red/blue teams; balloon_battle.cpp).
     const uint32_t mode = Memory::Read32(menu+0xB50);
     const bool eligible = solo && (mode==0 || mode==1 || mode==3) && (gameType==0 || preview);
+    // Retro Rewind's "restart race" restarts the race scene with the same scenario and no course
+    // intro: restarting a series' first race looks like a new series (race 0 again). It keeps the
+    // series' deal, or the race waited for karts of a new roster the intro never loaded (freeze).
+    static bool lastWasFirstRace = false;
+    const bool restart = lastWasFirstRace && !preview && Memory::Read8(menu+0xB6C)==0 && seriesCount!=0;
+    lastWasFirstRace = eligible && !preview && Memory::Read8(menu+0xB6C)==0;
     if (!eligible) {
         for (uint32_t i=12;i<PlayerSlots::kMaxPlayers;++i) Memory::Write32(Player(menu,i)+0x10,5);
         seriesCount=0;
         return;
     }
-    const bool first = Memory::Read8(menu+0xB6C)==0 || seriesCount==0;
+    if (restart) RT_LOGF("local-vs", "race restarted: series %u keeps its roster\n", seriesId.load());
+    const bool first = !restart && (Memory::Read8(menu+0xB6C)==0 || seriesCount==0);
     if (first) {
         seriesCount=desiredCount.load();
         { std::lock_guard lock(standingsMutex); standings.clear(); }
@@ -577,7 +598,7 @@ void PrepareRace(uint32_t rd) {
     // The course preview (gameType 5) and the battle after it are both race 0: the preview's deal
     // stands, or karts (loaded with the preview's colours) and balloons (the battle's) disagreed.
     static bool battleDealtInPreview = false;
-    const bool keepPreviewDeal = battleDealtInPreview && !preview;
+    const bool keepPreviewDeal = (battleDealtInPreview && !preview) || restart;
     battleDealtInPreview = false;
     if (teamVs && mode==3 && seriesCount>12 && first && !keepPreviewDeal) {
         battleDealtInPreview = preview;
