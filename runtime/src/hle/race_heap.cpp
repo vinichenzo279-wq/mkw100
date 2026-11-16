@@ -46,10 +46,12 @@
 // scene, so a race entered from the menus would still look up the menu scene's heaps. The scene
 // being entered is used then.
 //
-// Up to 12 players nothing here changes the game's behaviour.
+// Up to 12 players nothing here changes the game's behaviour, except in Retro Rewind with Item
+// Fever's items (OverflowActive).
 
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
+#include "hle/mod_build.h"
 #include "memory.h"
 #include "runtime_log.h"
 #include "runtime_product.h"
@@ -111,6 +113,18 @@ uint32_t g_arenaParent = 0;                       // MEMiHeapHead* of the debug 
 std::map<uint32_t, uint32_t> g_arenaSpans;        // arena block -> its end
 uint32_t g_arenaBytes = 0;                        // in use, and the next use worth a log line
 uint32_t g_arenaLogAt = kPeakStep;
+
+// Past 12 players, and in every race of Retro Rewind with Item Fever's items: with both packs the
+// race scene's struct heaps are nearly full even at 12 (850 KB left, where Item Fever wants 900 KB
+// for its dropped items' models).
+bool OverflowActive() {
+    const uint32_t racedata = Memory::Read32(kRaceHeapRacedataGlobal);
+    if (racedata == 0) {
+        return false;
+    }
+    return Memory::Read8(racedata + kRaceHeapPlayerCount) > kRaceHeapInlinePlayers ||
+           ModBuild::Current() == ModBuild::Kind::RetroRewindItemFever;
+}
 
 // GameScene::GetCurrent (0x8051BED0): the current scene unless its id is 0 (root) or 5.
 uint32_t CurrentGameScene() {
@@ -316,8 +330,7 @@ uint32_t RaceHeap_CurrentSceneHeap(uint32_t field) {
 // 12 players (structsMem2 and structsDebug behind structsMem1, structsDebug behind structsMem2),
 // else 0. EGG::ExpHeap::getTotalFreeSize (0x80226C88) per heap; `ctx` is restored.
 uint32_t RaceHeap_FallbackFree(CpuContext* ctx, uint32_t egg) {
-    const uint32_t racedata = Memory::Read32(kRaceHeapRacedataGlobal);
-    if (egg == 0 || racedata == 0 || Memory::Read8(racedata + kRaceHeapPlayerCount) <= kRaceHeapInlinePlayers) {
+    if (egg == 0 || !OverflowActive()) {
         return 0;
     }
     const uint32_t scene = CurrentGameScene();
@@ -354,8 +367,7 @@ extern "C" void MEM_AllocFromExpHeapEx_80198d88(CpuContext* ctx) {
     if (ctx->gpr[3] != 0) {
         return;
     }
-    const uint32_t racedata = Memory::Read32(kRaceHeapRacedataGlobal);
-    if (racedata == 0 || Memory::Read8(racedata + kRaceHeapPlayerCount) <= kRaceHeapInlinePlayers) {
+    if (!OverflowActive()) {
         return;
     }
     const uint32_t scene = CurrentGameScene();

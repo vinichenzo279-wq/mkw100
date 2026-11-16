@@ -226,13 +226,15 @@ void LogFeverUnlocks(CpuContext* ctx) {
 // shells, the Chain Chomp, Snowball and wand did nothing, the penguin suit was invisible, and a ?
 // block crashed on an item object without a model. For calls from Item Fever's module the answer
 // now counts what the fallback still has behind the heap (RaceHeap_FallbackFree, which asks this
-// function itself: hence the guard).
+// function itself: hence the guard). In Retro Rewind with Item Fever's items the fallback is on at
+// 12 racers too (race_heap.cpp OverflowActive), and Item Fever's code sits 0xC0000 higher, still
+// inside the module range.
 extern "C" void ItemFever_ExpHeapTotalFree_80226c88(CpuContext* ctx) {
     static thread_local bool inside = false;
     const uint32_t egg = ctx->gpr[3];
     const uint32_t lr = ctx->lr;
     MKW_GUEST_NEXT(80226C88)(ctx);
-    if (inside || !ModBuild::IsKnownItemFever() || lr < 0x81800000u || lr >= 0x81A00000u) return;
+    if (inside || !ModBuild::HasKnownItemFeverCode() || lr < 0x81800000u || lr >= 0x81A00000u) return;
     inside = true;
     const uint32_t own = ctx->gpr[3];
     uint32_t extra = 0;
