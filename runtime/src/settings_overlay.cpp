@@ -115,6 +115,8 @@ bool g_skipUnreadyPipelines = RuntimeConfigFile::SkipUnreadyPipelines(true);
 bool g_vsync = RuntimeConfigFile::Vsync();
 bool g_disableCopyFilter = RuntimeConfigFile::DisableCopyFilter(true);
 bool g_showFps = RuntimeConfigFile::ShowFps(true);
+bool g_lowDetailCpus = RuntimeConfigFile::LowDetailCpus(true);
+bool g_lowDetailCourse = RuntimeConfigFile::LowDetailCourse(false);
 bool g_forceAspect = RuntimeConfigFile::ForceAspectEnabled();
 bool g_widescreen = RuntimeConfigFile::WidescreenEnabled(true);
 #if defined(__APPLE__)
@@ -1286,6 +1288,13 @@ void DrawGraphicsSettings() {
     if (ImGui::Checkbox("Show FPS", &g_showFps)) {
         RuntimeConfigFile::SetShowFps(g_showFps);
     }
+    if (ImGui::Checkbox("Low-detail CPU racers", &g_lowDetailCpus)) {
+        RuntimeConfigFile::SetLowDetailCpus(g_lowDetailCpus);
+    }
+    if (ImGui::Checkbox("Low-detail course", &g_lowDetailCourse)) {
+        RuntimeConfigFile::SetLowDetailCourse(g_lowDetailCourse);
+    }
+    ImGui::TextDisabled("Past 12 racers, use the split-screen models. CPUs: much faster. Applies from the next race.");
     ImGui::Separator();
     ImGui::Text("Graphics API: %s", GraphicsApiDisplayName());
 }

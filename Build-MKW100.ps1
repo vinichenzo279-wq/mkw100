@@ -128,8 +128,10 @@ try {
     if (-not $useSubmodule) {
         Require (Join-Path $OriginalWorkspace 'aurora-main\CMakeLists.txt') 'Aurora source (run "git submodule update --init" in the repo, or keep the install''s BuildWorkspace)'
     }
-    Require (Join-Path $OriginalWorkspace 'Assets\main.dol') 'user-owned main.dol'
-    Require (Join-Path $OriginalWorkspace 'Assets\StaticR.rel') 'user-owned StaticR.rel'
+    # The checkout keeps its own copies in Assets\ (copied below on the first build, hash-checked);
+    # only a checkout without them needs the install's.
+    if (-not (Test-Path (Join-Path $Repo 'Assets\main.dol'))) { Require (Join-Path $OriginalWorkspace 'Assets\main.dol') 'user-owned main.dol' }
+    if (-not (Test-Path (Join-Path $Repo 'Assets\StaticR.rel'))) { Require (Join-Path $OriginalWorkspace 'Assets\StaticR.rel') 'user-owned StaticR.rel' }
     Require (Join-Path $OriginalWorkspace 'Dependencies') 'original cached dependencies'
     foreach ($f in @('CMake\bin\cmake.exe','Ninja\ninja.exe','llvm-mingw\bin\x86_64-w64-mingw32-clang.exe','llvm-mingw\bin\x86_64-w64-mingw32-clang++.exe','llvm-mingw\bin\x86_64-w64-mingw32-windres.exe')) {
         Require (Join-Path $Toolkit $f) 'bundled native toolchain'

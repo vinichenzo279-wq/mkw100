@@ -1367,8 +1367,10 @@ REGISTER_NATIVE_WRAPPER_AS(0x8052DAF0, LocalVs_ComputeGpRank_8052daf0, "LocalVs_
 namespace {
 bool TeamColouredKart(uint32_t kart) { return kart <= 2 || (kart >= 18 && kart <= 20); }
 } // namespace
+void KartLod_OnLoadKartArchive(CpuContext* ctx);  // kart_lod.cpp: CPUs' low-detail models
 extern "C" void LocalVs_BattleKartArchive_80540e3c(CpuContext* ctx) {
     if (ctx->gpr[7] < 2 && !TeamColouredKart(ctx->gpr[5])) ctx->gpr[7] = 2;
+    KartLod_OnLoadKartArchive(ctx);
     MKW_GUEST_NEXT(80540E3C)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80540E3C, LocalVs_BattleKartArchive_80540e3c, "LocalVs_BattleKartArchive_80540e3c");
