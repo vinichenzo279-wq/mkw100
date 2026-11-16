@@ -11,9 +11,9 @@
 // the leader, a real racer (the game's 12 was one past the field). Owned shells, battle, team VS
 // and races of 12 or fewer run the game's code.
 //
-// Item Fever replaces the function's entry (overlay: a branch to 0x8184AC74): its special shells
-// (registered at 0x818B9058, the purple shell's targeting) keep a target of their own, and every
-// other shell calls the game's function through a trampoline (0x8184AC6C: the first instruction,
+// Item Fever replaces the function's entry (overlay: a branch to 0x8184AE84): its special shells
+// (registered at 0x818B9688, the purple shell's targeting) keep a target of their own, and every
+// other shell calls the game's function through a trampoline (0x8184AE7C: the first instruction,
 // then a branch to 0x807AC1AC) before Item Fever's item features adjust the result. So under Item
 // Fever the entry runs Item Fever's code, and the same fix sits on the trampoline instead. Item
 // Fever's own `racer < 12` checks in that code are raised in array-sites.txt (cmpimm).
@@ -89,13 +89,13 @@ REGISTER_NATIVE_WRAPPER_AS(0x807AC1A8, ObjKouraTogezo_CalcTargetedPlayerId_807ac
                            "ObjKouraTogezo_CalcTargetedPlayerId_807ac1a8");
 
 // Item Fever's trampoline into the game's CalcTargetedPlayerId (r3: the shell).
-extern "C" void ItemFever_CalcTargetedPlayerIdStock_8184ac6c(CpuContext* ctx) {
+extern "C" void ItemFever_CalcTargetedPlayerIdStock_8184ae7c(CpuContext* ctx) {
     uint32_t target = 0;
     if (!ModBuild::IsKnownItemFever() || !UnownedTarget(ctx->gpr[3], target)) {
-        MKW_GUEST_NEXT(8184AC6C)(ctx);
+        MKW_GUEST_NEXT(8184AE7C)(ctx);
         return;
     }
     ctx->gpr[3] = target;
 }
-REGISTER_NATIVE_WRAPPER_AS(0x8184AC6C, ItemFever_CalcTargetedPlayerIdStock_8184ac6c,
-                           "ItemFever_CalcTargetedPlayerIdStock_8184ac6c");
+REGISTER_NATIVE_WRAPPER_AS(0x8184AE7C, ItemFever_CalcTargetedPlayerIdStock_8184ae7c,
+                           "ItemFever_CalcTargetedPlayerIdStock_8184ae7c");

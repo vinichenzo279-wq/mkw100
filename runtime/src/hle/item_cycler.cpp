@@ -8,7 +8,7 @@
 // Mushroom, Bob-omb, Blue Shell, Lightning, Star, Golden Mushroom, Mega, Blooper, POW, Thunder
 // Cloud, Bullet Bill, Triple Green, Triple Red, Triple Banana and puts the item in the slot. Under
 // Item Fever the cycle goes on through its own items, ids 0x15..0x29 (its code treats exactly that
-// range as its items, e.g. 0x81855C68).
+// range as its items, e.g. 0x81855E78).
 //   debug:    items are used up as normal; using an item with the slot empty refills it with the
 //             last cycled item.
 //   infinite: the slot keeps the cycled item (it is put back whenever it changes).

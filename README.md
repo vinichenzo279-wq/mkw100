@@ -67,7 +67,7 @@ Run `git pull` and `git submodule update --init`, then run **Install-MKW100.cmd*
 
 ### Item Fever
 
-Instead of Retro Rewind, a checkout can build an **Item Fever 1.1.0** version (offline, PAL): its 21 new items, Item Rain and Loot Party, up to 100 racers. Unzip the Item Fever download anywhere and pass the folder that holds `ItemFever\` and `riivolution\`:
+Instead of Retro Rewind, a checkout can build an **Item Fever 1.1.1** version (offline, PAL): its 21 new items, Item Rain and Loot Party, up to 100 racers. Unzip the Item Fever download anywhere and pass the folder that holds `ItemFever\` and `riivolution\`:
 
 ```powershell
 ./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -ItemFever 'D:\Mods\item-fever-110'
