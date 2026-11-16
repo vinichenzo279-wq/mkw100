@@ -21,12 +21,12 @@
 
 namespace {
 
-constexpr uint32_t kFeverFlagsShadow = 0x82D00000;  // u8 flags[12] at 0x818A3364, racers 12..127
+constexpr uint32_t kFeverFlagsShadow = 0x82D00000;  // u8 flags[12] at 0x818A3364, racers 12..254
 constexpr uint32_t kFeverTimerShadow = 0x82D20000;  // float[12] at 0x818A3370
-constexpr uint32_t kFeverStateShadow = 0x82D20200;  // u8[12] at 0x818A33A0
-constexpr uint32_t kFeverShadowRacers = 128 - 12;
+constexpr uint32_t kFeverStateShadow = 0x82D20600;  // u8[12] at 0x818A33A0
+constexpr uint32_t kFeverShadowRacers = 255 - 12;
 
-// A [12] table and its shadow (racers 12..127; array-sites.txt, profile item-fever).
+// A [12] table and its shadow (racers 12..254; array-sites.txt, profile item-fever).
 struct FeverTable { uint32_t table, stride, shadow; };
 
 // Item Fever's resets of these tables run a fixed 12 times and write one value per table; the
@@ -43,29 +43,29 @@ void CopyResetToShadow(const FeverTable& t) {
 // Reset by 0x818489A0; the rest of it (0x818B9110 [12] x 64 bytes, ...) by 0x81848BFC's loop,
 // whose bound is a cmpimm site, so it fills the shadows itself.
 constexpr FeverTable kResetTables89F0[] = {
-    {0x818B9020, 2, 0x82D21000},
-    {0x818B9038, 4, 0x82D21100},
-    {0x818B9068, 4, 0x82D21300},
-    {0x818B9098, 1, 0x82D21500},
-    {0x818B90A4, 1, 0x82D21600},
-    {0x818B90B0, 1, 0x82D21700},
-    {0x818B90C0, 4, 0x82D21800},
-    {0x818B90F0, 1, 0x82D21A00},
+    {0x818B9020, 2, 0x82D23000},
+    {0x818B9038, 4, 0x82D23300},
+    {0x818B9068, 4, 0x82D23900},
+    {0x818B9098, 1, 0x82D23F00},
+    {0x818B90A4, 1, 0x82D24200},
+    {0x818B90B0, 1, 0x82D24500},
+    {0x818B90C0, 4, 0x82D24800},
+    {0x818B90F0, 1, 0x82D24E00},
 };
 // The struct at 0x818B9710 (the per-kart routine Item Fever hooks into Kart::Sub::Update,
 // 0x8184BDD4), reset by 0x8184CA38.
 constexpr FeverTable kResetTables90E0[] = {
-    {0x818B9710, 1, 0x82D24A00},
-    {0x818B971C, 1, 0x82D24B00},
-    {0x818B9728, 1, 0x82D24C00},
-    {0x818B9734, 1, 0x82D24D00},
-    {0x818B9740, 1, 0x82D24E00},
-    {0x818B974C, 1, 0x82D24F00},
-    {0x818B9758, 2, 0x82D25000},
-    {0x818B9770, 4, 0x82D25100},
-    {0x818B97A0, 4, 0x82D25300},
-    {0x818B97D0, 1, 0x82D25500},
-    {0x818B97DC, 1, 0x82D25600},
+    {0x818B9710, 1, 0x82D2DE00},
+    {0x818B971C, 1, 0x82D2E100},
+    {0x818B9728, 1, 0x82D2E400},
+    {0x818B9734, 1, 0x82D2E700},
+    {0x818B9740, 1, 0x82D2EA00},
+    {0x818B974C, 1, 0x82D2ED00},
+    {0x818B9758, 2, 0x82D2F000},
+    {0x818B9770, 4, 0x82D2F300},
+    {0x818B97A0, 4, 0x82D2F900},
+    {0x818B97D0, 1, 0x82D2FF00},
+    {0x818B97DC, 1, 0x82D30200},
 };
 
 void LogFeverUnlocks(CpuContext* ctx);  // below, with Item Fever's unlocks

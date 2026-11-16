@@ -129,7 +129,9 @@ constexpr std::string_view kPlayersOption = "--race-players=";
 uint32_t ParsePlayers(std::string_view text) {
     uint32_t players = 0;
     const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), players);
-    const uint32_t most = static_cast<uint32_t>(LocalVs::MaxRacers());
+    // The pack (and so its own limit, LocalVs::MaxRacers) is not known yet while the arguments are
+    // read; SetUpMenuScenario applies it.
+    const uint32_t most = PlayerSlots::kMaxPlayers;
     if (text.empty() || ec != std::errc{} || end != text.data() + text.size() || players < 1 || players > most) {
         throw std::invalid_argument("--race-players expects 1 to " + std::to_string(most));
     }
@@ -157,6 +159,10 @@ void SetUpMenuScenario(uint32_t course) {
         throw std::runtime_error("--race: Racedata does not exist yet at SectionMgr::Init");
     }
     const uint32_t scenario = racedata + kMenuScenarioOffset;
+    const uint32_t most = static_cast<uint32_t>(LocalVs::MaxRacers());
+    if (g_players > most) {
+        throw std::invalid_argument("--race-players: this build goes to " + std::to_string(most) + " racers");
+    }
     // Players 12+ live in the overflow slots (guest_abi/player_slots.h); the roster repeats.
     for (uint32_t i = 0; i < std::max(g_players, kPlayerCount); ++i) {
         const uint32_t player = PlayerSlots::PlayerAddress(racedata, scenario, i);
