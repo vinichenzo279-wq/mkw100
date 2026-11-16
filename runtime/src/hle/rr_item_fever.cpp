@@ -1,11 +1,14 @@
 // mkw100: Retro Rewind with Item Fever's items (experimental, docs/mkw100/rr-item-fever.md).
 //
 // The combined Kamek module (scripts/mkw100/combine_pul.py) carries both packs' code; this file
-// holds the run-time side of that build. For now: a test hook that hands CPUs a chosen item.
+// holds the run-time side of that build: a test hook that hands CPUs a chosen item, and the audio
+// heaps for Item Fever's larger boot sound heap.
 
 #include "hle/rr_item_fever.h"
 
 #include "abi_bridge.h"
+#include "guest_function_imports.h"
+#include "hle/mod_build.h"
 #include "memory.h"
 #include "runtime_log.h"
 
@@ -67,3 +70,56 @@ void TestGiveItem(CpuContext* ctx, uint32_t raceinfo) {
 }
 
 } // namespace RrItemFever
+
+// Item Fever's sound archive needs a 10 MiB boot sound heap (the plan sets Audio::Manager::InitSelf
+// to lis r3, 0xA0 as Item Fever does; the game has 6 MiB), or its sound group 14 does not load and
+// the race's sounds do not start (silent countdown). With Retro Rewind loaded too, the heap the game
+// passes has no 10 MiB left: EGG::SoundHeapMgr::CreateSoundHeap gets nothing, creates no sound heap,
+// and the boot stops in SoundArchivePlayer::SetupMram. The system debug heap is no help either (the
+// root scene's heaps took all of it by then). In the combined build the audio heaps come from the
+// root scene's debug heap when the passed heap cannot hold the sound heap: it lives as long as the
+// game and holds tens of MB the game barely uses (the DSP reads all of MEM2).
+namespace {
+
+constexpr uint32_t kRkSystem = 0x802A4080;       // EGG::System object (race_heap.cpp)
+constexpr uint32_t kSceneManager = 0x54;
+constexpr uint32_t kCurrentScene = 0xC;
+constexpr uint32_t kSceneParent = 0x20;
+constexpr uint32_t kSceneHeapDebug = 0x1C;       // EGG::Scene: debug heap (EGG::Heap*)
+constexpr uint32_t kSoundHeapSize = 0xA00000;    // what the plan sets (rr-item-fever.txt write32)
+constexpr uint32_t kSoundHeapMargin = 0x100000;  // room for the rest of the audio setup
+
+uint32_t AllocatableSize(CpuContext* ctx, uint32_t heap) {
+    const CpuContext saved = *ctx;
+    ctx->gpr[3] = heap;
+    ctx->gpr[4] = 0x20;
+    InvokeIndirectCpu(Memory::Read32(Memory::Read32(heap) + 0x24), ctx);  // EGG::Heap::getAllocatableSize
+    const uint32_t size = ctx->gpr[3];
+    *ctx = saved;
+    return size;
+}
+
+} // namespace
+
+extern "C" void RrItemFever_AudioManagerInitSelf_8071724c(CpuContext* ctx) {
+    if (ModBuild::Current() == ModBuild::Kind::RetroRewindItemFever) {
+        const uint32_t passed = ctx->gpr[4];
+        const uint32_t need = kSoundHeapSize + kSoundHeapMargin;
+        const uint32_t passedFree = passed ? AllocatableSize(ctx, passed) : 0;
+        if (passedFree < need) {
+            const uint32_t manager = Memory::Read32(kRkSystem + kSceneManager);
+            const uint32_t scene = manager ? Memory::Read32(manager + kCurrentScene) : 0;
+            const bool root = scene && Memory::Read32(scene + kSceneParent) == 0;
+            const uint32_t debug = root ? Memory::Read32(scene + kSceneHeapDebug) : 0;
+            const uint32_t debugFree = debug ? AllocatableSize(ctx, debug) : 0;
+            RT_LOGF("rr-item-fever", "audio heaps: passed heap 0x%08X has 0x%X free; scene 0x%08X (root %d) debug heap 0x%08X has 0x%X\n",
+                    passed, passedFree, scene, root ? 1 : 0, debug, debugFree);
+            if (debugFree >= need) {
+                ctx->gpr[4] = debug;
+                RT_LOGF("rr-item-fever", "audio heaps from the root scene's debug heap\n");
+            }
+        }
+    }
+    MKW_GUEST_NEXT(8071724C)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8071724C, RrItemFever_AudioManagerInitSelf_8071724c, "RrItemFever_AudioManagerInitSelf_8071724c");

@@ -60,3 +60,30 @@ extern "C" void SoundTrace_LoadGroup_800a28b0(CpuContext* ctx) {
     }
 }
 REGISTER_NATIVE_WRAPPER_AS(0x800A28B0, SoundTrace_LoadGroup_800a28b0, "SoundTrace_LoadGroup_800a28b0");
+
+// void* SoundHeap::Alloc(this, u32 size, callback, arg): the first allocations (the archive's
+// setup at boot) and every failed one.
+extern "C" void SoundTrace_SoundHeapAlloc_800a3020(CpuContext* ctx) {
+    const uint32_t heap = ctx->gpr[3];
+    const uint32_t size = ctx->gpr[4];
+    MKW_GUEST_NEXT(800A3020)(ctx);
+    if (!TraceSound()) return;
+    static int logged = 0;
+    const uint32_t result = ctx->gpr[3];
+    if (result == 0 || logged < 40) {
+        ++logged;
+        RT_LOGF("sound-trace", "SoundHeap 0x%08X alloc 0x%X -> 0x%08X\n", heap, size, result);
+    }
+}
+REGISTER_NATIVE_WRAPPER_AS(0x800A3020, SoundTrace_SoundHeapAlloc_800a3020, "SoundTrace_SoundHeapAlloc_800a3020");
+
+// bool SoundHeap::Create(this, void* buffer, u32 size).
+extern "C" void SoundTrace_SoundHeapCreate_800a2f90(CpuContext* ctx) {
+    const uint32_t heap = ctx->gpr[3];
+    const uint32_t buffer = ctx->gpr[4];
+    const uint32_t size = ctx->gpr[5];
+    MKW_GUEST_NEXT(800A2F90)(ctx);
+    if (!TraceSound()) return;
+    RT_LOGF("sound-trace", "SoundHeap 0x%08X created on 0x%08X size 0x%X -> %u\n", heap, buffer, size, ctx->gpr[3] & 0xFF);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x800A2F90, SoundTrace_SoundHeapCreate_800a2f90, "SoundTrace_SoundHeapCreate_800a2f90");

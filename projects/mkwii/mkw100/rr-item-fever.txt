@@ -287,8 +287,10 @@ keep 0x805B68DC       # Kart::Collision::UpdateCollisionsInner: Feather
 # MiB from MEM2) is left out: with Retro Rewind it stopped the boot (SoundArchivePlayer::Setup).
 # The boot sound heap (Audio::Manager::InitSelf, 6 MiB) could not hold sound group 14 of Item
 # Fever's sound archive next to Retro Rewind's sounds (MKW100_TRACE_SOUND: group 14 failed to load,
-# then the race's sounds did not start: silent countdown and start). 8 MiB instead:
-#write32 0x80717280 0x3C6000A0   # lis r3, 0xA0: 10 MiB as in Item Fever (the game: 6): stops the boot even from the debug heap
+# then the race's sounds did not start: silent countdown and start). 10 MiB, as Item Fever sets it;
+# the passed heap has only about 6 MiB free with both packs, so the runtime takes the audio heaps from
+# the root scene's debug heap then (runtime/src/hle/rr_item_fever.cpp, AudioManagerInitSelf):
+write32 0x80717280 0x3C6000A0   # lis r3, 0xA0: 10 MiB (the game: 6)
 # Item Fever's patches in sound functions Retro Rewind does not patch (item sounds):
 keep-func 0x8070FD10  # Audio::ItemAlterationMgr::Update
 keep-func 0x8070FEC8  # Audio::ItemAlterationMgr::UpdateStatus
