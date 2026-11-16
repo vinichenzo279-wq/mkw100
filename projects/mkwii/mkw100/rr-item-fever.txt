@@ -277,15 +277,18 @@ keep 0x805B68DC       # Kart::Collision::UpdateCollisionsInner: Feather
 
 # Sound. Retro Rewind replaces the race's sound heap with a tiny one and loads race sounds into the
 # scene heaps (MiscSound.cpp: its big course and UI archives leave no 10 MiB of contiguous MEM2).
-# Item Fever's sound archive has larger race groups, which did not fit there: a silent countdown and
-# start, item sounds with a null handle. The race gets the game's own sound heap back, as in Item
-# Fever:
-drop-rr 0x805542D8    # RaceScene::CreateAndInitInstances: the race sound heap's creation (size)
-drop-rr 0x806FE024    # Audio::GameHeap::Initialize
-drop-rr 0x800A2FF0    # nw4r::snd::SoundHeap::Alloc(virtual): to the scene heaps
-drop-rr 0x800A3060    # nw4r::snd::SoundHeap::Alloc
+# Giving the race the game's own 10 MiB sound heap back instead (the lines below) ran a 100-racer
+# race out of memory (TPL panic), so Retro Rewind's scheme stays; the silent countdown is open.
+#drop-rr 0x805542D8    # RaceScene::CreateAndInitInstances: the race sound heap's creation (size)
+#drop-rr 0x806FE024    # Audio::GameHeap::Initialize
+#drop-rr 0x800A2FF0    # nw4r::snd::SoundHeap::Alloc(virtual): to the scene heaps
+#drop-rr 0x800A3060    # nw4r::snd::SoundHeap::Alloc
 # Item Fever's own sound heap at boot (Audio::Manager::Init 0x80717150, InitSelf 0x8071724C: 6 -> 10
 # MiB from MEM2) is left out: with Retro Rewind it stopped the boot (SoundArchivePlayer::Setup).
+# The boot sound heap (Audio::Manager::InitSelf, 6 MiB) could not hold sound group 14 of Item
+# Fever's sound archive next to Retro Rewind's sounds (MKW100_TRACE_SOUND: group 14 failed to load,
+# then the race's sounds did not start: silent countdown and start). 8 MiB instead:
+#write32 0x80717280 0x3C6000A0   # lis r3, 0xA0: 10 MiB as in Item Fever (the game: 6): stops the boot even from the debug heap
 # Item Fever's patches in sound functions Retro Rewind does not patch (item sounds):
 keep-func 0x8070FD10  # Audio::ItemAlterationMgr::Update
 keep-func 0x8070FEC8  # Audio::ItemAlterationMgr::UpdateStatus

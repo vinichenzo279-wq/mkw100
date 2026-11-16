@@ -27,6 +27,7 @@ Plan file, one entry per line (# comments):
     rename-string OLD NEW      # replace a NUL-terminated string in IF's module (same length)
     stub-rr 0xADDRESS          # make the RR function at this guest address return at once (blr)
     drop-rr 0xADDRESS          # leave out RR's patch at this game address (the game's code runs)
+    write32 0xADDRESS 0xVALUE  # an extra patch of MKW100's own: write VALUE at a game address
 """
 import argparse
 import hashlib
@@ -44,7 +45,7 @@ LINK_BASE = 0x803992E0  # where the Pulsar loader puts Code.pul on a PAL Wii (re
 
 def read_plan(path):
     plan = {'if-offset': 0xC0000, 'chain': [], 'keep': set(), 'keep-func': set(), 'own-func': set(),
-            'rename-string': [], 'stub-rr': [], 'keep-range': [], 'drop-rr': set()}
+            'rename-string': [], 'stub-rr': [], 'keep-range': [], 'drop-rr': set(), 'write32': []}
     for raw in open(path, encoding='utf-8'):
         line = raw.split('#', 1)[0].split()
         if not line:
@@ -53,6 +54,9 @@ def read_plan(path):
             if len(line) != 3 or len(line[1]) != len(line[2]):
                 raise SystemExit(f'{path}: rename-string needs two strings of the same length')
             plan['rename-string'].append((line[1].encode(), line[2].encode()))
+            continue
+        if line[0] == 'write32':
+            plan['write32'].append((int(line[1], 16), int(line[2], 16)))
             continue
         if line[0] == 'keep-range':
             plan['keep-range'].append((int(line[1], 16), int(line[2], 16)))
@@ -246,6 +250,10 @@ def main():
             for k, args in entries:
                 cmds.append((k, True, site, args))
                 kept += 1
+    for addr, value in plan['write32']:
+        if addr in rr_abs or any(c[2] == addr and c[1] for c in cmds[len(rr['cmds']) + len(ctors):]):
+            raise SystemExit(f'write32 0x{addr:08x}: a kept pack patch writes this address already')
+        cmds.append(('W32', True, addr, (value,)))
     cmds = [c for i, c in enumerate(cmds) if i not in drop]
     # Item Fever's module-relative commands last, so nothing of Retro Rewind's overwrites them.
     for k, ab, addr, args in iff['cmds']:
