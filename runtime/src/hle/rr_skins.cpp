@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <numeric>
 #include <random>
 #include <vector>
@@ -84,11 +85,32 @@ uint32_t SkinHash(uint32_t racer, uint32_t character) {
 
 // Skin budget: a skin loads one of Retro Rewind's large kart archives (about 4.9 MB to decompress),
 // and at 128 racers they no longer fit (ArchiveFile::Decompress failed, then ARCInitHandle panicked).
-// 100 fully skinned racers fit, so CPU racers from index 64 on keep the stock look and its small
-// archive. Local players' own picks are not budgeted.
-constexpr uint32_t kSkinnedRacers = 64;
+// 100 fully skinned racers fit, so CPU racers from index 100 on keep the stock look and its small
+// archive (64 until 2026-11-16; 100 skinned at 128 racers measured fine). Local players' own picks
+// are not budgeted.
+constexpr uint32_t kSkinnedRacers = 100;
+
+// Once per process: how many skins Retro Rewind found per character (its Code.pul scans
+// Character/Driver at boot), so a skin pack such as a character expansion shows in the log.
+void LogSkinCounts() {
+    static bool logged = false;
+    if (logged) return;
+    logged = true;
+    uint32_t total = 0, most = 0;
+    char line[24 * 6 + 1] = {};
+    size_t used = 0;
+    for (uint32_t c = 0; c < kSkinCharacters; ++c) {
+        uint32_t count = 0;
+        for (uint32_t n = 1; n <= kSkinMax; ++n) count += Memory::Read8(kSkinAvailable + c * kSkinAvailableStride + n) != 0;
+        total += count;
+        most = std::max(most, count);
+        used += std::snprintf(line + used, sizeof(line) - used, " %u", count);
+    }
+    RT_LOGF("rr-skins", "%u skins found (most for one character: %u; per character:%s)\n", total, most, line);
+}
 
 uint8_t PickSkin(uint32_t racer, uint32_t character) {
+    LogSkinCounts();
     if (racer >= kSkinnedRacers) return 0;
     const uint32_t row = kSkinAvailable + character * kSkinAvailableStride;
     uint32_t count = 0;
@@ -138,6 +160,7 @@ uint8_t g_dealtCharacter[kSkinRacersMax];
 void DealSeriesSkins() {
     const uint32_t series = LocalVs::SeriesId();
     if (series == 0 || series == g_dealtSeries) return;
+    LogSkinCounts();
     const uint32_t racedata = Memory::Read32(kSkinRacedata);
     const uint32_t count = std::min<uint32_t>(RacerCount(), kSkinRacersMax);
     if (racedata == 0 || count == 0) return;
