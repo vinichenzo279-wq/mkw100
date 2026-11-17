@@ -43,6 +43,10 @@ std::atomic<int> bootLaps{0};  // --race-laps
 // [local_vs] cpu_difficulty (F10): 0 the rules page's CPU row, 1 Easy, 2 Normal, 3 Hard, 4 Very Hard,
 // 5 Impossible.
 std::atomic<int> cpuDifficulty{0};
+// [local_vs] very_hard_boost / impossible_boost (F10): the speed ai_impossible.cpp adds above Hard.
+constexpr int kMaxCpuBoost = 200;
+std::atomic<int> veryHardBoost{40};
+std::atomic<int> impossibleBoost{80};
 std::atomic<int> cpuTier{0};   // this race: 1 Very Hard, 2 Impossible, from the CPU row (PrepareRace)
 std::atomic<int> bootTier{0};  // --race-very-hard / --race-impossible; Initialize runs after arguments and must not clear it
 std::atomic<uint32_t> scoring{uint32_t(LocalVs::Scoring::ClassicSpread)};
@@ -129,6 +133,8 @@ void Initialize() {
     local_vs_detail::instantBoxes = c.localVsInstantBoxes.value_or(true);
     local_vs_detail::laps = std::clamp(int(c.localVsLaps.value_or(0)), 0, 9);
     local_vs_detail::cpuDifficulty = std::clamp(int(c.localVsCpuDifficulty.value_or(0)), 0, 5);
+    local_vs_detail::veryHardBoost = std::clamp(int(c.localVsVeryHardBoost.value_or(40)), 0, local_vs_detail::kMaxCpuBoost);
+    local_vs_detail::impossibleBoost = std::clamp(int(c.localVsImpossibleBoost.value_or(80)), 0, local_vs_detail::kMaxCpuBoost);
     local_vs_detail::speedometer = c.localVsSpeedometer.value_or(true);
     local_vs_detail::scoring = local_vs_detail::ParseKey(c.localVsScoring, local_vs_detail::scoringKeys);
     local_vs_detail::itemDistribution = c.localVsItemDistribution
@@ -140,6 +146,7 @@ void Initialize() {
 int CpuTier() { return std::max(local_vs_detail::cpuTier.load(), local_vs_detail::bootTier.load()); }
 bool ImpossibleCpus() { return CpuTier() > 0; }
 void SetCpuTier(int tier) { local_vs_detail::bootTier = tier; }
+int CpuSpeedBoost(int tier) { return tier >= 2 ? local_vs_detail::impossibleBoost.load() : local_vs_detail::veryHardBoost.load(); }
 ItemCycler CurrentItemCycler() { return ItemCycler(local_vs_detail::itemCycler.load()); }
 ItemDistribution CurrentItemDistribution() { return ItemDistribution(local_vs_detail::itemDistribution.load()); }
 uint32_t PointsFor(uint32_t place, uint32_t count) {
@@ -284,6 +291,19 @@ void DrawSettings() {
         ImGui::TextUnformatted(difficulty == 0
             ? "The rules page's CPU row: Hard, Very Hard, Impossible (2-4P: Normal, Hard, Very Hard, Impossible)."
             : "Overrides the rules page's CPU row, from the next race.");
+        int veryHard = veryHardBoost.load(), impossible = impossibleBoost.load();
+        ImGui::SetNextItemWidth(240);
+        if (ImGui::SliderInt("Very Hard speed", &veryHard, 0, kMaxCpuBoost, "+%d", ImGuiSliderFlags_AlwaysClamp)) {
+            veryHardBoost = veryHard;
+            RuntimeConfigFile::WriteSetting("local_vs", "very_hard_boost", std::to_string(veryHard));
+        }
+        ImGui::SetNextItemWidth(240);
+        if (ImGui::SliderInt("Impossible speed", &impossible, 0, kMaxCpuBoost, "+%d", ImGuiSliderFlags_AlwaysClamp)) {
+            impossibleBoost = impossible;
+            RuntimeConfigFile::WriteSetting("local_vs", "impossible_boost", std::to_string(impossible));
+        }
+        ImGui::TextUnformatted("Added to Hard CPUs' speed (Hard is 3-10 above Normal; defaults +40 and +80); both");
+        ImGui::TextUnformatted("tiers also always drift, mini-turbo and trick. From the next race.");
     }
     ImGui::Separator();
     ImGui::TextUnformatted("Balancing for races of more than 12 racers:");

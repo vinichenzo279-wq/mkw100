@@ -33,10 +33,9 @@ constexpr uint32_t kImpossibleRacedata = 0x809BD728;  // RaceConfig::spInstance
 constexpr uint32_t kImpossibleCpuMode = 0x20 + 0xB48 + 0x14;  // races scenario settings cpuMode
 constexpr uint32_t kImpossibleHard = 2;
 constexpr uint32_t kImpossibleGameMode = 0x20 + 0xB48 + 0x8;  // races scenario settings gameMode (0 GP)
-// Hard - Normal is 3 to 10 across the tables. Very Hard is 40 above Hard; Impossible, MKW100_TEST_CPU_STEP
-// for tuning, is kImpossibleSpeedStep above.
-constexpr float kVeryHardSpeedStep = 40.0f;
-constexpr float kImpossibleSpeedStep = 80.0f;
+// Hard - Normal is 3 to 10 across the tables. Very Hard and Impossible add LocalVs::CpuSpeedBoost
+// (F10, [local_vs] very_hard_boost / impossible_boost, 40 and 80 by default); MKW100_TEST_CPU_STEP
+// overrides Impossible's for tuning.
 constexpr uint32_t kImpossibleActionBytes = 12 * 8;
 
 } // namespace
@@ -50,9 +49,9 @@ extern "C" void AIParams_Load_8073aca8(CpuContext* ctx) {
     const bool gp200 = Cc200::Active() && Memory::Read32(racedata + kImpossibleGameMode) == 0;
     const int tier = std::max(LocalVs::CpuTier(), gp200 ? 1 : 0);
     if (tier == 0) return;
-    RT_LOGF("ai", "CPU tier %d (%s)\n", tier, gp200 && LocalVs::CpuTier() < 1 ? "200cc Grand Prix" : "CPU row");
     static const char* const tuned = std::getenv("MKW100_TEST_CPU_STEP");
-    const float step = tier >= 2 ? (tuned ? float(std::atof(tuned)) : kImpossibleSpeedStep) : kVeryHardSpeedStep;
+    const float step = tier >= 2 && tuned ? float(std::atof(tuned)) : float(LocalVs::CpuSpeedBoost(tier));
+    RT_LOGF("ai", "CPU tier %d (%s), speed +%.0f\n", tier, gp200 && LocalVs::CpuTier() < 1 ? "200cc Grand Prix" : "CPU row", step);
     const uint32_t speed = Memory::Read32(params + 0x4);
     if (speed != 0) Memory::WriteFloat32(speed, Memory::ReadFloat32(speed) + step);
     const uint32_t actions = Memory::Read32(params + 0x8);

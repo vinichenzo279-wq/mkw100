@@ -40,6 +40,8 @@ struct RuntimeUserConfig {
     std::optional<bool> localVsInstantBoxes;
     std::optional<uint32_t> localVsLaps;                 // 0: the game's 3, else 1..9
     std::optional<uint32_t> localVsCpuDifficulty;        // 0: the rules page, 1..5 Easy..Impossible
+    std::optional<uint32_t> localVsVeryHardBoost;        // CPU speed added above Hard (40)
+    std::optional<uint32_t> localVsImpossibleBoost;      // (80)
     std::optional<bool> localVsImpossibleCpus;
     std::optional<std::string> localVsScoring;           // "classic_spread", "classic_top12", "linear"
     std::optional<std::string> localVsItemDistribution;  // "even", "generous", "tight", "classic_top11"
@@ -453,6 +455,8 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     config.localVsInstantBoxes = FindConfigValue<bool>(document, "local_vs", "instant_boxes");
     config.localVsLaps = FindConfigUint(document, "local_vs", "laps");
     config.localVsCpuDifficulty = FindConfigUint(document, "local_vs", "cpu_difficulty");
+    config.localVsVeryHardBoost = FindConfigUint(document, "local_vs", "very_hard_boost");
+    config.localVsImpossibleBoost = FindConfigUint(document, "local_vs", "impossible_boost");
     config.localVsImpossibleCpus = FindConfigValue<bool>(document, "local_vs", "impossible_cpus");
     config.localVsScoring = FindConfigValue<std::string>(document, "local_vs", "scoring");
     config.localVsItemDistribution = FindConfigValue<std::string>(document, "local_vs", "item_distribution");

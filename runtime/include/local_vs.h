@@ -20,7 +20,9 @@ uint32_t SeriesId();
 bool ImpossibleCpus();  // CpuTier() > 0
 // Above Hard (ai_impossible.cpp): 0 none, 1 Very Hard, 2 Impossible. The CPU row's top options.
 int CpuTier();
-void SetCpuTier(int tier);  // --race-very-hard / --race-impossible, for this run only
+void SetCpuTier(int tier);
+// The CPU speed added above Hard (ai_impossible.cpp) for tier 1 (Very Hard) and 2 (Impossible), F10.
+int CpuSpeedBoost(int tier);  // --race-very-hard / --race-impossible, for this run only
 // Racers for the next single-player VS series, 1..PlayerSlots::kMaxPlayers (F10 and the VS rules page).
 int DesiredCount();
 // The most racers any product runs (128).
