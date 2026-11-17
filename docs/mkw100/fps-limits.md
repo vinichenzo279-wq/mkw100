@@ -156,3 +156,21 @@ it proportionally; more cores do not, apart from the worker threads that already
   `profile_buckets.py PROFILE EXE` resolve it; use the exact exe that produced the profile.
 - Overrides: `MKW100_TEST_GX_FOLLOW=0/1`, `MKW100_TEST_ASYNC_COPYTEX=0/1`, `MKW100_TEST_FAR_CPU=<d>`,
   `MKW100_TEST_FAR_PARTS`, `MKW100_TEST_VTX_VERIFY=1`.
+
+## Check of 593d303 (bigger scene groups, Generous items by default)
+
+Requested after the user saw lower frame rates. Windowed, same stage settings as above (low-detail
+CPUs on, none of the new settings: the exes predate them), clean runs only, frames/s:
+
+| Race | 8262bb3 (before) | 593d303 (after) | 593d303 with `item_distribution = "even"` |
+|---|---|---|---|
+| 128 | 49.3, 49.2, 47.2, 49.0 | 46.7, 46.7 | 46.2, 49.0, 49.1 |
+| 128, `MKW100_TEST_ITEMS` | 36.4*, 42.9 | 43.8, 42.0 | |
+| 255 | 33.0, 33.0 | 28.8, 29.0 | 32.8 |
+| 255, `MKW100_TEST_ITEMS` | 31.9, 32.4 | 31.3, 33.1 | |
+
+\* busier machine. With Even items 593d303 runs the same race as 8262bb3 (same trajectory hash) at
+the same speed, so the bigger scene groups cost nothing measurable. The loss comes from the new
+Generous default: more strong items in a normal race (more item objects, effects and their sounds),
+about -5% at 128 and -12% at 255. The `MKW100_TEST_ITEMS` exercise forces items in both builds, so it
+shows no difference.
