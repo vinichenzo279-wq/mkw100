@@ -77,8 +77,13 @@ constexpr uint32_t kHostDelayMicros = 0;
 // count stays as a check on --lockstep, which must report 0. (An earlier divergence blamed on
 // lag was a missing save file: a fresh NAND has no rksys.dat and the boot race goes elsewhere.)
 const uint32_t kRetraceCountAddr = MKW_GADDR(80386BE4);
-// Luigi Circuit at 150cc finishes in about 2 min; 10 min means the race is stuck.
-constexpr uint32_t kFrameLimit = 60 * 60 * 10;
+// Luigi Circuit at 150cc finishes in about 2 min; 10 min means the race is stuck. Longer races
+// (Formula Kart Wii's 50 laps take about 25 min) set MKW100_TEST_FRAME_LIMIT.
+const uint32_t kFrameLimit = [] {
+    const char* v = std::getenv("MKW100_TEST_FRAME_LIMIT");
+    const long n = v ? std::atol(v) : 0;
+    return n > 0 ? uint32_t(n) : uint32_t(60 * 60 * 10);
+}();
 
 constexpr uint64_t kFnvOffset = 0xCBF29CE484222325ull;
 constexpr uint64_t kFnvPrime = 0x100000001B3ull;
