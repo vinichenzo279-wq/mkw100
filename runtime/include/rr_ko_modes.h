@@ -22,4 +22,8 @@ void OnSeriesStandings(CpuContext* ctx, const std::vector<Standing>& standings);
 // them out), or 0 when the race is not KO Royale.
 uint32_t RoyaleStartingBalloons(CpuContext* ctx);
 
+// The laps of an offline Lap KO race past 12 racers (N knocked out per lap), or 0 to keep Retro
+// Rewind's; RaceinfoPlayer's constructor (race_laps.cpp) asks.
+uint32_t LapKoLaps(CpuContext* ctx);
+
 } // namespace RrKoModes

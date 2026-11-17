@@ -48,6 +48,9 @@ std::atomic<int> cpuDifficulty{0};
 constexpr int kMaxCpuBoost = 200;
 std::atomic<int> veryHardBoost{40};
 std::atomic<int> impossibleBoost{80};
+// [local_vs] lap_ko_per_lap (F10, Retro Rewind): Lap KO knockouts per lap past 12 racers; 0 its own setting.
+constexpr int kMaxLapKoPerLap = 25;
+std::atomic<int> lapKoPerLap{0};
 std::atomic<int> cpuTier{0};   // this race: 1 Very Hard, 2 Impossible, from the CPU row (PrepareRace)
 std::atomic<int> bootTier{0};  // --race-very-hard / --race-impossible; Initialize runs after arguments and must not clear it
 std::atomic<uint32_t> scoring{uint32_t(LocalVs::Scoring::ClassicSpread)};
@@ -136,6 +139,7 @@ void Initialize() {
     local_vs_detail::cpuDifficulty = std::clamp(int(c.localVsCpuDifficulty.value_or(0)), 0, 5);
     local_vs_detail::veryHardBoost = std::clamp(int(c.localVsVeryHardBoost.value_or(40)), 0, local_vs_detail::kMaxCpuBoost);
     local_vs_detail::impossibleBoost = std::clamp(int(c.localVsImpossibleBoost.value_or(80)), 0, local_vs_detail::kMaxCpuBoost);
+    local_vs_detail::lapKoPerLap = std::clamp(int(c.localVsLapKoPerLap.value_or(0)), 0, local_vs_detail::kMaxLapKoPerLap);
     local_vs_detail::speedometer = c.localVsSpeedometer.value_or(true);
     local_vs_detail::scoring = local_vs_detail::ParseKey(c.localVsScoring, local_vs_detail::scoringKeys);
     local_vs_detail::itemDistribution = c.localVsItemDistribution
@@ -147,6 +151,7 @@ void Initialize() {
 int CpuTier() { return std::max(local_vs_detail::cpuTier.load(), local_vs_detail::bootTier.load()); }
 bool ImpossibleCpus() { return CpuTier() > 0; }
 void SetCpuTier(int tier) { local_vs_detail::bootTier = tier; }
+int LapKoPerLap() { return local_vs_detail::lapKoPerLap.load(); }
 int CpuSpeedBoost(int tier) { return tier >= 2 ? local_vs_detail::impossibleBoost.load() : local_vs_detail::veryHardBoost.load(); }
 ItemCycler CurrentItemCycler() { return ItemCycler(local_vs_detail::itemCycler.load()); }
 ItemDistribution CurrentItemDistribution() { return ItemDistribution(local_vs_detail::itemDistribution.load()); }
@@ -255,6 +260,15 @@ void DrawSettings() {
             RuntimeConfigFile::WriteSetting("local_vs", "laps", std::to_string(lapCount));
         }
         ImGui::TextUnformatted("Offline GP and VS races, from the next race.");
+    } else if (ModBuild::IsKnownRetroRewind()) {
+        int perLap = lapKoPerLap.load();
+        ImGui::SetNextItemWidth(240);
+        if (ImGui::SliderInt("Lap KO knockouts per lap", &perLap, 0, kMaxLapKoPerLap,
+                             perLap == 0 ? "Retro Rewind setting" : "%d", ImGuiSliderFlags_AlwaysClamp)) {
+            lapKoPerLap = perLap;
+            RuntimeConfigFile::WriteSetting("local_vs", "lap_ko_per_lap", std::to_string(perLap));
+        }
+        ImGui::TextUnformatted("Past 12 racers. At most 12 laps: a field too big for that gets a few more per lap.");
     }
     bool varied = diversity.load();
     if (ImGui::Checkbox("Varied CPU characters, karts and bikes", &varied)) {

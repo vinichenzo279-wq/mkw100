@@ -23,7 +23,9 @@ bool ImpossibleCpus();  // CpuTier() > 0
 int CpuTier();
 void SetCpuTier(int tier);
 // The CPU speed added above Hard (ai_impossible.cpp) for tier 1 (Very Hard) and 2 (Impossible), F10.
-int CpuSpeedBoost(int tier);  // --race-very-hard / --race-impossible, for this run only
+int CpuSpeedBoost(int tier);
+// Retro Rewind Lap KO past 12 racers: knockouts per lap, 1-25, or 0 for Retro Rewind's own setting (F10).
+int LapKoPerLap();  // --race-very-hard / --race-impossible, for this run only
 // Racers for the next single-player VS series, 1..PlayerSlots::kMaxPlayers (F10 and the VS rules page).
 int DesiredCount();
 // The most racers any product runs (128).

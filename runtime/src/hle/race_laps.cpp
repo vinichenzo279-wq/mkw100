@@ -14,6 +14,7 @@
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
 #include "local_vs.h"
+#include "rr_ko_modes.h"
 #include "memory.h"
 #include "runtime_product.h"
 #include "runtime_log.h"
@@ -68,6 +69,8 @@ extern "C" void RaceinfoPlayer_ct_80533ed8(CpuContext* ctx) {
             RT_LOGF("race-laps", "%u laps\n", n);
         }
         ctx->gpr[5] = n;
+    } else if (RuntimeProduct::IsRetroRewind()) {
+        if (const uint32_t laps = RrKoModes::LapKoLaps(ctx)) ctx->gpr[5] = laps;
     }
     MKW_GUEST_NEXT(80533ED8)(ctx);
 }

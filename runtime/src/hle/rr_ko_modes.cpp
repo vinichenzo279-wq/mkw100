@@ -22,10 +22,11 @@
 // and online, Retro Rewind's code runs unchanged.
 //
 // Scaling for big fields:
-// - Lap KO keeps the race length Retro Rewind picks (laps = its plan for 12 racers) and the number
-//   of racers left on the final lap; the knockouts before it are spread over the other laps,
-//   several per lap crossing (100 racers, 3-lap course, 1 KO per race setting: 11 laps, 10 or 9
-//   out per lap, 2 left for the last lap).
+// - Lap KO knocks out exactly N racers at each lap line, N being F10's "Lap KO knockouts per lap"
+//   (1-25) or else Retro Rewind's KO-per-race setting (1-4), and the race gets the laps that takes
+//   (LapKoLaps sets them before the race): 100 racers at 25 a lap, 4 laps. At most 12 laps, Retro
+//   Rewind's own most; a field too big for that at N gets just enough more per lap (100 at 4: 9).
+//   (The first version kept Retro Rewind's 12-racer race length and knocked out 48 per lap.)
 // - KO Royale needs no scaling: every racer starts with the balloon setting's count.
 // - KO knocks out the same share of the field per KO race as at 12: KOs per race x racers / 12,
 //   rounded up (100 racers, 4 KOs per race: 34, then 22, 15, 10, 7, ...), until 12 or fewer
@@ -72,7 +73,10 @@ constexpr uint32_t kRpPosition = 0x20, kRpLap = 0x24, kRpFlags = 0x38, kRpFinish
 // Pulsar::System
 constexpr uint32_t kRrSystem = 0x8189E6F8;  // System::sInstance
 constexpr uint32_t kSysContext = 0x60, kSysKoMgr = 0xF0, kSysRacers = 0x108;
-constexpr uint32_t kCtxKoFinal = 1u << 6, kCtxModeKo = 1u << 9;
+constexpr uint32_t kCtxKoFinal = 1u << 6, kCtxModeKo = 1u << 9, kCtxModeLapKo = 1u << 10;
+constexpr uint32_t kSysLapKoMgr = 0xF4;
+constexpr uint32_t kLapCount = 0xB48 + 0x25;          // RacedataSettings lapCount
+constexpr uint32_t kLapCounterName = 0x808A9CC7;     // the lap counter's resource name, "la"p_number
 
 bool KnownOffline() {
     if (!ModBuild::IsKnownRetroRewind()) return false;
@@ -151,6 +155,7 @@ struct State {
     std::array<uint16_t, PlayerSlots::kMaxPlayers> lastLap{};
     std::vector<uint8_t> order;   // lap crossings of this round
     std::vector<uint32_t> plan;   // knockouts per round (lap)
+    bool resolvePending = false;  // a new round began with racers already past its line
 };
 State s;
 
@@ -168,6 +173,26 @@ std::vector<uint32_t> Plan12(uint32_t koPerRace, uint32_t usual) {
     return plan;
 }
 
+// Knockouts per lap past 12 racers: F10's "Lap KO knockouts per lap" (1-25), else Retro Rewind's
+// own KO-per-race setting (1-4), which its lap count hook stored in the manager.
+uint32_t KnockoutsPerLap(uint32_t mgr) {
+    if (const int f10 = LocalVs::LapKoPerLap(); f10 > 0) return uint32_t(f10);
+    return std::max<uint32_t>(mgr ? Memory::Read8(mgr + kKoPerRace) : 1, 1);
+}
+
+// Exactly `perLap` racers go out at each lap line, as Retro Rewind does with 12 (4 per lap: 4, 4,
+// then the last 4 race the final lap for the places); the last entry is the final lap. At most
+// kMaxRounds laps (Retro Rewind's own most, and its lap counter's): a field too big for that at
+// `perLap` gets just enough more per lap (100 racers at 4: 9 a lap, 11 laps).
+std::vector<uint32_t> PlanPerLap(uint32_t n, uint32_t perLap, uint32_t usual) {
+    if (n < 2) return {0};
+    if (usual <= 1) return {n - 1};  // a 1-lap course: the race decides everything, as with 12
+    perLap = std::max({perLap, 1u, (n - 1 + kMaxRounds - 1) / kMaxRounds});
+    std::vector<uint32_t> plan;
+    for (uint32_t left = n - 1; left > 0; left -= std::min(left, perLap)) plan.push_back(std::min(left, perLap));
+    return plan;
+}
+
 void Init(CpuContext* ctx, uint32_t mgr) {
     const uint32_t rd = Memory::Read32(kRacedata);
     s = State{};
@@ -175,26 +200,34 @@ void Init(CpuContext* ctx, uint32_t mgr) {
     s.n = std::min<uint32_t>({Memory::Read8(mgr + kPlayerCount), Memory::Read8(rd + kRaceScenario + 4), PlayerSlots::kMaxPlayers});
     for (uint32_t i = 0; i < s.n; ++i) s.active[i] = 1;
     s.usual = CallGuest(ctx, kUsualLapCount, mgr) & 0xFF;
-    const uint32_t koPerRace = std::max<uint32_t>(Memory::Read8(mgr + kKoPerRace), 1);
-    // The race's laps (Retro Rewind's lap count hook set them from its 12-racer plan).
-    uint32_t laps = Memory::Read8(rd + 0xB8D);
-    if (laps == 0) laps = s.usual;
-    laps = std::min(laps, kMaxRounds);
-    if (s.usual <= 1 || laps <= 1) {
-        s.plan = {s.n - 1};
+    const uint32_t sys = System();
+    const bool lapKo = sys != 0 && (Memory::Read32(sys + kSysContext) & kCtxModeLapKo) != 0;
+    // Lap KO: N per lap, over the laps LapKoLaps gave the race. KO Royale (no Lap KO bit) keeps
+    // its own race length; the knockouts its balloons leave are spread over those laps.
+    const uint32_t koPerRace = lapKo ? KnockoutsPerLap(mgr) : std::max<uint32_t>(Memory::Read8(mgr + kKoPerRace), 1);
+    if (lapKo) {
+        s.plan = PlanPerLap(s.n, koPerRace, s.usual);
     } else {
-        // Racers left for the final lap, as with 12.
-        const auto plan12 = Plan12(koPerRace, s.usual);
-        uint32_t out12 = 0;
-        for (size_t r = 0; r + 1 < plan12.size(); ++r) out12 += plan12[r];
-        const uint32_t survivors = std::clamp<uint32_t>(12 - out12, 2, s.n);
-        const uint32_t out = s.n - survivors;
-        // Spread over the laps before the last; never a round of 0 before the knockouts are done
-        // (a round only ends with a knockout).
-        const uint32_t rounds = std::min(laps - 1, out);
-        s.plan.assign(laps, 0);
-        for (uint32_t r = 0; r < rounds; ++r) s.plan[r] = out / rounds + (r < out % rounds ? 1 : 0);
-        s.plan[laps - 1] = survivors - 1;
+        // The race's laps (Retro Rewind's lap count hook set them from its 12-racer plan).
+        uint32_t laps = Memory::Read8(rd + 0xB8D);
+        if (laps == 0) laps = s.usual;
+        laps = std::min(laps, kMaxRounds);
+        if (s.usual <= 1 || laps <= 1) {
+            s.plan = {s.n - 1};
+        } else {
+            // Racers left for the final lap, as with 12.
+            const auto plan12 = Plan12(koPerRace, s.usual);
+            uint32_t out12 = 0;
+            for (size_t r = 0; r + 1 < plan12.size(); ++r) out12 += plan12[r];
+            const uint32_t survivors = std::clamp<uint32_t>(12 - out12, 2, s.n);
+            const uint32_t out = s.n - survivors;
+            // Spread over the laps before the last; never a round of 0 before the knockouts are done
+            // (a round only ends with a knockout).
+            const uint32_t rounds = std::min(laps - 1, out);
+            s.plan.assign(laps, 0);
+            for (uint32_t r = 0; r < rounds; ++r) s.plan[r] = out / rounds + (r < out % rounds ? 1 : 0);
+            s.plan[laps - 1] = survivors - 1;
+        }
     }
     for (uint32_t i = 0; i < kMaxRounds; ++i) Memory::Write8(mgr + kPlan + i, uint8_t(std::min<uint32_t>(i < s.plan.size() ? s.plan[i] : 0, 255)));
     Memory::Write8(mgr + kTotalRounds, uint8_t(s.plan.size()));
@@ -207,7 +240,7 @@ void Init(CpuContext* ctx, uint32_t mgr) {
     s.on = true;
     std::string text;
     for (uint32_t v : s.plan) text += std::to_string(v) + " ";
-    RT_LOGF("rr-ko", "lap ko: %u racers, %u laps (usual %u, %u KO per race): knockouts per lap %s\n", s.n,
+    RT_LOGF("rr-ko", "lap ko: %u racers, %u laps (usual %u, %u KO per lap set): knockouts per lap %s\n", s.n,
             uint32_t(s.plan.size()), s.usual, koPerRace, text.c_str());
 }
 
@@ -272,6 +305,28 @@ void FinishKnockedOut(uint32_t id, uint32_t placement) {
     Memory::Write32(p + kRpFlags, Memory::Read32(p + kRpFlags) | 0x2);
 }
 
+// A round counts a racer's crossing when its lap goes past the round. With a big field the leaders
+// are often past the next line before a round is settled; uncounted, every round then settled a
+// little later, and at 100 racers the leader finished lap 11 with 19 racers and two rounds left. The
+// new round counts them at once, in race order (TryResolveRound on the next frame).
+void CreditCrossed(uint32_t round) {
+    std::vector<uint32_t> ahead;
+    for (uint32_t id = 0; id < s.n; ++id) {
+        const uint32_t p = RaceinfoPlayer(id);
+        if (p != 0 && s.active[id] && Memory::Read16(p + kRpLap) > round) ahead.push_back(id);
+    }
+    std::stable_sort(ahead.begin(), ahead.end(), [](uint32_t a, uint32_t b) {
+        return Memory::Read8(RaceinfoPlayer(a) + kRpPosition) < Memory::Read8(RaceinfoPlayer(b) + kRpPosition);
+    });
+    for (uint32_t id : ahead) {
+        s.crossed[id] = 1;
+        if (id < 12) Memory::Write8(s.mgr + kCrossed + id, 1);
+        s.order.push_back(uint8_t(id));
+    }
+    Memory::Write8(s.mgr + kOrderCursor, uint8_t(std::min<size_t>(s.order.size(), 255)));
+    s.resolvePending = !ahead.empty();
+}
+
 // LapKO::Mgr::ProcessElimination (offline, round cause).
 void Eliminate(CpuContext* ctx, uint32_t id, bool suppressRoundAdvance) {
     if (id >= s.n || !s.active[id]) return;
@@ -295,7 +350,10 @@ void Eliminate(CpuContext* ctx, uint32_t id, bool suppressRoundAdvance) {
         FinishAtStandings(ctx);
         return;
     }
-    if (!suppressRoundAdvance) Memory::Write8(mgr + kRoundIndex, uint8_t(round + 1));
+    if (!suppressRoundAdvance) {
+        Memory::Write8(mgr + kRoundIndex, uint8_t(round + 1));
+        CreditCrossed(round + 1);
+    }
 }
 
 // TryResolveRound: once all but this round's knockouts have crossed, the slowest go out, those who
@@ -331,6 +389,11 @@ void TryResolveRound(CpuContext* ctx) {
 }
 
 void UpdateLapProgress(CpuContext* ctx) {
+    if (s.resolvePending) {
+        s.resolvePending = false;
+        TryResolveRound(ctx);
+        if (Memory::Read8(s.mgr + kRaceFinished)) return;
+    }
     for (uint32_t id = 0; id < s.n; ++id) {
         const uint32_t p = RaceinfoPlayer(id);
         if (p == 0) continue;
@@ -890,3 +953,27 @@ extern "C" void RrKoModes_RoyalePoweredHit_81809688(CpuContext* ctx) {
     *ctx = saved;
 }
 REGISTER_NATIVE_WRAPPER_AS(0x81809688, RrKoModes_RoyalePoweredHit_81809688, "RrKoModes_RoyalePoweredHit_81809688");
+
+// RaceinfoPlayer's constructor (race_laps.cpp): the laps of an offline Lap KO race past 12 racers,
+// N per lap (PlanPerLap), or 0. Retro Rewind's lap count hook (LoadCustomLapCount, at 0x805328D4)
+// has just set them from its own 12-racer plan and stored the KO-per-race setting in the manager.
+uint32_t RrKoModes::LapKoLaps(CpuContext* ctx) {
+    using namespace rr_ko_detail;
+    if (!KnownOffline()) return 0;
+    const uint32_t sys = System();
+    if (sys == 0 || (Memory::Read32(sys + kSysContext) & kCtxModeLapKo) == 0) return 0;
+    const uint32_t rd = Memory::Read32(kRacedata);
+    const uint32_t n = rd ? Memory::Read8(rd + kRaceScenario + 4) : 0;
+    if (n <= 12) return 0;
+    const uint32_t mgr = Memory::Read32(sys + kSysLapKoMgr);
+    const uint32_t usual = mgr ? (CallGuest(ctx, lapko::kUsualLapCount, mgr) & 0xFF) : 3;
+    const uint32_t laps = uint32_t(lapko::PlanPerLap(n, lapko::KnockoutsPerLap(mgr), usual).size());
+    Memory::Write8(rd + kRaceScenario + kLapCount, uint8_t(laps));
+    Memory::Write8(rd + kMenuScenario + kLapCount, uint8_t(laps));
+    // The lap counter to match, as its hook does: past 9 laps Retro Rewind's own two-digit one
+    // (RRp_number.brctr), else the game's (lap_number). Its hook chose by its own laps: 11 for 1 KO
+    // per lap chose RRp_number, which then panicked drawing a 4-lap race (TPL.c, invalid palette).
+    Memory::Write8(kLapCounterName, laps > 9 ? 'R' : 'l');
+    Memory::Write8(kLapCounterName + 1, laps > 9 ? 'R' : 'a');
+    return laps;
+}
