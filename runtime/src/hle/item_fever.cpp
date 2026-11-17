@@ -193,31 +193,38 @@ void LogFeverUnlocks(CpuContext* ctx) {
 }
 } // namespace
 
-// Item Rain's dropped items get models (MKWCI-DROP, 0x81878xxx) only while the scene heap
-// (ScnMgr::sInstance[0] +0x10, the race scene's structsMem1) has about 900 KB free (0x81878EE8),
-// and each extra copy needs about 700 KB of the scene's structsMem2 (0x81878F28). Past 12 racers
-// the karts fill structsMem1, and race_heap.cpp places what does not fit there in structsMem2 and
-// structsDebug instead, but these checks only saw structsMem1's last bytes: 80 racers, "scene space
-// exhausted (768 bytes): drop models stopped at type 0", so the rain's items had no model and lay
-// on the track invisible (a Mega Mushroom picked up out of nowhere). The checks now count what the
-// fallback still has behind those heaps.
-extern "C" void ItemFever_SceneFree_81878ee8(CpuContext* ctx) {
-    MKW_GUEST_NEXT(81878EE8)(ctx);
-    if (!ModBuild::IsKnownItemFever() || ctx->gpr[3] == 0xFFFFFFFFu) return;
-    const uint32_t scn = Memory::Read32(0x809C1850);  // ScnMgr::sInstance[0]
-    const uint32_t egg = scn >= 0x80000000u ? Memory::Read32(scn + 0x10) : 0;
-    const uint32_t extra = RaceHeap_FallbackFree(ctx, egg);
-    ctx->gpr[3] = uint32_t(std::min<uint64_t>(uint64_t(ctx->gpr[3]) + extra, 0x7FFFFFFFu));
+// Item Fever checks EGG::ExpHeap::getTotalFreeSize on the race scene's heaps before it loads a
+// model, about a dozen times, and skips the model when the heap reports too little: Item Rain's
+// and the dropped items' models (MKWCI-DROP: about 900 KB of structsMem1, and 700 KB of
+// structsMem2 per extra copy), its projectile model sets (MKWCI-BANK "sets loaded 0", then
+// "SUBSTITUTION: family N spawned green"), the penguin suit. Past 12 racers the karts fill those
+// heaps, and race_heap.cpp places what does not fit in structsMem2 and structsDebug instead, but
+// the checks only saw the heaps' last bytes. 80 racers: "scene space exhausted (768 bytes): drop
+// models stopped at type 0", the rain's items lay on the track invisible; 100 racers (user's play
+// test, 2026-11-16): Pull Star, Shell Bomb, Purple Shell and the giant shell came out as green
+// shells, the Chain Chomp, Snowball and wand did nothing, the penguin suit was invisible, and a ?
+// block crashed on an item object without a model. For calls from Item Fever's module the answer
+// now counts what the fallback still has behind the heap (RaceHeap_FallbackFree, which asks this
+// function itself: hence the guard).
+extern "C" void ItemFever_ExpHeapTotalFree_80226c88(CpuContext* ctx) {
+    static thread_local bool inside = false;
+    const uint32_t egg = ctx->gpr[3];
+    const uint32_t lr = ctx->lr;
+    MKW_GUEST_NEXT(80226C88)(ctx);
+    if (inside || !ModBuild::IsKnownItemFever() || lr < 0x81800000u || lr >= 0x81A00000u) return;
+    inside = true;
+    const uint32_t own = ctx->gpr[3];
+    uint32_t extra = 0;
+    try {
+        extra = RaceHeap_FallbackFree(ctx, egg);
+    } catch (...) {
+        inside = false;
+        throw;
+    }
+    inside = false;
+    ctx->gpr[3] = uint32_t(std::min<uint64_t>(uint64_t(own) + extra, 0x7FFFFFFFu));
 }
-REGISTER_NATIVE_WRAPPER_AS(0x81878EE8, ItemFever_SceneFree_81878ee8, "ItemFever_SceneFree_81878ee8");
-
-extern "C" void ItemFever_SceneMem2Free_81878f28(CpuContext* ctx) {
-    MKW_GUEST_NEXT(81878F28)(ctx);
-    if (!ModBuild::IsKnownItemFever() || ctx->gpr[3] == 0xFFFFFFFFu) return;
-    const uint32_t extra = RaceHeap_FallbackFree(ctx, RaceHeap_CurrentSceneHeap(0xC8C));
-    ctx->gpr[3] = uint32_t(std::min<uint64_t>(uint64_t(ctx->gpr[3]) + extra, 0x7FFFFFFFu));
-}
-REGISTER_NATIVE_WRAPPER_AS(0x81878F28, ItemFever_SceneMem2Free_81878f28, "ItemFever_SceneMem2Free_81878f28");
+REGISTER_NATIVE_WRAPPER_AS(0x80226C88, ItemFever_ExpHeapTotalFree_80226c88, "ItemFever_ExpHeapTotalFree_80226c88");
 
 // Item::Manager +0x42C is the sum of the item pools' capacities minus 30, set by `addi r0, rN, -30`
 // at 0x8079992C (Update) and 0x80799AB0 (UpdateTotalItemCountMinus30). Item Fever rewrites both
