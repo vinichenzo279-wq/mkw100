@@ -16,6 +16,7 @@
 // runs unchanged.
 
 #include "abi_bridge.h"
+#include "hle/mod_build.h"
 #include "local_vs.h"
 #include "guest_function_imports.h"
 #include "memory.h"
@@ -29,7 +30,8 @@ namespace {
 
 constexpr uint32_t kItemMapPlayers = 12;  // the static remap covers 1..12 players
 constexpr uint32_t kPlayerCountOffset = 0x44;  // u32, the item table object's player count
-constexpr uint32_t kRowBytes = 0x26;
+constexpr uint32_t kRowBytes = 0x26;      // 19 items x u16
+constexpr uint32_t kFeverRowBytes = 0x56; // Item Fever's 43 items x u16 (its patches: mulli 0x56 at 0x807BAD5C)
 constexpr uint32_t kCpuTableOffset = 0x18;  // {rows, table*} of the CPU table; the player table is at +0x10
 constexpr uint32_t kNewArray = 0x80229DF0;     // operator new[](size), the current heap
 constexpr uint32_t kDeleteArray = 0x80229EE0;  // operator delete[](void*)
@@ -51,18 +53,23 @@ extern "C" void ItemSlotTable_Remap_807bad20(CpuContext* ctx) {
         MKW_GUEST_NEXT(807BAD20)(ctx);
         return;
     }
+    // Item Fever (alone or in Retro Rewind) widens every row to its 43 items. A 0x26-byte remap
+    // there took each position's weights from the wrong bytes (Mega Mushrooms up front) and made a
+    // table Item Fever then read and wrote past, into the next heap block (garbage item objects:
+    // crashes in Item::PlayerObj::UseItem at 24 racers with some items).
+    const uint32_t rowBytes = ModBuild::HasKnownItemFeverCode() ? kFeverRowBytes : kRowBytes;
     const uint32_t rows = Memory::Read32(table);
     const uint32_t source = Memory::Read32(table + 4);
     if (rows == 0 || source == 0) {
         throw std::runtime_error("mkw100 item slots: empty item table");
     }
-    std::vector<uint8_t> file(rows * kRowBytes);
+    std::vector<uint8_t> file(rows * rowBytes);
     for (uint32_t i = 0; i < file.size(); ++i) {
         file[i] = Memory::Read8(source + i);
     }
 
     const CpuContext saved = *ctx;
-    const uint32_t remapped = CallGuest(ctx, kNewArray, count * kRowBytes);
+    const uint32_t remapped = CallGuest(ctx, kNewArray, count * rowBytes);
     if (remapped == 0) {
         throw std::runtime_error("mkw100 item slots: out of memory for the item table");
     }
@@ -78,8 +85,8 @@ extern "C" void ItemSlotTable_Remap_807bad20(CpuContext* ctx) {
     }
     for (uint32_t position = 0; position < count; ++position) {
         const uint32_t row = LocalVs::ItemRowFor(position, count, rows, distribution);
-        for (uint32_t i = 0; i < kRowBytes; ++i) {
-            Memory::Write8(remapped + position * kRowBytes + i, file[row * kRowBytes + i]);
+        for (uint32_t i = 0; i < rowBytes; ++i) {
+            Memory::Write8(remapped + position * rowBytes + i, file[row * rowBytes + i]);
         }
     }
     Memory::Write32(table + 4, remapped);
