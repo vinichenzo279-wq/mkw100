@@ -70,11 +70,14 @@ struct RuntimeUserConfig {
     std::optional<bool> skipUnreadyPipelines;
     std::optional<bool> vsync;
     std::optional<bool> gxWorker;
+    std::optional<bool> gxFollowLayout;
+    std::optional<bool> gxAsyncCopyTex;
     std::optional<bool> disableCopyFilter;
     std::optional<bool> textureReplacements;
     std::optional<bool> textureDumps;
     std::optional<bool> showFps;
     std::optional<bool> lowDetailCpus;
+    std::optional<uint32_t> farCpuDistance;
     std::optional<bool> lowDetailCourse;
     std::optional<uint32_t> disabledPostProcessingPaths;
     std::optional<float> audioVolume;
@@ -512,9 +515,12 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     config.skipUnreadyPipelines = FindConfigValue<bool>(document, "video", "skip_unready_pipelines");
     config.vsync = FindConfigValue<bool>(document, "video", "vsync");
     config.gxWorker = FindConfigValue<bool>(document, "video", "gx_worker");
+    config.gxFollowLayout = FindConfigValue<bool>(document, "video", "gx_follow_layout");
+    config.gxAsyncCopyTex = FindConfigValue<bool>(document, "video", "gx_async_copy_tex");
     config.disableCopyFilter = FindConfigValue<bool>(document, "video", "disable_copy_filter");
     config.showFps = FindConfigValue<bool>(document, "video", "show_fps");
     config.lowDetailCpus = FindConfigValue<bool>(document, "video", "low_detail_cpus");
+    config.farCpuDistance = FindConfigUint(document, "video", "far_cpu_distance");
     config.lowDetailCourse = FindConfigValue<bool>(document, "video", "low_detail_course");
     config.textureReplacements = FindConfigValue<bool>(document, "video", "texture_replacements");
     config.textureDumps = FindConfigValue<bool>(document, "video", "texture_dumps");
@@ -951,6 +957,18 @@ inline bool GxWorkerEnabled(bool fallback = true) {
     return Get().gxWorker.value_or(fallback);
 }
 
+// mkw100: [video] gx_follow_layout: the game thread follows display lists' vertex layout loads
+// instead of waiting for the GX worker on the next GXGetVtxDesc (gx_dl.cpp). Default on.
+inline bool GxFollowLayout(bool fallback = true) {
+    return Get().gxFollowLayout.value_or(fallback);
+}
+
+// mkw100: [video] gx_async_copy_tex: GXCopyTex runs on the GX worker without the game thread
+// waiting for it (gx_copy.cpp). Default off.
+inline bool GxAsyncCopyTex(bool fallback = false) {
+    return Get().gxAsyncCopyTex.value_or(fallback);
+}
+
 // Whether background music should duck automatically for other media playback.
 inline bool AttenuateMusicWhenMediaPlays(bool fallback = false) {
     return Get().attenuateMusicWhenMediaPlays.value_or(fallback);
@@ -1046,6 +1064,11 @@ inline bool ShowFps(bool fallback = true) {
 }
 
 // mkw100: CPU racers past 12 use the game's split-screen low-detail models (hle/kart_lod.cpp).
+// mkw100: [video] far_cpu_distance, far_cpu.cpp: 0 off, else the draw distance of CPU racers.
+inline uint32_t FarCpuDistance(uint32_t fallback = 0) {
+    return Get().farCpuDistance.value_or(fallback);
+}
+
 inline bool LowDetailCpus(bool fallback = true) {
     return Get().lowDetailCpus.value_or(fallback);
 }

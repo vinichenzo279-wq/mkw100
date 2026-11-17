@@ -1,14 +1,27 @@
 #include "gx_internal.h"
 #include "gx_stream_common.h"
 #include "gx_cp_decode.h"
+#include "runtime_config.h"
 #include "isa/big_endian.h"
 
 #include <cstdlib>
 #include <unordered_map>
+#include <vector>
 
 // The display-list scan cache validates a cached scan against the live guest
 // bytes with a 64-bit XXH3 digest (see GxDisplayListScanCache::CanReuse).
 #include <xxhash.h>
+
+bool GameVtxShadow(GXAttrType*& desc, VtxAttrFmt (*&fmts)[26]);  // gx_vertex.cpp
+
+// [video] gx_follow_layout; MKW100_TEST_GX_FOLLOW=0 / 1 overrides it.
+bool GxFollowLayoutLoads() {
+    static const bool on = [] {
+        if (const char* v = std::getenv("MKW100_TEST_GX_FOLLOW")) return v[0] != '0';
+        return RuntimeConfigFile::GxFollowLayout(true);
+    }();
+    return on;
+}
 
 namespace aurora::gx::fifo {
 bool in_display_list();
@@ -990,6 +1003,124 @@ static bool ScanDisplayListMaxIndices(const uint8_t* data, uint32_t nbytes,
     return WalkDisplayList(data, nbytes, visitor, 0);
 }
 
+// Follows a display list's vertex layout loads (CP VCD / VAT writes) in the game thread's copy of
+// the vertex state, so GXGetVtxDesc / GXGetVtxAttrFmt after the list need not wait for the GX
+// worker. Draws are stepped over with the vertex size the copy gives. Anything the walk cannot
+// follow (unknown command, overrun, nested list it cannot read) fails it; the caller then marks the
+// copy unknown as before.
+struct DlGameLayoutVisitor {
+    static constexpr int kMaxDepth = 4;
+    static constexpr bool kHandlesDraw = true;
+    GXAttrType* desc;
+    VtxAttrFmt (*fmts)[26];
+    std::vector<std::pair<uint8_t, uint32_t>>* writes = nullptr;  // the layout loads, in order
+    bool* nested = nullptr;                                        // set when the list calls another
+
+    bool OnNop(uint8_t) { return true; }
+    bool OnBpReg(const uint8_t*, uint32_t) { return true; }
+    bool OnXfReg(const uint8_t*, uint32_t) { return true; }
+    bool OnIndexedXf(const uint8_t*, uint8_t, uint32_t) { return true; }
+    bool OnInvalidateVertexCache(uint8_t) { return true; }
+    bool OnUnknownCommand(uint8_t) { return false; }
+    bool OnCpReg(const uint8_t*, uint8_t reg, uint32_t value) {
+        if (GxCpDecode::ApplyCpLayoutWriteInto(desc, fmts, reg, value) && writes) writes->emplace_back(reg, value);
+        return true;
+    }
+    bool OnCallDisplayList(uint32_t addr, uint32_t size, int depth) {
+        if (addr == 0 || size == 0) return true;
+        if (nested) *nested = true;
+        const uint8_t* bytes = static_cast<const uint8_t*>(GuestToHostPtr(addr, size));
+        if (bytes == nullptr) return false;
+        DlGameLayoutVisitor child{desc, fmts, writes, nested};
+        return WalkDisplayList(bytes, size, child, depth + 1);
+    }
+    uint32_t DrawVertexSize(GXVtxFmt vtxfmt) { return GxCpDecode::LayoutVertexSize(desc, fmts[vtxfmt]); }
+    bool OnDraw(const uint8_t*, uint8_t, GXVtxFmt, uint16_t, const uint8_t*, uint32_t&) { return true; }
+};
+
+
+// The walk's result per list (address and size): a list seen before only replays its layout loads.
+// It is trusted while no guest write notification landed on its memory since (GxGuestWrite, the
+// contract the worker's display list scan cache uses), else checked against an XXH3 digest of the
+// bytes. Walking every list cost about 8% of the game thread at 128 racers (some 4,900 lists a
+// frame), hashing every one still 6%. Lists that call other lists are walked every time.
+// A direct-mapped table (a cache: a collision only costs a walk), the loads stored inline.
+struct GameDlLayoutEntry {
+    uint64_t key = 0;  // address << 32 | size, 0 when empty
+    uint64_t digest = 0;
+    uint64_t generation = GxGuestWrite::kUntracked;
+    uint8_t count = 0;       // layout loads stored
+    bool followable = false;
+    bool cacheable = false;  // no nested list, at most kMaxWrites loads
+    static constexpr uint32_t kMaxWrites = 12;
+    uint8_t regs[kMaxWrites] = {};
+    uint32_t values[kMaxWrites] = {};
+};
+constexpr uint32_t kGameDlLayoutBits = 15;
+GameDlLayoutEntry* GameDlLayoutTable() {
+    static GameDlLayoutEntry* table = new GameDlLayoutEntry[size_t(1) << kGameDlLayoutBits];  // game thread only
+    return table;
+}
+
+// Game thread only; false when the copy is unknown already or the list could not be followed.
+static bool GameVtxApplyDisplayList(uint32_t addr, const uint8_t* data, uint32_t nbytes) {
+    GXAttrType* desc = nullptr;
+    VtxAttrFmt (*fmts)[26] = nullptr;
+    if (!GameVtxShadow(desc, fmts)) return ++GxWorker::g_vtxFollow[2], false;
+    const uint64_t key = (uint64_t(addr) << 32) | nbytes;
+    GameDlLayoutEntry& e = GameDlLayoutTable()[((addr >> 5) * 0x9E3779B1u + nbytes) >> (32 - kGameDlLayoutBits)];
+    const uint64_t generation = GxGuestWrite::GenerationForRange(addr, nbytes);
+    if (e.key == key && e.cacheable) {
+        bool same = GxGuestWrite::CanSkipDigest(e.generation, generation);
+        if (!same) {
+            same = XXH3_64bits(data, nbytes) == e.digest;
+            e.generation = generation;
+        }
+        if (same) {
+            if (!e.followable) return ++GxWorker::g_vtxFollow[1], false;
+            for (uint32_t k = 0; k < e.count; ++k) GxCpDecode::ApplyCpLayoutWriteInto(desc, fmts, e.regs[k], e.values[k]);
+            ++GxWorker::g_vtxFollow[0];
+            return true;
+        }
+    }
+    static thread_local std::vector<std::pair<uint8_t, uint32_t>> writes;
+    writes.clear();
+    bool nested = false;
+    GXAttrType descCopy[26];
+    VtxAttrFmt fmtCopy[8][26];
+    std::memcpy(descCopy, desc, sizeof descCopy);
+    std::memcpy(fmtCopy, fmts, sizeof fmtCopy);
+    DlGameLayoutVisitor visitor{descCopy, fmtCopy, &writes, &nested};
+    const bool followable = WalkDisplayList(data, nbytes, visitor, 0);
+    e.key = key;
+    e.followable = followable;
+    e.cacheable = !nested && writes.size() <= GameDlLayoutEntry::kMaxWrites;
+    e.digest = XXH3_64bits(data, nbytes);
+    e.generation = generation;
+    e.count = e.cacheable ? uint8_t(writes.size()) : 0;
+    for (uint32_t k = 0; k < e.count; ++k) {
+        e.regs[k] = writes[k].first;
+        e.values[k] = writes[k].second;
+    }
+    if (!followable) return ++GxWorker::g_vtxFollow[1], false;
+    ++GxWorker::g_vtxFollow[0];
+    std::memcpy(desc, descCopy, sizeof descCopy);
+    std::memcpy(fmts, fmtCopy, sizeof fmtCopy);
+    return true;
+}
+
+// A display list called from the FIFO stream (command 0x40, as nw4r writes it for shapes): the
+// game thread's FIFO parser (gx_vertex.cpp) follows its layout loads the same way. False when the
+// copy has to be marked unknown.
+} // namespace
+bool GameVtxFollowDisplayListAt(uint32_t addr, uint32_t size) {
+    if (addr == 0 || size == 0) return true;
+    const auto* bytes = static_cast<const uint8_t*>(GuestToHostPtr(addr, size));
+    if (bytes == nullptr) return false;
+    return GameVtxApplyDisplayList(addr, bytes, size);
+}
+namespace {
+
 // Inlines nested lists into one flat command stream aurora can consume directly.
 // `outVerbatim` stays true only while every consumed command is appended
 // unchanged, i.e. the flattened stream is a byte-for-byte copy of the source
@@ -1309,9 +1440,12 @@ extern "C" void GxNotifyDisplayListMemoryWrite(uint32_t addr, uint32_t size) {
 extern "C" void GX__CallDisplayList_80172f64(uint32_t listAddr, uint32_t nbytes) {
     if (nbytes == 0 || listAddr == 0) return;
     // Only a descriptor load in the list changes the descriptor; unreadable lists count as one.
+    // With [video] gx_follow_layout (default on) the game thread follows the load instead
+    // (GameVtxApplyDisplayList), unless it cannot.
     if (const auto* bytes = static_cast<const uint8_t*>(GuestToHostPtr(listAddr, nbytes));
-        bytes == nullptr || GxWorker::ScanForVcdLoad(bytes, nbytes)) {
-        GxWorker::MarkVtxDescUnknown();
+        bytes == nullptr || (GxFollowLayoutLoads() ? !GxWorker::OnWorker() && !GameVtxApplyDisplayList(listAddr, bytes, nbytes)
+                                                   : GxWorker::ScanForVcdLoad(bytes, nbytes))) {
+        GxWorker::MarkVtxDescUnknown(2);
     }
     // List bytes and the arrays it indexes are GPU-side reads, so they are read when the worker runs.
     if (GxWorker::ShouldDefer()) {
