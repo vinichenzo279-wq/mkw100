@@ -207,8 +207,8 @@ bool ParseArgument(std::string_view arg) {
         const std::string_view text = arg.substr(sizeof("--race-laps=") - 1);
         int laps = 0;
         const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), laps);
-        if (text.empty() || ec != std::errc{} || end != text.data() + text.size() || laps < 1 || laps > 9) {
-            throw std::invalid_argument("--race-laps expects 1 to 9");
+        if (text.empty() || ec != std::errc{} || end != text.data() + text.size() || laps < 1 || laps > 99) {
+            throw std::invalid_argument("--race-laps expects 1 to 99");
         }
         LocalVs::SetBootLaps(laps);
         return true;

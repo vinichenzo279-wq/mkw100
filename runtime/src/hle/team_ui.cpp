@@ -237,6 +237,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x807F0044, TeamUi_BalloonUpdateInfo_807f0044, "TeamU
 namespace {
 bool gInMapMarker = false;  // game thread only
 }
+void RaceLaps_ClampLapCounterFrame(CpuContext* ctx);
 
 // AnimationGroup::PlayAnimationAtFrameAndDisable(group, id, frame)
 extern "C" void TeamUi_PlayAnimationAndDisable_8063cb20(CpuContext* ctx) {
@@ -244,6 +245,7 @@ extern "C" void TeamUi_PlayAnimationAndDisable_8063cb20(CpuContext* ctx) {
         Memory::Write8(ctx->gpr[3] + 0x35, 0);  // isActive = false
         return;
     }
+    RaceLaps_ClampLapCounterFrame(ctx);  // race_laps.cpp: the HUD lap counter past 9 laps
     MKW_GUEST_NEXT(8063CB20)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8063CB20, TeamUi_PlayAnimationAndDisable_8063cb20, "TeamUi_PlayAnimationAndDisable_8063cb20");

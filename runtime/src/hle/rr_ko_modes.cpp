@@ -24,8 +24,10 @@
 // Scaling for big fields:
 // - Lap KO knocks out exactly N racers at each lap line, N being F10's "Lap KO knockouts per lap"
 //   (1-25) or else Retro Rewind's KO-per-race setting (1-4), and the race gets the laps that takes
-//   (LapKoLaps sets them before the race): 100 racers at 25 a lap, 4 laps. At most 12 laps, Retro
-//   Rewind's own most; a field too big for that at N gets just enough more per lap (100 at 4: 9).
+//   (LapKoLaps sets them before the race): 100 racers at 25 a lap, 4 laps; 160 at 5, 32 laps. At
+//   most 50 laps (the two-digit lap counter's most); a field too big for that at N gets just enough
+//   more per lap. Retro Rewind's own
+//   code reads 12 rounds of the plan: past lap 12 its "in danger" highlight is off.
 //   (The first version kept Retro Rewind's 12-racer race length and knocked out 48 per lap.)
 // - KO Royale needs no scaling: every racer starts with the balloon setting's count.
 // - KO knocks out the same share of the field per KO race as at 12: KOs per race x racers / 12,
@@ -144,6 +146,9 @@ constexpr uint32_t kOrderCursor = 0x4A, kActiveCount = 0x4B, kPlayerCount = 0x4C
 constexpr uint32_t kDebits = 0x4E, kRaceFinished = 0x6C, kRaceInitDone = 0x6D, kLastRaceFrames = 0x6E;
 constexpr uint32_t kReweightFrames = 0x70;
 constexpr uint32_t kMaxRounds = 12;
+// Lap KO past 12 racers: at most this many laps, the most Retro Rewind's two-digit lap counter
+// (RRp_number, game_image_fap_texture_pattern_0_9.brlan: frames 0..50) can show.
+constexpr uint32_t kMaxLaps = 50;
 
 struct State {
     bool on = false;
@@ -182,12 +187,12 @@ uint32_t KnockoutsPerLap(uint32_t mgr) {
 
 // Exactly `perLap` racers go out at each lap line, as Retro Rewind does with 12 (4 per lap: 4, 4,
 // then the last 4 race the final lap for the places); the last entry is the final lap. At most
-// kMaxRounds laps (Retro Rewind's own most, and its lap counter's): a field too big for that at
+// kMaxLaps laps (50): a field too big for that at
 // `perLap` gets just enough more per lap (100 racers at 4: 9 a lap, 11 laps).
 std::vector<uint32_t> PlanPerLap(uint32_t n, uint32_t perLap, uint32_t usual) {
     if (n < 2) return {0};
     if (usual <= 1) return {n - 1};  // a 1-lap course: the race decides everything, as with 12
-    perLap = std::max({perLap, 1u, (n - 1 + kMaxRounds - 1) / kMaxRounds});
+    perLap = std::max({perLap, 1u, (n - 1 + kMaxLaps - 1) / kMaxLaps});
     std::vector<uint32_t> plan;
     for (uint32_t left = n - 1; left > 0; left -= std::min(left, perLap)) plan.push_back(std::min(left, perLap));
     return plan;

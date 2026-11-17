@@ -135,7 +135,7 @@ void Initialize() {
     local_vs_detail::thirtyFps = c.localVsThirtyFps.value_or(false);
     local_vs_detail::adaptiveFps = c.localVsAdaptiveFps.value_or(true);
     local_vs_detail::instantBoxes = c.localVsInstantBoxes.value_or(true);
-    local_vs_detail::laps = std::clamp(int(c.localVsLaps.value_or(0)), 0, 9);
+    local_vs_detail::laps = std::clamp(int(c.localVsLaps.value_or(0)), 0, 99);
     local_vs_detail::cpuDifficulty = std::clamp(int(c.localVsCpuDifficulty.value_or(0)), 0, 5);
     local_vs_detail::veryHardBoost = std::clamp(int(c.localVsVeryHardBoost.value_or(40)), 0, local_vs_detail::kMaxCpuBoost);
     local_vs_detail::impossibleBoost = std::clamp(int(c.localVsImpossibleBoost.value_or(80)), 0, local_vs_detail::kMaxCpuBoost);
@@ -223,7 +223,7 @@ uint32_t LocalPlayers() {
     return humans;
 }
 int Laps() { return local_vs_detail::bootLaps.load() ? local_vs_detail::bootLaps.load() : local_vs_detail::laps.load(); }
-void SetBootLaps(int n) { local_vs_detail::bootLaps = std::clamp(n, 1, 9); }
+void SetBootLaps(int n) { local_vs_detail::bootLaps = std::clamp(n, 1, 99); }
 int DesiredCount() { return std::min(local_vs_detail::desiredCount.load(), MaxRacers()); }
 void SetDesiredCount(int count) {
     count = std::clamp(count, 1, MaxRacers());
@@ -255,7 +255,7 @@ void DrawSettings() {
     int lapCount = laps.load();
     if (!RuntimeProduct::IsRetroRewind()) {
         ImGui::SetNextItemWidth(240);
-        if (ImGui::SliderInt("Laps", &lapCount, 0, 9, lapCount == 0 ? "Default (3)" : "%d", ImGuiSliderFlags_AlwaysClamp)) {
+        if (ImGui::SliderInt("Laps", &lapCount, 0, 99, lapCount == 0 ? "Default (3)" : "%d", ImGuiSliderFlags_AlwaysClamp)) {
             laps = lapCount;
             RuntimeConfigFile::WriteSetting("local_vs", "laps", std::to_string(lapCount));
         }
@@ -268,7 +268,7 @@ void DrawSettings() {
             lapKoPerLap = perLap;
             RuntimeConfigFile::WriteSetting("local_vs", "lap_ko_per_lap", std::to_string(perLap));
         }
-        ImGui::TextUnformatted("Past 12 racers. At most 12 laps: a field too big for that gets a few more per lap.");
+        ImGui::TextUnformatted("Past 12 racers. At most 50 laps: a field too big for that gets a few more per lap.");
     }
     bool varied = diversity.load();
     if (ImGui::Checkbox("Varied CPU characters, karts and bikes", &varied)) {

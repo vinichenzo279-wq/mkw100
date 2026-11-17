@@ -216,7 +216,9 @@ public sealed class ArrayOverflowSites
     /// <summary>
     /// cmpimm: a `cmpwi`/`cmplwi crF, rA, 12` that keeps a pack's code to racers 0..11 (a guard or a
     /// loop bound over a [12] table now shadowed for 12+) compares with the listed value instead
-    /// (the site's stride field). Only a compare with 12 is accepted, so a moved site fails loudly.
+    /// (the site's stride field). Only a compare with 12 is accepted, or with one of the values the
+    /// site's offset field lists (one per byte, e.g. 0x0C08 for the lap count's 8, or 12 where Retro
+    /// Rewind patched it), so a moved site fails loudly.
     /// </summary>
     private static IReadOnlyList<IrInstruction> RewriteCompareImmediate(
         PpcInstruction ins, IReadOnlyList<IrInstruction> ir, Site site, Func<string, string> fail)
@@ -225,8 +227,14 @@ public sealed class ArrayOverflowSites
         var op = (int)(word >> 26);
         if (op is not (10 or 11) || ((word >> 21) & 1) != 0)
             fail("not a 32-bit cmpwi or cmplwi");
-        if ((word & 0xFFFF) != 12)
-            fail($"compares with {(short)(word & 0xFFFF)}, not 12");
+        // The offset field lists the accepted original values, one per byte (0x0C08: 8 or 12, for a
+        // compare a pack's patch may already have changed); 0 means 12.
+        var accepted = new List<int>();
+        for (var shift = 0; shift < 32; shift += 8)
+            if (((site.Offset >> shift) & 0xFF) != 0) accepted.Add((site.Offset >> shift) & 0xFF);
+        if (accepted.Count == 0) accepted.Add(12);
+        if (!accepted.Contains((int)(word & 0xFFFF)))
+            fail($"compares with {(short)(word & 0xFFFF)}, not {string.Join(" or ", accepted)}");
         if (ir.Count != 1 || ir[0] is not IrSetCrField)
             fail("unexpected lifted form");
         var field = (int)((word >> 23) & 7);

@@ -8,8 +8,9 @@
 //  - four functions with the same choice inline (0x80532F88, 0x805342E8, 0x805349B8, 0x80534CCC),
 //    whose callees do not test the bit.
 // Here the constructor gets the count in r5, the getter returns it, and the four inline ones run
-// with the bit set and the count stored, the bit cleared again afterwards. The constructor only
-// accepts 1..9, so the setting goes to 9. Base game only (see RaceLaps_Wanted).
+// with the bit set and the count stored, the bit cleared again afterwards. The constructor takes
+// any count (it allocates a split time per lap), so the setting goes to 99. Base game only (see
+// RaceLaps_Wanted).
 
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
@@ -104,3 +105,19 @@ extern "C" void RaceLaps_80534ccc(CpuContext* ctx) {
     RaceLaps_WithCount(ctx, MKW_GUEST_NEXT(80534CCC));
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80534CCC, RaceLaps_80534ccc, "RaceLaps_80534ccc");
+
+// CtrlRaceLap (the HUD lap counter, Init 0x807EF6E8, OnUpdate 0x807EF810) sets the frames of its two
+// number animations (this lap, and the race's laps) through 0x8063CB20; the frame is the number. The
+// game's lap_number has the digits 0..9 only, so past 9 laps a frame past them read whatever followed
+// (garbage texture: an unmapped read, then a panic). Retro Rewind's two-digit RRp_number (chosen past
+// 9 laps, the name at 0x808A9CC7) goes to 50. The frame is kept within the counter's numbers: past 9
+// laps the game's counter shows 9.
+// Called by the one wrapper of 0x8063CB20 (team_ui.cpp) before the game's function.
+void RaceLaps_ClampLapCounterFrame(CpuContext* ctx) {
+    const uint32_t lr = ctx->lr;
+    if (lr == 0x807EF768 || lr == 0x807EF7A0 || lr == 0x807EF8B8) {
+        const bool twoDigit = Memory::Read8(0x808A9CC7) == 'R';
+        const double most = twoDigit ? 50.0 : 9.0;
+        if (ctx->fpr[1].d > most) ctx->fpr[1].d = most;
+    }
+}
