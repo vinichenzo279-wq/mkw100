@@ -299,6 +299,10 @@ bool HeapCheck() {
     return g_heapCheck;
 }
 
+uint32_t Section() {
+    return g_battle ? kSectionP1Battle : g_gp ? kSectionP1Gp : g_teams ? kSectionP1TeamVs : kSectionP1Vs;
+}
+
 } // namespace BootRace
 
 // ArgumentParser::parse, picks the boot section in SectionMgr::Init.

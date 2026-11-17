@@ -21,6 +21,7 @@
 #include "local_vs.h"
 #include "hle/teams.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -99,6 +100,18 @@ uint32_t g_lastRetrace = 0;
 uint32_t g_lagFrames = 0;
 uint32_t g_raceinfo = 0;
 bool g_done = false;
+// MKW100_TEST_SERIES=<races>: a series test (a Retro Rewind KO series, rr_ko_modes.cpp). Each
+// race is checked and reported as usual; the run then stays for the results pages and the next
+// race (--race-auto taps through them) and ends after <races> races, or when the series does.
+uint32_t g_seriesRaces = 0;
+bool g_seriesWait = false;
+uint32_t SeriesLimit() {
+    static const uint32_t limit = [] {
+        const char* value = std::getenv("MKW100_TEST_SERIES");
+        return value ? uint32_t(std::max(std::atoi(value), 0)) : 0u;
+    }();
+    return limit;
+}
 
 uint32_t PlayerCount() {
     const uint32_t racedata = Memory::Read32(MKW_GADDR(809BD728));
@@ -142,6 +155,14 @@ void Finish(uint32_t raceinfo, uint32_t playerCount) {
                 static_cast<unsigned long long>(g_trajectory));
     std::fflush(stdout);
     std::fflush(stderr);
+    if (SeriesLimit() != 0) {
+        ++g_seriesRaces;
+        std::printf("[race-oracle] series race %u done\n", g_seriesRaces);
+        std::fflush(stdout);
+        if (g_seriesRaces >= SeriesLimit()) RuntimeFlushAndExit(EXIT_SUCCESS);
+        g_seriesWait = true;
+        return;
+    }
     // MKW100_TEST_RESULTS=<seconds>: keep running past the finish so the results and standings
     // pages are exercised too (the scripted driver taps A through them); a crash there fails the
     // case. Then exit as usual.
@@ -169,6 +190,15 @@ extern "C" void Raceinfo_Update_805331b4(CpuContext* ctx) {
     LocalVs::TestItems(ctx, raceinfo);
     LocalVs::PollFinishNow(ctx);
     LocalVs::AdaptiveFramerate(ctx);
+    if (g_done && g_seriesWait && Memory::Read32(raceinfo + kRaceinfoStage) < kStageRace) {
+        // The series' next race: check it like the first.
+        g_seriesWait = false;
+        g_done = false;
+        g_framesSeen = 0;
+        g_lagFrames = 0;
+        g_raceinfo = 0;
+        g_trajectory = kFnvOffset;
+    }
     if (!BootRace::Scripted() || g_done) {
         return;
     }
@@ -318,6 +348,18 @@ REGISTER_NATIVE_WRAPPER_AS(0x80601AEC, RaceOracle_PageActivate_80601aec, "RaceOr
 // SectionMgr::SetNextSection(this, id, animDirection)
 extern "C" void RaceOracle_SetNextSection_80635a3c(CpuContext* ctx) {
     ctx->gpr[4] = Teams::AwardSection(ctx->gpr[4]);  // the ceremony of a teams series
+    // Series tests: after a race the next one starts straight away in the boot race's section
+    // (same course; the menu scenario carries the series on), not through the menus.
+    // Any other section after a race (the series is over: back to the menus) ends the test.
+    constexpr uint32_t kSectionNextRace = 0x4B;
+    if (SeriesLimit() != 0 && g_seriesWait && ctx->gpr[4] != kSectionNextRace && ctx->gpr[4] != BootRace::Section()) {
+        std::printf("[race-oracle] series over after %u races (next section 0x%02X)\n", g_seriesRaces, ctx->gpr[4]);
+        RuntimeFlushAndExit(EXIT_SUCCESS);
+    }
+    if (SeriesLimit() != 0 && g_seriesWait && ctx->gpr[4] == kSectionNextRace) {
+        std::printf("[race-oracle] series: next section 0x%02X -> race section 0x%02X\n", ctx->gpr[4], BootRace::Section());
+        ctx->gpr[4] = BootRace::Section();
+    }
     if (ResultsTrace()) std::printf("[race-oracle] next section 0x%02X\n", ctx->gpr[4]);
     MKW_GUEST_NEXT(80635A3C)(ctx);
 }
