@@ -20,6 +20,7 @@
 #include "runtime_log.h"
 #include "local_vs.h"
 #include "hle/teams.h"
+#include "hle/item_fever.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -167,6 +168,7 @@ extern "C" void Raceinfo_Update_805331b4(CpuContext* ctx) {
     const uint32_t raceinfo = ctx->gpr[3];
     MKW_GUEST_NEXT(805331B4)(ctx);
     LocalVs::TestItems(ctx, raceinfo);
+    ItemFever::RaceFrame(ctx, raceinfo);
     LocalVs::PollFinishNow(ctx);
     LocalVs::AdaptiveFramerate(ctx);
     if (!BootRace::Scripted() || g_done) {

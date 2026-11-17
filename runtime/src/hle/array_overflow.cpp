@@ -195,6 +195,16 @@ extern "C" uint32_t MKW100_TraceSignedByte(uint32_t value, uint32_t address) {
     return value;
 }
 
+extern "C" uint32_t MKW100_IndexedAdd(uint32_t a, uint32_t b, uint32_t table, uint32_t size, uint32_t shadow) {
+    if (a == table && b >= kInlineSlots * size && b < kMaxPlayers * size) {
+        return shadow + (b - kInlineSlots * size);
+    }
+    if (b == table && a >= kInlineSlots * size && a < kMaxPlayers * size) {
+        return shadow + (a - kInlineSlots * size);
+    }
+    return a + b;
+}
+
 extern "C" uint32_t MKW100_IndexedRestore(uint32_t base, uint32_t table, uint32_t size, uint32_t shadow) {
     return base == shadow - kInlineSlots * size ? table : base;
 }
