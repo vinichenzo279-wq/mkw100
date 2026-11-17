@@ -7,6 +7,7 @@
 // Retro Rewind has no function at 0x81816EE8; the Item::Manager wrappers change nothing unpatched.
 
 #include "hle/mod_build.h"
+#include "hle/item_fever.h"
 #include "abi_bridge.h"
 #include "guest_function_imports.h"
 #include "memory.h"
@@ -17,7 +18,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <iterator>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -271,3 +276,123 @@ extern "C" void ItemManager_UpdateTotalItemCountMinus30_80799a50(CpuContext* ctx
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80799A50, ItemManager_UpdateTotalItemCountMinus30_80799a50,
                            "ItemManager_UpdateTotalItemCountMinus30_80799a50");
+
+// Item Fever's per-racer tables found by scripts/mkw100/pack_racer_tables.py: every indexed access
+// to one is an index/indexb/indexadd site (array-sites.txt, generated block), so racers 12..254
+// use its shadow, and the `racer < 12` compares in front of them compare with 255. Item Fever sets
+// these tables up for 12 racers (a constructor or reset loop with a fixed count of 12, or a
+// pointer stepping through them, which must stay at 12). When a race starts, a shadow gets the
+// value all 12 elements were given if they agree (a reset value), else zeroes.
+namespace {
+
+struct RacerTable { uint32_t table, size, shadow; };
+constexpr RacerTable kRacerTables[] = {
+#include "item_fever_racer_tables.inc"
+};
+constexpr uint32_t kShadowRacers = 255 - 12;
+
+void ReadyRacerTables() {
+    for (const RacerTable& t : kRacerTables) {
+        bool uniform = true;
+        for (uint32_t i = 1; i < 12 && uniform; ++i) {
+            for (uint32_t b = 0; b < t.size; ++b) {
+                if (Memory::Read8(t.table + i * t.size + b) != Memory::Read8(t.table + b)) { uniform = false; break; }
+            }
+        }
+        for (uint32_t i = 0; i < kShadowRacers; ++i) {
+            for (uint32_t b = 0; b < t.size; ++b) {
+                Memory::Write8(t.shadow + i * t.size + b, uniform ? Memory::Read8(t.table + b) : 0);
+            }
+        }
+    }
+}
+
+// MKW100_TEST_RACER_TABLES: every 600 race frames, which tables racers 12+ have written to (a
+// shadow element that differs from element 0's value at race start).
+std::vector<uint8_t> g_startValues;
+void LogRacerTables(uint32_t frame) {
+    static const bool test = std::getenv("MKW100_TEST_RACER_TABLES") != nullptr;
+    if (!test) return;
+    if (frame == 0 || g_startValues.empty()) {
+        g_startValues.clear();
+        for (const RacerTable& t : kRacerTables)
+            for (uint32_t b = 0; b < t.size; ++b) g_startValues.push_back(Memory::Read8(t.shadow + b));
+        return;
+    }
+    if (frame % 600 != 0) return;
+    uint32_t used = 0, offset = 0;
+    std::string list;
+    for (const RacerTable& t : kRacerTables) {
+        uint32_t racers = 0;
+        for (uint32_t i = 0; i < kShadowRacers; ++i) {
+            for (uint32_t b = 0; b < t.size; ++b) {
+                if (Memory::Read8(t.shadow + i * t.size + b) != g_startValues[offset + b]) { ++racers; break; }
+            }
+        }
+        offset += t.size;
+        if (racers) {
+            ++used;
+            if (list.size() < 900) {
+                char item[32];
+                std::snprintf(item, sizeof item, " %08X:%u", t.table, racers);
+                list += item;
+            }
+        }
+    }
+    RT_LOGF("item-fever", "frame %u: racers 12+ wrote %u of %zu tables:%s\n", frame, used,
+            std::size(kRacerTables), list.c_str());
+}
+
+// MKW100_TEST_GIVE_ITEM=<item id>: from race frame 600, every 300 frames, every CPU holding nothing
+// gets that item through the game's own (patched) Item::PlayerInventory::SetItem, so the item's
+// whole path runs. Logs how many of the previous round's items were used.
+void TestGiveItem(CpuContext* ctx, uint32_t raceinfo) {
+    static const long item = [] {
+        const char* text = std::getenv("MKW100_TEST_GIVE_ITEM");
+        return text && *text ? std::strtol(text, nullptr, 0) : -1L;
+    }();
+    if (item < 0) return;
+    if (Memory::Read32(raceinfo + 0x28) != 2) return;  // racing
+    const uint32_t frame = Memory::Read32(raceinfo + 0x20);
+    if (frame < 600 || frame % 300 != 0) return;
+    const uint32_t manager = Memory::Read32(0x809C3618);  // Item::Manager::sInstance
+    if (!manager) return;
+    const uint32_t count = Memory::Read8(manager + 0x10);
+    const uint32_t players = Memory::Read32(manager + 0x14);
+    static uint32_t lastGiven = 0;
+    uint32_t stillHeld = 0, given = 0, other = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        const uint32_t player = players + i * 0x248;     // Item::Player
+        if (Memory::Read8(player + 0x19)) continue;      // human
+        const uint32_t inventory = player + 0x88;
+        const uint32_t held = Memory::Read32(inventory + 4);
+        if (held == uint32_t(item)) { ++stillHeld; continue; }
+        if (held != 0x14) { ++other; continue; }         // 0x14: no item
+        const CpuContext saved = *ctx;
+        ctx->gpr[3] = inventory;
+        ctx->gpr[4] = uint32_t(item);
+        ctx->gpr[5] = 0;
+        InvokeIndirectCpu(0x807BC940, ctx);              // Item::PlayerInventory::SetItem
+        *ctx = saved;
+        given += Memory::Read32(inventory + 4) == uint32_t(item);
+    }
+    RT_LOGF("item-fever", "frame %u: gave item 0x%lX to %u CPUs; of last round's %u, %u still held, "
+            "%u CPUs hold something else\n", frame, item, given, lastGiven, stillHeld, other);
+    lastGiven = given + stillHeld;
+}
+
+} // namespace
+
+void ItemFever::RaceFrame(CpuContext* ctx, uint32_t raceinfo) {
+    if (!ModBuild::IsKnownItemFever()) return;
+    static uint32_t lastRaceinfo = 0, lastFrame = 0;
+    const uint32_t frame = Memory::Read32(raceinfo + 0x20);
+    if (raceinfo != lastRaceinfo || frame < lastFrame) {
+        ReadyRacerTables();
+        LogRacerTables(0);
+    }
+    lastRaceinfo = raceinfo;
+    lastFrame = frame;
+    LogRacerTables(frame);
+    TestGiveItem(ctx, raceinfo);
+}
