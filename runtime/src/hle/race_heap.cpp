@@ -311,8 +311,8 @@ uint32_t RaceHeap_CurrentSceneHeap(uint32_t field) {
     return scene == 0 ? 0 : Memory::Read32(scene + field);
 }
 
-// For pack code that checks a scene heap's free space before it allocates (Item Fever's item rain
-// models): what the fallback below still has behind the EGG::ExpHeap `egg` in races of more than
+// For pack code that checks a scene heap's free space before it allocates (Item Fever's model
+// loads, item_fever.cpp): what the fallback below still has behind the EGG::ExpHeap `egg` in races of more than
 // 12 players (structsMem2 and structsDebug behind structsMem1, structsDebug behind structsMem2),
 // else 0. EGG::ExpHeap::getTotalFreeSize (0x80226C88) per heap; `ctx` is restored.
 uint32_t RaceHeap_FallbackFree(CpuContext* ctx, uint32_t egg) {

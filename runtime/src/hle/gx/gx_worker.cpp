@@ -335,6 +335,15 @@ void Sync() {
 
 void SetWaitCallback(void (*callback)()) { g_waitCallback = callback; }
 
+// The worker's native thread handle (the test profiler samples it), or null when it is not running.
+void* NativeThreadHandle() {
+#if defined(_WIN32)
+    return g_thread != nullptr && Active() ? g_thread->native_handle() : nullptr;
+#else
+    return nullptr;
+#endif
+}
+
 void BeginInline() {
     if (detail::t_inlineDepth == 0 && Active() && !detail::t_onWorker) {
         Sync();

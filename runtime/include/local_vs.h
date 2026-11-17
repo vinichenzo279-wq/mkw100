@@ -48,4 +48,5 @@ ItemCycler CurrentItemCycler();
 uint32_t PointsFor(uint32_t place, uint32_t count);
 // The 0-based ItemSlot.bin row (of `rows`) that race position `position` (0-based) of `count` draws from.
 uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows);
+uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows, ItemDistribution distribution);
 }

@@ -1,6 +1,7 @@
 // gx_vertex.cpp - Vertex Descriptor and Attribute Functions
 #include "gx_internal.h"
 #include "gx_stream_common.h"
+#include "gx_cp_decode.h"
 #include "fiber_manager.h"
 #include "guest_interrupt_context.h"
 #include "runtime_log.h"
@@ -62,8 +63,32 @@ void SetGameVtxDesc(uint32_t attr, uint32_t type, uint32_t rawAttr) {
     if (rawAttr == GX_VA_NBT) s_gameVtxDesc[GX_VA_NBT] = GX_NONE;
 }
 
+uint64_t s_vtxQueries = 0, s_vtxSyncs = 0, s_vtxMismatches = 0;
+
+// MKW100_TEST_VTX_VERIFY: every query syncs and compares the copy with the worker's state (counted
+// in the test profiler's vertex statistics, the first few logged).
+bool VerifyGameVertexState() {
+    static const bool verify = std::getenv("MKW100_TEST_VTX_VERIFY") != nullptr;
+    return verify;
+}
+
 void SyncGameVertexState() {
+    ++s_vtxQueries;
+    if (!GxWorker::g_vtxDescUnknown && GxWorker::Active() && VerifyGameVertexState()) {
+        GX_SYNC_INLINE();
+        bool same = true;
+        for (uint32_t i = 0; i < 26; ++i) same &= s_gameVtxDesc[i] == g_hleGxState.vtxDesc[i];
+        for (uint32_t f = 0; f < 8; ++f)
+            for (uint32_t i = 0; i < 26; ++i)
+                same &= GxCpDecode::SameVtxAttrFmt(s_gameVtxAttrFmt[f][i], g_hleGxState.vtxAttrFmt[f][i]);
+        if (!same && ++s_vtxMismatches <= 8) {
+            std::printf("[gx] vertex state copy differs from the worker's (query %llu)\n",
+                        static_cast<unsigned long long>(s_vtxQueries));
+        }
+        if (!same) GxWorker::g_vtxDescUnknown = true;
+    }
     if (GxWorker::g_vtxDescUnknown || !GxWorker::Active()) {
+        ++s_vtxSyncs;
         GX_SYNC_INLINE();
         for (uint32_t i = 0; i < 26; ++i) s_gameVtxDesc[i] = g_hleGxState.vtxDesc[i];
         std::memcpy(s_gameVtxAttrFmt, g_hleGxState.vtxAttrFmt, sizeof s_gameVtxAttrFmt);
@@ -83,6 +108,145 @@ const VtxAttrFmt (*GameVtxAttrFmt())[26] {
     return s_gameVtxAttrFmt;
 }
 } // namespace
+
+// Test profiler statistics: game-thread vertex state queries, how many synced, why the copy went
+// unknown, and (MKW100_TEST_VTX_VERIFY) how often it was wrong.
+void GxVertexStats(uint64_t out[12]) {
+    out[0] = s_vtxQueries; out[1] = s_vtxSyncs;
+    for (int i = 0; i < 3; ++i) out[2 + i] = GxWorker::g_vtxMarks[i];
+    out[5] = s_vtxMismatches;
+    for (int i = 0; i < 3; ++i) out[6 + i] = GxWorker::g_vtxFollow[i];
+    for (int i = 0; i < 3; ++i) out[9 + i] = GxWorker::g_vtxMarksEffective[i];
+}
+
+// The game thread's parse of the FIFO bytes it records ([video] gx_follow_layout). The HLE
+// GXBegin is not in the byte stream; the vertex data that follows it is, and before this a float
+// pair in it that read as "08 5x" made the next GXGetVtxDesc wait for everything queued so far:
+// every particle emitter did, about 6.6 waits a frame and 11-14% of the game thread at 128 racers.
+// The parser steps over vertex data (its size from the copy) and XF payloads, applies CP layout
+// loads to the copy, and falls back to the conservative scan ("lost") wherever it cannot be sure of
+// the command boundaries: until the next GXBegin (always at a boundary) after an unknown opcode, a
+// draw while the copy is unknown, inline GX work (whose bytes it does not see) and display list
+// recording.
+bool GameVtxFollowDisplayListAt(uint32_t addr, uint32_t size);  // gx_dl.cpp
+
+namespace {
+struct GameFifoParser {
+    bool lost = true;
+    uint64_t skip = 0;     // vertex data / payload bytes to step over
+    uint8_t cmd = 0;
+    uint8_t buf[8] = {};
+    uint32_t have = 0, need = 0;
+} s_fifo;
+
+// Test profiler statistics: why the parser lost the stream, and the effective marks it made.
+enum { kLostInline, kLostDlRecord, kLostOpcode, kLostDrawUnknown, kLostBegin, kLostScanHit, kLostCount };
+uint64_t s_fifoLost[kLostCount] = {};
+uint64_t s_fifoOpcodes[256] = {};
+void FifoLost(int why) {
+    if (!s_fifo.lost) ++s_fifoLost[why];
+    s_fifo.lost = true;
+}
+
+void GameFifoCommandDone() {
+    auto& p = s_fifo;
+    const uint8_t op = p.cmd & 0xF8;
+    if (p.cmd == 0x08 || op == 0x08) {  // CP: register, value
+        const uint8_t reg = p.buf[0];
+        const uint32_t value = (uint32_t(p.buf[1]) << 24) | (uint32_t(p.buf[2]) << 16) | (uint32_t(p.buf[3]) << 8) | p.buf[4];
+        if (!GxWorker::g_vtxDescUnknown) GxCpDecode::ApplyCpLayoutWriteInto(s_gameVtxDesc, s_gameVtxAttrFmt, reg, value);
+    } else if (op == 0x10) {  // XF: count - 1, address, then the data
+        p.skip = (((uint32_t(p.buf[0]) << 8) | p.buf[1]) + 1u) * 4u;
+    } else if (p.cmd >= 0x80 && p.cmd < 0xC0) {  // draw: vertex count, then the vertices
+        if (GxWorker::g_vtxDescUnknown) {
+            FifoLost(kLostDrawUnknown);
+        } else {
+            const uint32_t count = (uint32_t(p.buf[0]) << 8) | p.buf[1];
+            p.skip = uint64_t(count) * GxCpDecode::LayoutVertexSize(s_gameVtxDesc, s_gameVtxAttrFmt[p.cmd & 7]);
+        }
+    } else if (op == 0x40) {  // a display list called from the FIFO: address, size
+        const uint32_t addr = (uint32_t(p.buf[0]) << 24) | (uint32_t(p.buf[1]) << 16) | (uint32_t(p.buf[2]) << 8) | p.buf[3];
+        const uint32_t size = (uint32_t(p.buf[4]) << 24) | (uint32_t(p.buf[5]) << 16) | (uint32_t(p.buf[6]) << 8) | p.buf[7];
+        if (!GxWorker::g_vtxDescUnknown && !GameVtxFollowDisplayListAt(addr, size)) GxWorker::MarkVtxDescUnknown(2);
+    }
+    p.need = p.have = 0;
+}
+} // namespace
+
+void GameFifoBytes(const uint8_t* data, size_t size) {
+    auto& p = s_fifo;
+    if (GxWorker::detail::t_inlineDepth != 0) FifoLost(kLostInline);
+    if (IsDisplayListActive()) FifoLost(kLostDlRecord);
+    while (size != 0) {
+        if (p.lost) {
+            const bool known = !GxWorker::g_vtxDescUnknown;
+            GxWorker::ScanFifoBytes(data, size);
+            if (known && GxWorker::g_vtxDescUnknown) ++s_fifoLost[kLostScanHit];
+            return;
+        }
+        if (p.skip != 0) {
+            const uint64_t n = p.skip < size ? p.skip : size;
+            p.skip -= n;
+            data += n;
+            size -= size_t(n);
+            continue;
+        }
+        if (p.need != 0) {
+            while (size != 0 && p.have < p.need) {
+                p.buf[p.have++] = *data++;
+                --size;
+            }
+            if (p.have == p.need) GameFifoCommandDone();
+            continue;
+        }
+        const uint8_t c = *data++;
+        --size;
+        const uint8_t op = c & 0xF8;
+        p.cmd = c;
+        if (c == 0x00 || op == 0x48) continue;            // NOP, invalidate vertex cache
+        if (c == 0x61) { p.skip = 4; continue; }          // BP
+        if (op == 0x08) { p.need = 5; continue; }         // CP
+        if (op == 0x10) { p.need = 4; continue; }         // XF header
+        if (op >= 0x20 && op <= 0x38) { p.skip = 4; continue; }  // indexed XF
+        if (op == 0x40) { p.need = 8; continue; }         // call display list
+        if (c >= 0x80 && c < 0xC0) { p.need = 2; continue; }      // draw
+        ++s_fifoOpcodes[c];
+        FifoLost(kLostOpcode);                            // not a command: stop trusting the stream
+        GxWorker::MarkVtxDescUnknown(1);
+    }
+}
+
+// A GXBegin on the game thread: a command boundary, and the vertex data that follows is stepped
+// over when the copy knows the vertex size.
+void GameVtxNoteBegin(uint32_t vf, uint32_t nv) {
+    auto& p = s_fifo;
+    p.need = p.have = 0;
+    p.skip = 0;
+    p.lost = false;
+    if (vf >= 8 || GxWorker::g_vtxDescUnknown || !GxWorker::Active() || !GxFollowLayoutLoads() ||
+        GxWorker::detail::t_inlineDepth != 0)
+        FifoLost(kLostBegin);
+    if (!p.lost) p.skip = uint64_t(nv) * GxCpDecode::LayoutVertexSize(s_gameVtxDesc, s_gameVtxAttrFmt[vf]);
+}
+
+void GxFifoParserStats() {
+    std::printf("[race-perf] FIFO parse lost: inline %llu, display list recording %llu, bad opcode %llu, draw while unknown %llu, "
+                "begin while unknown %llu; conservative-scan marks %llu; bad opcodes:",
+                (unsigned long long)s_fifoLost[0], (unsigned long long)s_fifoLost[1], (unsigned long long)s_fifoLost[2],
+                (unsigned long long)s_fifoLost[3], (unsigned long long)s_fifoLost[4], (unsigned long long)s_fifoLost[5]);
+    for (int i = 0; i < 256; ++i)
+        if (s_fifoOpcodes[i]) std::printf(" %02x:%llu", i, (unsigned long long)s_fifoOpcodes[i]);
+    std::printf("%c", 10);
+}
+
+// The game thread's copy for gx_dl.cpp, which follows the CP layout loads of display lists in it
+// (GameVtxApplyDisplayList): null while the copy is unknown, or off the game thread.
+bool GameVtxShadow(GXAttrType*& desc, VtxAttrFmt (*&fmts)[26]) {
+    if (GxWorker::OnWorker() || GxWorker::g_vtxDescUnknown || !GxWorker::Active()) return false;
+    desc = s_gameVtxDesc;
+    fmts = s_gameVtxAttrFmt;
+    return true;
+}
 
 extern "C" void GX__ClearVtxDesc_8016dc34() {
     if (!GxWorker::OnWorker()) for (auto& type : s_gameVtxDesc) type = GX_NONE;
@@ -366,6 +530,7 @@ extern "C" void GX__Begin_8016f0f0(uint32_t t, uint32_t vf, uint32_t nv) {
         return;
     }
     ServiceDeferredTimingDuringGxWork();
+    if (!GxWorker::OnWorker()) GameVtxNoteBegin(vf, nv);
     GX_DEFER_CALL(GxBeginImpl, t, vf, nv);
     GxBeginImpl(t, vf, nv);
 }

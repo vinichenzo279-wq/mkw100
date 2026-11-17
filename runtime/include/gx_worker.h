@@ -34,8 +34,14 @@ void Abandon();
 // Set on the game thread whenever recorded or inline work may change the CP vertex descriptor
 // behind the game thread's copy of it (FIFO writes, display lists); see gx_vertex.cpp.
 inline constinit bool g_vtxDescUnknown = true;
-inline void MarkVtxDescUnknown() noexcept {
-    if (!detail::t_onWorker) g_vtxDescUnknown = true;
+// Why the copy went unknown (test profiler statistics): 0 other, 1 FIFO bytes, 2 display list.
+inline constinit uint64_t g_vtxMarks[3] = {};
+// Display lists with a layout load: followed, walk failed, copy already unknown.
+inline constinit uint64_t g_vtxFollow[3] = {};
+// Marks that made a known copy unknown, by reason as g_vtxMarks.
+inline constinit uint64_t g_vtxMarksEffective[3] = {};
+inline void MarkVtxDescUnknown(int why = 0) noexcept {
+    if (!detail::t_onWorker) { g_vtxMarksEffective[why] += !g_vtxDescUnknown; g_vtxDescUnknown = true; ++g_vtxMarks[why]; }
 }
 // Only a CP register load of the descriptor (command 0x08, register 0x50-0x5F VCD_LO, 0x60-0x6F
 // VCD_HI) or of the attribute formats (0x70-0x9F VAT A/B/C) changes them, so the written byte stream is scanned for that pair instead of marking on
@@ -50,10 +56,24 @@ inline bool ScanForVcdLoad(const uint8_t* data, size_t size) noexcept {
     }
     return false;
 }
+// The conservative scan: a "08 5x..9x" byte pair anywhere marks the copy unknown.
+inline void ScanFifoBytes(const uint8_t* data, size_t size) noexcept {
+    if (IsVcdLoad(g_cpPrevByte, data[0]) || ScanForVcdLoad(data, size)) MarkVtxDescUnknown(1);
+    g_cpPrevByte = data[size - 1];
+}
+} // namespace GxWorker
+// With [video] gx_follow_layout the game thread parses the FIFO command stream instead
+// (gx_vertex.cpp): vertex data and XF payloads are stepped over, CP layout loads applied to its copy.
+bool GxFollowLayoutLoads();
+void GameFifoBytes(const uint8_t* data, size_t size);
+namespace GxWorker {
 inline void NoteFifoBytes(const uint8_t* data, size_t size) noexcept {
     if (detail::t_onWorker || size == 0) return;
-    if (IsVcdLoad(g_cpPrevByte, data[0]) || ScanForVcdLoad(data, size)) g_vtxDescUnknown = true;
-    g_cpPrevByte = data[size - 1];
+    if (GxFollowLayoutLoads()) {
+        GameFifoBytes(data, size);
+        return;
+    }
+    ScanFifoBytes(data, size);
 }
 inline void NoteFifoWrite(uint32_t value, uint32_t sizeBytes) noexcept {
     uint8_t bytes[4];

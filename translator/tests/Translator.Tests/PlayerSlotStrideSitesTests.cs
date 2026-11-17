@@ -9,6 +9,8 @@ using Xunit;
 namespace Translator.Tests;
 
 /// <summary>mkw100: listed `mulli rD, rA, 0xF0` sites lift to the overflow slot helper.</summary>
+// The site lists are process-wide: the suites that swap them must not run at the same time.
+[Collection("mkw100 site lists")]
 public class PlayerSlotStrideSitesTests
 {
     // Far from any address other suites assemble at: Current is process-wide.

@@ -32,8 +32,9 @@ public sealed class ArrayOverflowSites
     public const string RacerByteHelper = "MKW100_RacerByte";
     public const string TraceSignedByteHelper = "MKW100_TraceSignedByte";
     public const string LoadHookHelper = "MKW100_LoadHook";
+    public const string IndexedAddHelper = "MKW100_IndexedAdd";
 
-    public enum SiteKind { Scale, Step, Index, ObjAdd, CmpImm, SByte, LoadHook }
+    public enum SiteKind { Scale, Step, Index, ObjAdd, CmpImm, SByte, LoadHook, IndexB, IndexAdd }
 
     /// <param name="Offset">scale/step: byte offset from the instance. index: the table's address.</param>
     /// <param name="Shadow">index only: where elements 12.. of the table live.</param>
@@ -106,6 +107,10 @@ public sealed class ArrayOverflowSites
         }
         if (site.Kind == SiteKind.Index)
             return RewriteIndexed(ins, ir, site, Fail);
+        if (site.Kind == SiteKind.IndexB)
+            return RewriteIndexed(ins, ir, site, Fail, tableInB: true);
+        if (site.Kind == SiteKind.IndexAdd)
+            return RewriteIndexAdd(ins, site, Fail);
         if (site.Kind == SiteKind.ObjAdd)
             return RewriteObjectAdd(ins, site, Fail);
         if (site.Kind == SiteKind.CmpImm)
@@ -152,7 +157,7 @@ public sealed class ArrayOverflowSites
     /// so the code's own registers are unchanged afterwards.
     /// </summary>
     private static IReadOnlyList<IrInstruction> RewriteIndexed(
-        PpcInstruction ins, IReadOnlyList<IrInstruction> ir, Site site, Func<string, string> fail)
+        PpcInstruction ins, IReadOnlyList<IrInstruction> ir, Site site, Func<string, string> fail, bool tableInB = false)
     {
         var word = ins.Word;
         var xo = (int)((word >> 1) & 0x3FF);
@@ -161,11 +166,15 @@ public sealed class ArrayOverflowSites
         var rb = (int)((word >> 11) & 31);
         if (word >> 26 != 31 || !IndexedForms.Contains(xo))
             fail("not an X-form indexed load or store");
+        // rA = 0 reads as the value 0, not r0; rB is always a register.
         if (ra == 0 || ra == rb)
             fail("needs a base register distinct from the index");
+        // indexb: `op rS, offset, table` (the table register second; the address is the same sum).
+        if (tableInB)
+            (ra, rb) = (rb, ra);
         var isFloat = xo is 535 or 663 or 599 or 727;
-        if (!IndexedStores.Contains(xo) && !isFloat && rs == ra)
-            fail("the load overwrites its base register");
+        // A load into the base register replaces it: nothing to put back afterwards.
+        var overwritesBase = !IndexedStores.Contains(xo) && !isFloat && rs == ra;
         var args = new[]
         {
             IrValue.Register($"r{ra}"), IrValue.Register($"r{rb}"), IrValue.Imm(site.Offset),
@@ -176,10 +185,32 @@ public sealed class ArrayOverflowSites
             IrValue.Register($"r{ra}"), IrValue.Imm(site.Offset), IrValue.Imm(site.Stride),
             IrValue.Imm(unchecked((int)site.Shadow))
         };
-        return new IrInstruction[] { new IrCall($"r{ra}", IndexedBaseHelper, args) }
-            .Concat(ir)
-            .Append(new IrCall($"r{ra}", IndexedRestoreHelper, restore))
+        var rewritten = new IrInstruction[] { new IrCall($"r{ra}", IndexedBaseHelper, args) }.Concat(ir);
+        return (overwritesBase ? rewritten : rewritten.Append(new IrCall($"r{ra}", IndexedRestoreHelper, restore)))
             .ToArray();
+    }
+
+    /// <summary>
+    /// indexadd: `add rD, rA, rB` where one operand is a pack's static [12] table and the other the
+    /// byte offset of an element: rD = MKW100_IndexedAdd(rA, rB, table, size, shadow), the element's
+    /// address, in the shadow table for element 12+ (the index sites' layout).
+    /// </summary>
+    private static IReadOnlyList<IrInstruction> RewriteIndexAdd(PpcInstruction ins, Site site, Func<string, string> fail)
+    {
+        var word = ins.Word;
+        var rd = (int)((word >> 21) & 31);
+        var ra = (int)((word >> 16) & 31);
+        var rb = (int)((word >> 11) & 31);
+        if (word >> 26 != 31 || ((word >> 1) & 0x1FF) != 266 || (word & 1) != 0 || ((word >> 10) & 1) != 0)
+            fail("not `add rD, rA, rB`");
+        return new IrInstruction[]
+        {
+            new IrCall($"r{rd}", IndexedAddHelper, new[]
+            {
+                IrValue.Register($"r{ra}"), IrValue.Register($"r{rb}"), IrValue.Imm(site.Offset),
+                IrValue.Imm(site.Stride), IrValue.Imm(unchecked((int)site.Shadow))
+            })
+        };
     }
 
     /// <summary>
@@ -292,9 +323,11 @@ public sealed class ArrayOverflowSites
                 "cmpimm" => SiteKind.CmpImm,
                 "sbyte" => SiteKind.SByte,
                 "loadhook" => SiteKind.LoadHook,
-                _ => throw Bad("kind must be scale, step, index, objadd, cmpimm, sbyte or loadhook")
+                "indexb" => SiteKind.IndexB,
+                "indexadd" => SiteKind.IndexAdd,
+                _ => throw Bad("kind must be scale, step, index, indexb, indexadd, objadd, cmpimm, sbyte or loadhook")
             };
-            var shadowed = kind is SiteKind.Index or SiteKind.ObjAdd;
+            var shadowed = kind is SiteKind.Index or SiteKind.IndexB or SiteKind.IndexAdd or SiteKind.ObjAdd;
             if (fields.Length != (shadowed ? 6 : 5))
                 throw Bad(shadowed ? "index and objadd sites need a shadow address" : "too many fields");
             sites.Add(new Site(Hex(fields[0]) ?? throw Bad("bad address"),
