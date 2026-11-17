@@ -193,8 +193,10 @@ extern "C" void RaceConfigScenario_InitRace_8052fb90(CpuContext* ctx) {
     MKW_GUEST_NEXT(8052FB90)(ctx);
     // The vanilla previous-race update only normalizes twelve starting ranks.
     // Expanded interactive VS keeps the complete finishing order and score.
-    if (!BootRace::CpuDriven() && scenario == racedata + kScenarioOffsets[1] &&
-        Memory::Read32(scenario + kSettingsGameModeOffset) == 1 &&
+    // GP (mode 0) as well as VS (1): a 100-racer GP showed race 3's totals of racers 12+ as that
+    // race's points only (AdvanceRace, 0x8052E770, has no direct caller and did not run there).
+    const uint32_t gameMode = Memory::Read32(scenario + kSettingsGameModeOffset);
+    if (!BootRace::CpuDriven() && scenario == racedata + kScenarioOffsets[1] && gameMode <= 1 &&
         Memory::Read8(scenario + 4) > kInlineSlots && Memory::Read8(scenario + 0xB6C) != 0) {
         const uint32_t count = std::min<uint32_t>(Memory::Read8(scenario + 4), kMaxPlayers);
         for (uint32_t i = 0; i < count; ++i) {

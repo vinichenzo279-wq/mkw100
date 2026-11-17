@@ -40,6 +40,9 @@ std::atomic<bool> adaptiveFps{true};
 std::atomic<bool> instantBoxes{true};
 std::atomic<int> laps{0};      // [local_vs] laps; 0: the game's count
 std::atomic<int> bootLaps{0};  // --race-laps
+// [local_vs] cpu_difficulty (F10): 0 the rules page's CPU row, 1 Easy, 2 Normal, 3 Hard, 4 Very Hard,
+// 5 Impossible.
+std::atomic<int> cpuDifficulty{0};
 std::atomic<int> cpuTier{0};   // this race: 1 Very Hard, 2 Impossible, from the CPU row (PrepareRace)
 std::atomic<int> bootTier{0};  // --race-very-hard / --race-impossible; Initialize runs after arguments and must not clear it
 std::atomic<uint32_t> scoring{uint32_t(LocalVs::Scoring::ClassicSpread)};
@@ -125,6 +128,7 @@ void Initialize() {
     local_vs_detail::adaptiveFps = c.localVsAdaptiveFps.value_or(true);
     local_vs_detail::instantBoxes = c.localVsInstantBoxes.value_or(true);
     local_vs_detail::laps = std::clamp(int(c.localVsLaps.value_or(0)), 0, 9);
+    local_vs_detail::cpuDifficulty = std::clamp(int(c.localVsCpuDifficulty.value_or(0)), 0, 5);
     local_vs_detail::speedometer = c.localVsSpeedometer.value_or(true);
     local_vs_detail::scoring = local_vs_detail::ParseKey(c.localVsScoring, local_vs_detail::scoringKeys);
     local_vs_detail::itemDistribution = c.localVsItemDistribution
@@ -268,7 +272,19 @@ void DrawSettings() {
         instantBoxes = boxes;
         RuntimeConfigFile::WriteSetting("local_vs", "instant_boxes", boxes ? "true" : "false");
     }
-    ImGui::TextUnformatted("CPU row on the rules page: Hard, Very Hard, Impossible (2-4P: Normal, Hard, Very Hard, Impossible).");
+    {
+        static constexpr const char* kDifficulties[] = {"Rules page", "Easy", "Normal", "Hard", "Very Hard", "Impossible"};
+        int difficulty = cpuDifficulty.load();
+        ImGui::SetNextItemWidth(240);
+        if (ImGui::SliderInt("CPU difficulty", &difficulty, 0, 5, kDifficulties[std::clamp(difficulty, 0, 5)],
+                             ImGuiSliderFlags_AlwaysClamp)) {
+            cpuDifficulty = difficulty;
+            RuntimeConfigFile::WriteSetting("local_vs", "cpu_difficulty", std::to_string(difficulty));
+        }
+        ImGui::TextUnformatted(difficulty == 0
+            ? "The rules page's CPU row: Hard, Very Hard, Impossible (2-4P: Normal, Hard, Very Hard, Impossible)."
+            : "Overrides the rules page's CPU row, from the next race.");
+    }
     ImGui::Separator();
     ImGui::TextUnformatted("Balancing for races of more than 12 racers:");
     int score = int(scoring.load());
@@ -538,10 +554,25 @@ void PrepareRace(uint32_t rd) {
     uint32_t humans=0;
     for (uint32_t i=0;i<4;++i) humans += Memory::Read32(Player(menu,i)+0x10)==0;
     const uint32_t cpuOption=Memory::Read32(menu+0xB5C);
-    const uint32_t shown = humans<=1 ? std::min<uint32_t>(cpuOption, 2) + 1 : std::min<uint32_t>(cpuOption, 3);
+    // The game's own value is written back below (1 Normal, 2 Hard), and it is read again before
+    // the race after the course intro and before every later race: read as the CPU row, Hard and
+    // Very Hard became Impossible there (1P). The row's choice is kept from the series' first
+    // course intro, or whenever the value is not the one written here (the rules page set it).
+    static uint32_t written = ~0u;
+    static uint32_t keptShown = 1;
+    const bool fresh = cpuOption != written || (Memory::Read8(menu+0xB6C) == 0 && Memory::Read32(menu+0xB54) == 5);
+    if (fresh) keptShown = humans<=1 ? std::min<uint32_t>(cpuOption, 2) + 1 : std::min<uint32_t>(cpuOption, 3);
     // shown: 0 Normal, 1 Hard, 2 Very Hard, 3 Impossible
+    const uint32_t shown = keptShown;
     cpuTier = shown >= 2 ? int(shown) - 1 : 0;
-    Memory::Write32(menu+0xB5C, shown == 0 ? 1u : 2u);
+    uint32_t engine = shown == 0 ? 1u : 2u;  // the game's value: 0 Easy, 1 Normal, 2 Hard
+    // F10 "CPU difficulty" overrides the row: 1 Easy, 2 Normal, 3 Hard, 4 Very Hard, 5 Impossible.
+    if (const int f10 = cpuDifficulty.load(); f10 > 0) {
+        engine = uint32_t(std::min(f10 - 1, 2));
+        cpuTier = std::max(f10 - 3, 0);
+    }
+    Memory::Write32(menu+0xB5C, engine);
+    written = engine;
     if (cpuTier.load() > 0) {
         const uint32_t base=Memory::Read32(Player(menu,0)+0xC);
         for (uint32_t i=1;i<12;++i) {
