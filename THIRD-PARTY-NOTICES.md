@@ -211,6 +211,10 @@ Not code, but the documentation this project depends on:
 - Team colours and the approach of tinting existing UI for more than two teams follow Retro
   Rewind's extended teams ([rr-pulsar](https://github.com/Retro-Rewind-Team/rr-pulsar),
   `PulsarEngine/UI/ExtendedTeamSelect`, GPL-3, with Pulsar and MKW-SP under MIT).
+- Retro Rewind's KO and Lap KO past 12 racers (`runtime/src/hle/rr_ko_modes.cpp`) reimplement the
+  offline logic of rr-pulsar's `PulsarEngine/Gamemodes/KO/KOMgr.cpp` and
+  `PulsarEngine/Gamemodes/LapKO/LapKOMgr.cpp` ([rr-pulsar](https://github.com/Retro-Rewind-Team/rr-pulsar),
+  GPL-3) for any number of racers, with field offsets and addresses from the released `Code.pul`.
 
 ---
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string_view>
 
 // `--race[=<course id>]`: boot straight into a 1P VS race instead of the title screen.
@@ -24,4 +25,6 @@ bool Lockstep();
 // race scene's subsystem creations) and name the group whose work broke a heap
 // (runtime/src/hle/heap_check.cpp). A diagnostic for N-player overruns; slow.
 bool HeapCheck();
+// The section the boot race runs in (1P VS, Team VS, battle or GP).
+uint32_t Section();
 } // namespace BootRace

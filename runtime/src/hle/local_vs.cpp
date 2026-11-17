@@ -13,6 +13,7 @@
 #include "runtime_config.h"
 #include "runtime_product.h"
 #include "runtime_log.h"
+#include "rr_ko_modes.h"
 #include <imgui.h>
 #include <algorithm>
 #include <cfloat>
@@ -223,6 +224,18 @@ void SetDesiredCount(int count) {
     count = std::clamp(count, 1, MaxRacers());
     local_vs_detail::desiredCount = count;
     RuntimeConfigFile::WriteSetting("local_vs", "players", std::to_string(count));
+}
+void KoKeep(const std::vector<uint32_t>& kept) {
+    using namespace local_vs_detail;
+    if (seriesCount == 0) return;  // direct-boot races have no series roster
+    const auto character = seriesCharacter;
+    const auto vehicle = seriesVehicle;
+    for (uint32_t k = 0; k < kept.size() && k < seriesCharacter.size(); ++k) {
+        seriesCharacter[k] = character[kept[k]];
+        seriesVehicle[k] = vehicle[kept[k]];
+    }
+    seriesCount = uint32_t(kept.size());
+    RT_LOGF("local-vs", "series goes on with %u racers (KO)\n", seriesCount);
 }
 bool UnlocksEnabled() { return !BootRace::Scripted() && local_vs_detail::unlocks.load(); }
 uint32_t SeriesId() { return local_vs_detail::seriesId.load(); }
@@ -989,6 +1002,12 @@ extern "C" void LocalVs_TotalRows_8085cae8(CpuContext* ctx) {
     if (!local_vs_detail::ExpandedOffline()) { MKW_GUEST_NEXT(8085CAE8)(ctx); return; }
     const uint32_t pg = ctx->gpr[3];
     const auto rows = StandingsByTotal();
+    {
+        // Retro Rewind's KO::Mgr::ProcessKOs runs inside the vanilla function this replaces.
+        std::vector<RrKoModes::Standing> standings;
+        for (const auto& e : rows) standings.push_back({e.id, e.place, e.total});
+        RrKoModes::OnSeriesStandings(ctx, standings);
+    }
     uint32_t mine = 0;
     for (uint32_t i = 0; i < rows.size(); ++i) if (rows[i].id == 0) mine = i + 1;
     page = pg; standingsPage = true; repeat = 0;

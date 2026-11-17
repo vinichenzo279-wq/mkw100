@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <vector>
 struct CpuContext;
 namespace LocalVs {
 void Initialize();
@@ -32,6 +33,9 @@ uint32_t LocalPlayers();
 // [local_vs] speedometer (F10): the race HUD speedometer (hud_speedometer.cpp; ImGui in mod products).
 bool SpeedometerEnabled();
 void SetDesiredCount(int count);
+// Retro Rewind KO past 12 (rr_ko_modes.cpp): the series goes on with these racers of the last race,
+// in this order (the menu scenario was compacted the same way).
+void KoKeep(const std::vector<uint32_t>& kept);
 // [local_vs] laps (F10): laps for offline GP and VS races, 1..9; 0 keeps the game's 3 (race_laps.cpp).
 int Laps();
 void SetBootLaps(int laps);  // --race-laps, for this run only

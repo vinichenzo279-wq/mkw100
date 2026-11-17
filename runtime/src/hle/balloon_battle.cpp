@@ -27,6 +27,7 @@
 #include "guest_function_imports.h"
 #include "memory.h"
 #include "hle/rank_icons.h"
+#include "rr_ko_modes.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -271,9 +272,12 @@ extern "C" void BalloonMgr_Update_80869b2c(CpuContext* ctx) {
     const uint32_t racedata = Memory::Read32(kBalloonRacedata);
     const uint32_t gametype = Memory::Read32(racedata + 0xB74);
     if (Memory::Read32(mgr + 0x4E4) == Memory::Read32(mgr + 0x4E8) && gametype != 5 && gametype != 6) {
+        // Retro Rewind's KO Royale starts racers with its own balloon count (its AddStartingBalloons
+        // hook on the vanilla grab, which runs here instead).
+        const uint32_t royale = RrKoModes::RoyaleStartingBalloons(ctx);
         for (uint32_t p = 0; p < g_balloonCount; ++p) {
             const uint32_t player = PlayerSlots::PlayerAddress(racedata, racedata + 0x20, p);
-            Grab(ctx, mgr, p, Memory::Read32(player + 0xCC) & 0xFF, 1, 0, 3, 0x14);
+            Grab(ctx, mgr, p, Memory::Read32(player + 0xCC) & 0xFF, 1, 0, royale ? royale : 3, 0x14);
         }
     }
     const uint32_t players = Memory::Read32(Memory::Read32(kBalloonRaceinfo) + 0xC);
