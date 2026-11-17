@@ -1,5 +1,7 @@
 // gx_copy.cpp - Framebuffer Copy Operations
 #include "gx_internal.h"
+#include <cstdlib>
+#include "runtime_config.h"
 
 #include "settings_overlay.h"
 
@@ -191,10 +193,33 @@ extern "C" void GX__CopyDisp_8016fc38(uint32_t da, uint32_t c) {
 PPC_NATIVE_OVERRIDE_VOID(8016fc38, GX__CopyDisp_8016fc38, (uint32_t da, uint32_t c), (da, c));
 
 
+static void GxCopyTexImpl(uint32_t da, uint32_t c);
+
+// mkw100: [video] gx_async_copy_tex (default off; MKW100_TEST_ASYNC_COPYTEX=0 / 1): record the copy
+// for the GX worker like GXCopyDisp instead of waiting for the worker and Aurora's FIFO thread on the
+// game thread. The copy still runs after every prior draw (the worker keeps the order); only the
+// game thread no longer waits for it. EGG::CapTexture::copyFromEFB did that once a frame and the wait
+// grows with the draws queued before it: about 5% of the game thread at 128 racers.
+static bool GxAsyncCopyTex() {
+    static const bool on = [] {
+        if (const char* v = std::getenv("MKW100_TEST_ASYNC_COPYTEX")) return v[0] != '0';
+        return RuntimeConfigFile::GxAsyncCopyTex(false);
+    }();
+    return on;
+}
+
 extern "C" void GX__CopyTex_8016fd74(uint32_t da, uint32_t c) {
     // Begin the frame before going inline so a deferred begin reaches the worker first.
     EnsureAuroraFrameActive();
+    if (GxWorker::ShouldDefer() && GxAsyncCopyTex()) {
+        GxWorker::Submit([da, c] { GxCopyTexImpl(da, c); });
+        return;
+    }
     GX_SYNC_INLINE();
+    GxCopyTexImpl(da, c);
+}
+
+static void GxCopyTexImpl(uint32_t da, uint32_t c) {
     // Match GX FIFO ordering: texture copies observe all prior draws.
     GXDrawDone();
     const uint16_t rawSrcLeft = g_texCopyState.srcLeft;
