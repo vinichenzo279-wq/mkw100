@@ -401,7 +401,7 @@ void TestGiveItem(CpuContext* ctx, uint32_t raceinfo) {
     const uint32_t count = Memory::Read8(manager + 0x10);
     const uint32_t players = Memory::Read32(manager + 0x14);
     static uint32_t lastGiven = 0;
-    uint32_t stillHeld = 0, given = 0, other = 0;
+    uint32_t stillHeld = 0, given = 0, other = 0, full = 0;
     for (uint32_t i = 0; i < count; ++i) {
         const uint32_t player = players + i * 0x248;     // Item::Player
         if (Memory::Read8(player + 0x19)) continue;      // human
@@ -409,6 +409,17 @@ void TestGiveItem(CpuContext* ctx, uint32_t raceinfo) {
         const uint32_t held = Memory::Read32(inventory + 4);
         if (held == uint32_t(item)) { ++stillHeld; continue; }
         if (held != 0x14) { ++other; continue; }         // 0x14: no item
+        // Only while the item's objects have room (Item::Manager::IsThereCapacityForItem, as the
+        // roulette asks): past it the item is held without its object (Black Bob-omb at 24 racers:
+        // a dragged null object, crash in Item::PlayerInventory::Update).
+        {
+            const CpuContext before = *ctx;
+            ctx->gpr[3] = uint32_t(item);
+            InvokeIndirectCpu(0x80799BE8, ctx);
+            const bool room = (ctx->gpr[3] & 0xFF) != 0;
+            *ctx = before;
+            if (!room) { ++full; continue; }
+        }
         const CpuContext saved = *ctx;
         ctx->gpr[3] = inventory;
         ctx->gpr[4] = uint32_t(item);
@@ -418,7 +429,7 @@ void TestGiveItem(CpuContext* ctx, uint32_t raceinfo) {
         given += Memory::Read32(inventory + 4) == uint32_t(item);
     }
     RT_LOGF("item-fever", "frame %u: gave item 0x%lX to %u CPUs; of last round's %u, %u still held, "
-            "%u CPUs hold something else\n", frame, item, given, lastGiven, stillHeld, other);
+            "%u CPUs hold something else, %u skipped (no room)\n", frame, item, given, lastGiven, stillHeld, other, full);
     lastGiven = given + stillHeld;
 }
 
