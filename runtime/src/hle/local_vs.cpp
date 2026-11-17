@@ -205,7 +205,8 @@ uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows, ItemDistri
 constexpr int kItemFeverMaxRacers = 255;
 constexpr int kRetroRewindMaxRacers = 160;
 // Formula Kart Wii patches base-game code and keeps the base game's own loader and kart archives;
-// its one per-racer table (the roulette amounts, [12]) is guarded by pid < 12 (formula_kart.cpp).
+// its one per-racer table (the roulette amounts, [2][12] in low memory) is moved to the shadow
+// window by scripts/mkw100/fkw_to_kamek.py.
 constexpr int kFormulaKartMaxRacers = 255;
 // A pack build MKW100's pack fixes were not measured on (mod_build.h) keeps the game's 12.
 constexpr int kUnknownModMaxRacers = 12;

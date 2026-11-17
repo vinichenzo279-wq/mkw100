@@ -36,6 +36,9 @@ from pathlib import Path
 PAYLOAD_BASE = 0x808DD400
 SETTINGS_START = 0x80004030
 SETTINGS_END = 0x80004070
+# MKW100's array shadow window (runtime/include/guest_abi/array_overflow.h, 0x82000000..0x83000000);
+# packs use the 0x82D00000 span (Item Fever up to 0x82D30200, Retro Rewind at 0x82D80000).
+AMOUNTS_SHADOW = 0x82D60000
 INIT_SCRATCH_START = 0x80004000
 INIT_SCRATCH_END = 0x80005F34  # first translated .init function (memcpy)
 STACK_TOP = 0x81700000
@@ -490,6 +493,8 @@ def main() -> int:
     ap.add_argument("--out", required=True, type=Path, help="output Kamek chunk (Code.pul stand-in)")
     ap.add_argument("--report", type=Path, help="JSON report of every patch and the settings bytes")
     ap.add_argument("--choice", action="append", default=[], help="'Option Name=N' (Riivolution 1-based choice)")
+    ap.add_argument("--max-racers", type=int, default=255,
+                    help="12 keeps FKW's own racer tables; more moves them to MKW100's shadow window")
     args = ap.parse_args()
 
     payload = args.payload.read_bytes()
@@ -597,6 +602,35 @@ def main() -> int:
         put(a + 4, (14 << 26) | (rn << 21) | (rn << 16) | lo)  # addi rN, rN, lo
         put(a + 8, (18 << 26) | ((t + 4 - (a + 8)) & 0x03FFFFFC))  # b over+4
         tricks.append((a, dst, gap))
+
+    # Past 12 racers: the roulette amounts, u8 ItemAmounts[2][12] at 0x800001B8 (low memory; rows
+    # 12 bytes apart), are indexed by player id with no bound in the roulette hooks, so racers 12+
+    # write over FKW's other low-memory globals and then the OS's. Move the table to MKW100's
+    # shadow window with rows 0x100 apart (255 racers). Every word is checked first, so another
+    # FKW build stops here instead of being patched blindly.
+    if args.max_racers > 12:
+        rows = AMOUNTS_SHADOW
+        hi = rows >> 16
+        sites = [
+            # (address, original word, new word)
+            (0x808E195C, 0x3D608000, 0x3D600000 | hi), (0x808E1960, 0x616B01C4, 0x616B0100),  # amounts[1]
+            (0x808E1A20, 0x3C808000, 0x3C800000 | hi), (0x808E1A24, 0x608401B8, 0x60840000),  # Update1
+            (0x808E1A34, 0x88A4000C, 0x88A40100), (0x808E1A3C, 0x9864000C, 0x98640100),
+            (0x808E1A54, 0x3C808000, 0x3C800000 | hi), (0x808E1A58, 0x608401B8, 0x60840000),  # Update2
+            (0x808E1A68, 0x88A4000C, 0x88A40100), (0x808E1A70, 0x9864000C, 0x98640100),
+            (0x808E1A7C, 0x3CA08000, 0x3CA00000 | hi), (0x808E1A80, 0x60A501B8, 0x60A50000),  # Update3
+            (0x808E1A94, 0x3CA08000, 0x3CA00000 | hi), (0x808E1A98, 0x60A501C4, 0x60A50100),  # Update4
+            (0x808E205C, 0x3D208000, 0x3D200000 | hi), (0x808E2060, 0x392901B8, 0x39290000),  # AmountRandomizer
+            (0x808E2068, 0x890A000C, 0x890A0100), (0x808E2070, 0x986A000C, 0x986A0100),
+            (0x808E22DC, 0x3D208000, 0x3D200000 | hi), (0x808E22E0, 0x392901B8, 0x39290000),  # (old variant)
+            (0x808E22E8, 0x890A000C, 0x890A0100), (0x808E22F0, 0x986A000C, 0x986A0100),
+        ]
+        for a, old, new in sites:
+            if word(a) != old:
+                raise RuntimeError(f"ItemAmounts site 0x{a:08X} holds 0x{word(a):08X}, expected 0x{old:08X}: "
+                                   "not the FKW build these sites were measured on")
+            put(a, new)
+        print(f"moved ItemAmounts[2][12] (0x800001B8) to 0x{rows:08X}, rows 0x100 apart ({len(sites)} words)")
 
     # Addresses only reached indirectly must be registered as functions, but the translator finds
     # module entry points from relocations and prologues, and this module has no relocations:

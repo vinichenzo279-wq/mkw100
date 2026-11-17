@@ -11,4 +11,4 @@
 # replace its line here and in mod_build.cpp.
 retro-rewind  5061374c937b8ebe70fa67bef7f35b16f6e9228b  # WheelWizard RetroRewind6 (Code.pul SHA-256 d68778e9...)
 item-fever    47816337c38dfd92fd0fa19e82fe72b3af3f623c  # Item Fever 1.1.1 (Code.pul SHA-256 d232a2fd...)
-formula-kart  67bdfbb5912dee585b4aa36496a0ecc1b72df8dc  # Formula Kart Wii (FormulaKartWiiP.bin SHA-1 ea5f4b57..., as fkw_to_kamek.py converts it)
+formula-kart  9f9ae39ac1d26a6fb62e0c1fd649474ccd7272d4  # Formula Kart Wii (FormulaKartWiiP.bin SHA-1 ea5f4b57..., as fkw_to_kamek.py converts it)

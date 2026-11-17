@@ -1416,3 +1416,6 @@
 0x80534360  0  cmpimm  98  0xC08  # inline lap count (0x805342E8)
 0x80534BCC  0  cmpimm  98  0xC08  # inline lap count (0x805349B8)
 0x80534D04  0  cmpimm  98  0xC08  # inline lap count (0x80534CCC)
+# Formula Kart Wii payload (0x808DD400, scripts/mkw100/fkw_to_kamek.py): AirFIBs reads the FIB
+# owner's driver model from DriverManager+0x10 by racer id.
+0x808E1434  8  scale  4  0x0  profile=formula-kart  # driver_manager 0x10 (added by hand: FKW AirFIBs)

@@ -22,9 +22,10 @@ constexpr KnownBuild kKnownBuilds[] = {
      "Item Fever 1.1.1"},
     {ModBuild::Kind::FormulaKart,
      // The converted image (fkw_to_kamek.py blanks the code it only copies into the game and
-     // rewrites bl-over-data, seeds indirect entries), from FormulaKartWiiP.bin SHA-1
-     // ea5f4b57966ff7366487047ce78edd4def4853d7. fkw_to_kamek.py prints this as "code sha1".
-     {0x67, 0xBD, 0xFB, 0xB5, 0x91, 0x2D, 0xEE, 0x58, 0x5B, 0x4A, 0xA3, 0x64, 0x96, 0xA0, 0xEC, 0xC1, 0xB7, 0x2D, 0xF8, 0xDC},
+     // rewrites bl-over-data, seeds indirect entries, moves ItemAmounts to the shadow window), from
+     // FormulaKartWiiP.bin SHA-1 ea5f4b57966ff7366487047ce78edd4def4853d7. fkw_to_kamek.py prints
+     // this as "code sha1".
+     {0x9F, 0x9A, 0xE3, 0x9A, 0xC1, 0xD2, 0x6A, 0x6F, 0xB6, 0x2E, 0x0C, 0x1F, 0xD6, 0x49, 0x47, 0x4C, 0xCD, 0x72, 0x72, 0xD4},
      "Formula Kart Wii (FormulaKartWiiP.bin)"},
 };
 
