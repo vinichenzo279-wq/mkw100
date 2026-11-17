@@ -159,10 +159,13 @@ uint32_t PointsFor(uint32_t place, uint32_t count) {
     }
 }
 uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows) {
+    return ItemRowFor(position, count, rows, CurrentItemDistribution());
+}
+uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows, ItemDistribution distribution) {
     if (rows==0 || count==0) return 0;
     const double t=double(position)/double(count);  // 0 for the leader, < 1 for last
     uint32_t row;
-    switch (CurrentItemDistribution()) {
+    switch (distribution) {
     case ItemDistribution::Generous: row=uint32_t(double(rows)*std::sqrt(t)); break;  // back rows reach further forward
     case ItemDistribution::Tight:    row=uint32_t(double(rows)*t*t); break;           // back rows only near the back
     case ItemDistribution::ClassicTop11: row=position; break;                         // 1..11 stock, the rest last place
@@ -292,7 +295,7 @@ void DrawSettings() {
             "Strong items only for the back of the field.",
             "Places 1-11 use the stock rows; everyone behind gets last-place items."}};
         ImGui::TextUnformatted(help[std::min<uint32_t>(uint32_t(items), 3)]);
-        ImGui::TextUnformatted("Item distribution applies from the next race.");
+        ImGui::TextUnformatted("For your own items; CPUs always use Even. Applies from the next race.");
     }
     ImGui::Separator();
     int cycler = int(itemCycler.load());

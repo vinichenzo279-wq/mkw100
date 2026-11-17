@@ -9,8 +9,9 @@
 //
 // For more than 12 players the remap is done here instead: the table becomes a game-allocated
 // `count`-row table, and position i (0-based) gets the file row LocalVs::ItemRowFor picks for the
-// "item_distribution" setting. The default ("even") is i * rows / count, so the 12 rows are spread
-// evenly over the field (positions 1-2 of 24 share row 1, 23-24 share row 12). A gameplay choice,
+// "item_distribution" setting (default "generous"), for the player table only; the CPU table
+// always uses "even": i * rows / count, the 12 rows spread evenly over the field (positions 1-2 of
+// 24 share row 1, 23-24 share row 12). A gameplay choice,
 // not a reconstruction: the game has no data for 13+ players. Up to 12 players the game's own remap
 // runs unchanged.
 
@@ -18,6 +19,7 @@
 #include "local_vs.h"
 #include "guest_function_imports.h"
 #include "memory.h"
+#include "runtime_log.h"
 
 #include <cstdint>
 #include <stdexcept>
@@ -28,6 +30,7 @@ namespace {
 constexpr uint32_t kItemMapPlayers = 12;  // the static remap covers 1..12 players
 constexpr uint32_t kPlayerCountOffset = 0x44;  // u32, the item table object's player count
 constexpr uint32_t kRowBytes = 0x26;
+constexpr uint32_t kCpuTableOffset = 0x18;  // {rows, table*} of the CPU table; the player table is at +0x10
 constexpr uint32_t kNewArray = 0x80229DF0;     // operator new[](size), the current heap
 constexpr uint32_t kDeleteArray = 0x80229EE0;  // operator delete[](void*)
 
@@ -63,8 +66,18 @@ extern "C" void ItemSlotTable_Remap_807bad20(CpuContext* ctx) {
     if (remapped == 0) {
         throw std::runtime_error("mkw100 item slots: out of memory for the item table");
     }
+    // The setting is for human racers (the player table, +0x10). The CPU table (+0x18) stays Even:
+    // Generous for 250 CPUs meant more strong items in play, 12% fewer FPS at 255 racers.
+    const bool cpuTable = table == self + kCpuTableOffset;
+    const auto distribution = cpuTable ? LocalVs::ItemDistribution::Even : LocalVs::CurrentItemDistribution();
+    static bool logged[2] = {};
+    if (!logged[cpuTable]) {
+        logged[cpuTable] = true;
+        RT_LOGF("item-slots", "%s item table: %u rows for %u racers, distribution %u\n", cpuTable ? "CPU" : "player",
+                rows, count, uint32_t(distribution));
+    }
     for (uint32_t position = 0; position < count; ++position) {
-        const uint32_t row = LocalVs::ItemRowFor(position, count, rows);
+        const uint32_t row = LocalVs::ItemRowFor(position, count, rows, distribution);
         for (uint32_t i = 0; i < kRowBytes; ++i) {
             Memory::Write8(remapped + position * kRowBytes + i, file[row * kRowBytes + i]);
         }
