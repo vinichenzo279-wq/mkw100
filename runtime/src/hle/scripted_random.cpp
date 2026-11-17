@@ -5,11 +5,13 @@
 // Retro Rewind and Item Fever create clock-seeded Random objects (15 and 14 call sites) for their
 // own features, which made two runs of the same Retro Rewind + Item Fever test race diverge
 // (docs/mkw100/rr-item-fever.md). In a scripted race those seeds come from a fixed sequence
-// instead; normal play keeps clock seeds.
+// instead; normal play keeps clock seeds. Only in the combined build: the other builds keep their
+// recorded headless results (the base game repeats anyway; plain Retro Rewind and Item Fever as before).
 
 #include "abi_bridge.h"
 #include "boot_race.h"
 #include "guest_function_imports.h"
+#include "hle/mod_build.h"
 #include "memory.h"
 
 #include <cstdint>
@@ -31,13 +33,17 @@ void ReseedScripted(uint32_t random) {
     Memory::Write32(random + 0x14, seed);
 }
 
+bool Reseeding() {
+    return BootRace::Scripted() && ModBuild::Current() == ModBuild::Kind::RetroRewindItemFever;
+}
+
 } // namespace
 
 // Random::Random()
 extern "C" void Random_ct_80555464(CpuContext* ctx) {
     const uint32_t random = ctx->gpr[3];
     MKW_GUEST_NEXT(80555464)(ctx);
-    if (BootRace::Scripted()) ReseedScripted(random);
+    if (Reseeding()) ReseedScripted(random);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x80555464, Random_ct_80555464, "Random_ct_80555464");
 
@@ -45,6 +51,6 @@ REGISTER_NATIVE_WRAPPER_AS(0x80555464, Random_ct_80555464, "Random_ct_80555464")
 extern "C" void Random_Reset_805554d0(CpuContext* ctx) {
     const uint32_t random = ctx->gpr[3];
     MKW_GUEST_NEXT(805554D0)(ctx);
-    if (BootRace::Scripted()) ReseedScripted(random);
+    if (Reseeding()) ReseedScripted(random);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x805554D0, Random_Reset_805554d0, "Random_Reset_805554d0");
