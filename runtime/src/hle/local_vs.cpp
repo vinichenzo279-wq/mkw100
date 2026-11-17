@@ -255,8 +255,6 @@ void DrawSettings() {
             RuntimeConfigFile::WriteSetting("local_vs", "laps", std::to_string(lapCount));
         }
         ImGui::TextUnformatted("Offline GP and VS races, from the next race.");
-    } else if (ModBuild::IsKnownRetroRewind() && desiredCount.load() > 12) {
-        ImGui::TextUnformatted("KO, Lap KO and KO Royale need 12 racers or fewer; past 12 they stay off.");
     }
     bool varied = diversity.load();
     if (ImGui::Checkbox("Varied CPU characters, karts and bikes", &varied)) {
