@@ -43,7 +43,9 @@ std::atomic<int> bootLaps{0};  // --race-laps
 std::atomic<int> cpuTier{0};   // this race: 1 Very Hard, 2 Impossible, from the CPU row (PrepareRace)
 std::atomic<int> bootTier{0};  // --race-very-hard / --race-impossible; Initialize runs after arguments and must not clear it
 std::atomic<uint32_t> scoring{uint32_t(LocalVs::Scoring::ClassicSpread)};
-std::atomic<uint32_t> itemDistribution{uint32_t(LocalVs::ItemDistribution::Even)};
+// Generous by default: with Even at 255 racers the top 21 got first-place items and the top ~42
+// the two weakest rows (user report); Generous gives the first row to the top 2.
+std::atomic<uint32_t> itemDistribution{uint32_t(LocalVs::ItemDistribution::Generous)};
 std::atomic<uint32_t> itemCycler{uint32_t(LocalVs::ItemCycler::Off)};
 constexpr std::array<const char*,3> cyclerKeys{{"off","debug","infinite"}};
 constexpr std::array<const char*,3> cyclerNames{{"Off","Debug (items used up)","Infinite"}};
@@ -125,7 +127,9 @@ void Initialize() {
     local_vs_detail::laps = std::clamp(int(c.localVsLaps.value_or(0)), 0, 9);
     local_vs_detail::speedometer = c.localVsSpeedometer.value_or(true);
     local_vs_detail::scoring = local_vs_detail::ParseKey(c.localVsScoring, local_vs_detail::scoringKeys);
-    local_vs_detail::itemDistribution = local_vs_detail::ParseKey(c.localVsItemDistribution, local_vs_detail::itemKeys);
+    local_vs_detail::itemDistribution = c.localVsItemDistribution
+        ? local_vs_detail::ParseKey(c.localVsItemDistribution, local_vs_detail::itemKeys)
+        : uint32_t(LocalVs::ItemDistribution::Generous);
     local_vs_detail::itemCycler = local_vs_detail::ParseKey(c.localVsItemCycler, local_vs_detail::cyclerKeys);
     Teams::Initialize(c.localVsTeams.value_or(0));
 }
@@ -674,6 +678,23 @@ bool ExpandedOfflineBattle() {
            Memory::Read32(rd + 0x20 + 0xB50) == 3 && Memory::Read32(rd + 0x20 + 0xB54) == 0;
 }
 } // namespace
+
+// Between races RacedataScenario::AdvanceRace (0x8052E770) counts the race number up and, for each
+// racer, makes the total the previous score (+0xDA -> +0xD8) and the last place the next start
+// position (+0xE2 -> +0xE1): unrolled for players 0-11 only. Past 12 the other racers' previous
+// score stayed 0, and UpdatePoints (total = previous + earned) showed their totals of race 2 on as
+// if the series started then. The rest of the slots are done here the same way.
+extern "C" void LocalVs_AdvanceRace_8052e770(CpuContext* ctx) {
+    const uint32_t scenario = ctx->gpr[3];
+    MKW_GUEST_NEXT(8052E770)(ctx);
+    if (Memory::Read32(MKW_GADDR(809BD728)) == 0) return;
+    for (uint32_t i = 12; i < PlayerSlots::kMaxPlayers; ++i) {
+        const uint32_t p = local_vs_detail::Player(scenario, i);
+        Memory::Write8(p + 0xE1, Memory::Read8(p + 0xE2));
+        Memory::Write16(p + 0xD8, Memory::Read16(p + 0xDA));
+    }
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8052E770, LocalVs_AdvanceRace_8052e770, "LocalVs_AdvanceRace_8052e770");
 
 extern "C" void LocalVs_UpdatePoints_8052e950(CpuContext* ctx) {
     using namespace local_vs_detail;

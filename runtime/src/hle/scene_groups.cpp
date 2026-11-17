@@ -7,7 +7,9 @@
 // at least 400 inserts failed, from ScnMgr::InsertModelDirectorInScn and 0x80563A14: racers were
 // invisible. At 12 players none failed.
 //
-// For more than 12 players the capacity is scaled by players / 12 (6,400 at 100, 4 bytes each).
+// For more than 12 players the capacity is scaled by players / 12, twice over (12,800 at 100,
+// 4 bytes each). Players / 12 alone still filled up: with items out, a 160-racer Retro Rewind
+// session turned away 13,000 models and a 255-racer one 3,000, and a bomb went off with no blast.
 // Up to 12 players the group is built unchanged.
 
 #include "abi_bridge.h"
@@ -42,7 +44,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x80562444, ScnMgr_CreateScnGroup_80562444, "ScnMgr_C
 extern "C" void ScnGroup_Construct_8006e390(CpuContext* ctx) {
     const uint32_t players = ScnPlayerCount();
     if (gInCreateScnGroup && ctx->gpr[5] == kScnStockChildren && players > kScnStockPlayers) {
-        ctx->gpr[5] = kScnStockChildren * players / kScnStockPlayers;
+        ctx->gpr[5] = 2 * kScnStockChildren * players / kScnStockPlayers;
     }
     MKW_GUEST_NEXT(8006E390)(ctx);
 }
