@@ -68,7 +68,7 @@ Kind Current() {
     }
     if (kind == Kind::Unknown && CombinedFromKnownBuilds()) {
         kind = Kind::RetroRewindItemFever;
-        name = "Retro Rewind + Item Fever items (combined from WheelWizard RetroRewind6 and Item Fever 1.1.0)";
+        name = "Retro Rewind + Item Fever items (combined from WheelWizard RetroRewind6 and Item Fever 1.1.1)";
     }
     if (kind == Kind::Unknown) {
         RT_LOGF("mod-build", "WARNING: this Code.pul is not a build MKW100's pack fixes were measured on "

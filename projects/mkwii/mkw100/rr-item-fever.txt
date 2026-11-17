@@ -1,6 +1,10 @@
 # Retro Rewind + Item Fever's items: which of Item Fever's patches to the game the combined module
 # keeps (scripts/mkw100/combine_pul.py, docs/mkw100/rr-item-fever.md). Measured on WheelWizard
-# RetroRewind6 (5061374c...) and Item Fever 1.1.0 (2c6c40ca...).
+# RetroRewind6 (5061374c...) and Item Fever 1.1.0 (2c6c40ca...); every entry is a game or Retro Rewind
+# address, so it holds for Item Fever 1.1.1 (47816337...) as well. 1.1.1 adds three game patches,
+# left out here like the rest of Item Fever's settings: branches at 0x8082874C and 0x8082884C and a
+# data word at 0x808D9124 (presumably its new Random items rule and Item Box Respawn setting, which
+# are off by default).
 
 if-offset 0xC0000   # Item Fever's module at 0x818C0000
 

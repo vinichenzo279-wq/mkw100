@@ -328,8 +328,12 @@ constexpr RacerTable kRacerTables[] = {
 };
 constexpr uint32_t kShadowRacers = 255 - 12;
 
+// In Retro Rewind with Item Fever's items the tables sit ModBuild::ItemFeverOffset() higher (the
+// shadows stay where they are).
 void ReadyRacerTables() {
-    for (const RacerTable& t : kRacerTables) {
+    const uint32_t offset = ModBuild::ItemFeverOffset();
+    for (const RacerTable& rt : kRacerTables) {
+        const RacerTable t{rt.table + offset, rt.size, rt.shadow};
         bool uniform = true;
         for (uint32_t i = 1; i < 12 && uniform; ++i) {
             for (uint32_t b = 0; b < t.size; ++b) {
@@ -421,7 +425,7 @@ void TestGiveItem(CpuContext* ctx, uint32_t raceinfo) {
 } // namespace
 
 void ItemFever::RaceFrame(CpuContext* ctx, uint32_t raceinfo) {
-    if (!ModBuild::IsKnownItemFever()) return;
+    if (!ModBuild::HasKnownItemFeverCode()) return;
     static uint32_t lastRaceinfo = 0, lastFrame = 0;
     const uint32_t frame = Memory::Read32(raceinfo + 0x20);
     if (raceinfo != lastRaceinfo || frame < lastFrame) {
@@ -431,5 +435,5 @@ void ItemFever::RaceFrame(CpuContext* ctx, uint32_t raceinfo) {
     lastRaceinfo = raceinfo;
     lastFrame = frame;
     LogRacerTables(frame);
-    TestGiveItem(ctx, raceinfo);
+    if (ModBuild::IsKnownItemFever()) TestGiveItem(ctx, raceinfo);  // the combined build: rr_item_fever.cpp
 }
