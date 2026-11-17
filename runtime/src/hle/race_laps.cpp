@@ -116,7 +116,10 @@ REGISTER_NATIVE_WRAPPER_AS(0x80534CCC, RaceLaps_80534ccc, "RaceLaps_80534ccc");
 void RaceLaps_ClampLapCounterFrame(CpuContext* ctx) {
     const uint32_t lr = ctx->lr;
     if (lr == 0x807EF768 || lr == 0x807EF7A0 || lr == 0x807EF8B8) {
-        const bool twoDigit = Memory::Read8(0x808A9CC7) == 'R';
+        // 'R': Retro Rewind's RRp_number; 'f': Formula Kart Wii's fap_number (it writes the 'f'
+        // over lap_number's 'l' and draws two digits itself, up to its 50 laps).
+        const uint8_t counter = Memory::Read8(0x808A9CC7);
+        const bool twoDigit = counter == 'R' || counter == 'f';
         const double most = twoDigit ? 50.0 : 9.0;
         if (ctx->fpr[1].d > most) ctx->fpr[1].d = most;
     }

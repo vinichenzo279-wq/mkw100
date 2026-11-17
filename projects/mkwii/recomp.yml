@@ -104,3 +104,24 @@ profiles:
         - section: Item Fever
           option: Item Fever
           choice: 1
+  formula-kart:
+    # Formula Kart Wii (github.com/CLF78/FKW) is a Riivolution patch, not a Pulsar pack: its payload
+    # is linked absolute at 0x808DD400 and patches the game once at boot. Build-MKW100.ps1
+    # -FormulaKart turns that payload into a Kamek chunk (scripts/mkw100/fkw_to_kamek.py) staged as
+    # code_pul below, so the module base and link base are both the payload's own address.
+    enabled: true
+    requires_game_id: RMCP01
+    requires_dol_sha256: 80d18895b39c63bd80f457398bfcbb91b7d16ac116a41a88967e954080155b05
+    code_pul: PulsarPacks/completed/FormulaKart/fkw/Binaries/Code.pul
+    mod_root: PulsarPacks/completed/FormulaKart/fkw
+    region: P
+    module_guest_base: 0x808DD400
+    module_link_base: 0x808DD400
+    output: build/mods/formula_kart_full_cpp
+    riivolution:
+      # The FKW download keeps riivolution\ beside the fkw\ folder, as Item Fever does.
+      xml: ../riivolution/fkw.xml
+      options:
+        - section: FKW - Core Features
+          option: Formula Kart Wii
+          choice: 1

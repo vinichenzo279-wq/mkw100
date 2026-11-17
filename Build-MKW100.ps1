@@ -17,13 +17,17 @@ param(
     # Experimental (docs/mkw100/rr-item-fever.md), with -RetroRewind: an Item Fever pack folder whose
     # items join Retro Rewind. Builds the RetroRewind product from one combined Kamek module
     # (scripts/mkw100/combine_pul.py, plan projects/mkwii/mkw100/rr-item-fever.txt).
-    [string]$ItemFeverItems
+    [string]$ItemFeverItems,
+    # A Formula Kart Wii download folder (holding fkw\fkw\FormulaKartWiiP.bin and riivolution\fkw.xml):
+    # builds the mod product from it. FKW is a Riivolution patch, not a Pulsar pack; its payload is
+    # converted to a Kamek chunk first (scripts/mkw100/fkw_to_kamek.py, needs python on PATH).
+    [string]$FormulaKart
 )
 # Standalone, isolated Windows fork build. Never calls LocalBuild.ps1, never
 # modifies original Install\Base or the older R13/R23 build cache.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-if ($RetroRewind -and $ItemFever) { throw 'Pass -RetroRewind or -ItemFever, not both.' }
+if (@($RetroRewind, $ItemFever, $FormulaKart | Where-Object { $_ }).Count -gt 1) { throw 'Pass only one of -RetroRewind, -ItemFever, -FormulaKart.' }
 if ($ItemFeverItems -and -not $RetroRewind) { throw '-ItemFeverItems goes with -RetroRewind.' }
 # The mod product's pack, its recomp.yml profile, where that profile reads Code.pul, and its output.
 $ModPack = $null
@@ -33,6 +37,9 @@ if ($RetroRewind) {
 } elseif ($ItemFever) {
     $ModPack = $ItemFever; $ModProfile = 'item-fever'; $ModName = 'Item Fever'
     $ModStagedPul = 'PulsarPacks\completed\ItemFever\ItemFever\Binaries'; $ModOut = 'build\mods\item_fever_full_cpp'
+} elseif ($FormulaKart) {
+    $ModPack = Join-Path $FormulaKart 'fkw'; $ModProfile = 'formula-kart'; $ModName = 'Formula Kart Wii'
+    $ModStagedPul = 'PulsarPacks\completed\FormulaKart\fkw\Binaries'; $ModOut = 'build\mods\formula_kart_full_cpp'
 }
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Repo = $Here
@@ -170,14 +177,29 @@ try {
     Record 'Clean PAL inputs validated; shared Dependencies are a junction (not copied).'
     if ($ModPack) {
         $ModPack = [IO.Path]::GetFullPath($ModPack)
-        $retroPul = Join-Path $ModPack 'Binaries\Code.pul'
-        Require $retroPul ($ModName + ' Code.pul')
         # The project's profile reads the pul from this workspace path, and the base
         # leg blocks leaf inlining at every address it patches, so it must be staged first.
         $stagedPulDir = Join-Path $Repo $ModStagedPul
         New-Item -ItemType Directory -Path $stagedPulDir -Force | Out-Null
         $stagedPul = Join-Path $stagedPulDir 'Code.pul'
-        if ([IO.Path]::GetFullPath($stagedPul) -ne $retroPul) { Copy-Item -LiteralPath $retroPul -Destination $stagedPul -Force }
+        if ($FormulaKart) {
+            # FKW ships no Code.pul: run its one-shot patcher in an interpreter and stage the result.
+            $fkwPayload = Join-Path $ModPack 'fkw\FormulaKartWiiP.bin'
+            $fkwXml = Join-Path ([IO.Path]::GetFullPath($FormulaKart)) 'riivolution\fkw.xml'
+            Require $fkwPayload 'Formula Kart Wii PAL payload'
+            Require $fkwXml 'Formula Kart Wii Riivolution XML'
+            $python = Get-Command python.exe -ErrorAction SilentlyContinue
+            if (-not $python) { throw 'python.exe is needed on PATH to convert the Formula Kart Wii payload.' }
+            & $python.Source -I (Join-Path $Repo 'scripts\mkw100\fkw_to_kamek.py') --payload $fkwPayload --xml $fkwXml `
+                --dol $dol --rel $rel --out $stagedPul --report (Join-Path $Logs 'fkw_patches.json') |
+                ForEach-Object { Record $_ }
+            if ($LASTEXITCODE -ne 0) { throw 'fkw_to_kamek.py failed' }
+            $retroPul = [IO.Path]::GetFullPath($stagedPul)
+        } else {
+            $retroPul = Join-Path $ModPack 'Binaries\Code.pul'
+            Require $retroPul ($ModName + ' Code.pul')
+            if ([IO.Path]::GetFullPath($stagedPul) -ne $retroPul) { Copy-Item -LiteralPath $retroPul -Destination $stagedPul -Force }
+        }
         if ($ItemFeverItems) {
             # Both packs' own Code.pul are staged too, so the base translation knows every address
             # either of them can patch; the combined module only ever patches a subset of those.

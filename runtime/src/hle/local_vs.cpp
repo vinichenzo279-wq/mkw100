@@ -204,12 +204,16 @@ uint32_t ItemRowFor(uint32_t position, uint32_t count, uint32_t rows, ItemDistri
 // grid and the race never ended (start_grid.cpp's blocks past about 150 karts on those courses).
 constexpr int kItemFeverMaxRacers = 255;
 constexpr int kRetroRewindMaxRacers = 160;
+// Formula Kart Wii patches base-game code and keeps the base game's own loader and kart archives;
+// its one per-racer table (the roulette amounts, [12]) is guarded by pid < 12 (formula_kart.cpp).
+constexpr int kFormulaKartMaxRacers = 255;
 // A pack build MKW100's pack fixes were not measured on (mod_build.h) keeps the game's 12.
 constexpr int kUnknownModMaxRacers = 12;
 int MaxRacers() {
     if (!RuntimeProduct::IsRetroRewind()) return int(PlayerSlots::kMaxPlayers);
     switch (ModBuild::Current()) {
     case ModBuild::Kind::ItemFever: return kItemFeverMaxRacers;
+    case ModBuild::Kind::FormulaKart: return kFormulaKartMaxRacers;
     case ModBuild::Kind::Unknown: return kUnknownModMaxRacers;
     default: return kRetroRewindMaxRacers;
     }

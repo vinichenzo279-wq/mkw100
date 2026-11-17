@@ -20,6 +20,12 @@ constexpr KnownBuild kKnownBuilds[] = {
     {ModBuild::Kind::ItemFever,
      {0x47, 0x81, 0x63, 0x37, 0xC3, 0x8D, 0xFD, 0x92, 0xFD, 0x0F, 0xA1, 0x9E, 0x82, 0xFE, 0x72, 0xB3, 0xAF, 0x3F, 0x62, 0x3C},
      "Item Fever 1.1.1"},
+    {ModBuild::Kind::FormulaKart,
+     // The converted image (fkw_to_kamek.py blanks the code it only copies into the game and
+     // rewrites bl-over-data, seeds indirect entries), from FormulaKartWiiP.bin SHA-1
+     // ea5f4b57966ff7366487047ce78edd4def4853d7. fkw_to_kamek.py prints this as "code sha1".
+     {0x67, 0xBD, 0xFB, 0xB5, 0x91, 0x2D, 0xEE, 0x58, 0x5B, 0x4A, 0xA3, 0x64, 0x96, 0xA0, 0xEC, 0xC1, 0xB7, 0x2D, 0xF8, 0xDC},
+     "Formula Kart Wii (FormulaKartWiiP.bin)"},
 };
 
 // The combined Retro Rewind + Item Fever module carries this marker and its two source digests

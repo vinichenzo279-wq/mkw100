@@ -937,3 +937,10 @@
 0x81859A48  profile=retro-rewind  # race (added by hand: Retro Rewind, Code.pul)
 0x8185A3EC  profile=retro-rewind  # race (added by hand: Retro Rewind, Code.pul)
 0x81863524  profile=retro-rewind  # race (added by hand: Retro Rewind, Code.pul)
+# Formula Kart Wii (payload at 0x808DD400, converted by scripts/mkw100/fkw_to_kamek.py) racer slot
+# reads: every `mulli rD, rA, 0xF0` in the payload, all Racedata player slots (playerType reads in
+# the item randomizer, the online race-completion share and the track check).
+0x808E067C  profile=formula-kart  # race (added by hand: Formula Kart Wii payload)
+0x808E1F94  profile=formula-kart  # race (added by hand: Formula Kart Wii payload, AmountRandomizer)
+0x808E2224  profile=formula-kart  # race (added by hand: Formula Kart Wii payload)
+0x808E2F40  profile=formula-kart  # race (added by hand: Formula Kart Wii payload)

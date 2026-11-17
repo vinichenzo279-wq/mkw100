@@ -11,7 +11,7 @@ namespace ModBuild {
 // RetroRewindItemFever: the combined module of Retro Rewind and Item Fever's items
 // (scripts/mkw100/combine_pul.py, docs/mkw100/rr-item-fever.md), made from the two builds below;
 // Retro Rewind's code sits at the module base and Item Fever's kItemFeverCombinedOffset above it.
-enum class Kind { None, RetroRewind, ItemFever, RetroRewindItemFever, Unknown };
+enum class Kind { None, RetroRewind, ItemFever, RetroRewindItemFever, FormulaKart, Unknown };
 
 inline constexpr uint32_t kItemFeverCombinedOffset = 0xC0000;
 
@@ -31,5 +31,8 @@ inline bool HasKnownItemFeverCode() {
     return k == Kind::ItemFever || k == Kind::RetroRewindItemFever;
 }
 inline uint32_t ItemFeverOffset() { return Current() == Kind::RetroRewindItemFever ? kItemFeverCombinedOffset : 0; }
+// Formula Kart Wii: not a Pulsar pack; its payload is converted to a Kamek chunk at build time
+// (scripts/mkw100/fkw_to_kamek.py), so its "Kamek code" digest is the payload's.
+inline bool IsKnownFormulaKart() { return Current() == Kind::FormulaKart; }
 
 } // namespace ModBuild

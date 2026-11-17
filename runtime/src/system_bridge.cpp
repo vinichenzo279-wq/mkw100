@@ -523,7 +523,22 @@ void SystemBridge::SeedLowMemDefaults(const Memory::Config& config) {
         entries.push_back({0x800017D8u, 0x00000001u, "Retro Rewind recomp runtime marker", true});
     }
 
+    // mkw100: StaticR.rel as the game reads it into its heap (PAL): the file image at 0x805102E0,
+    // whose data ends at 0x808DD3D4 and whose import and relocation tables follow, up to where
+    // OSLink puts its .bss (0x809BD6E0). Formula Kart Wii loads its payload at 0x808DD400, over
+    // those tables once the game has linked StaticR, and the module image is written after the
+    // link too (StaticR's prolog). Such a module needs no arena: lowering arena hi to it would
+    // move StaticR's own buffer and break the link.
+    constexpr uint32_t kStaticRTablesStart = 0x808DD3D4u;
+    constexpr uint32_t kStaticRTablesEnd = 0x809BD6E0u;
     for (const auto& reservation : RecompMod::MemoryReservations()) {
+        if (reservation.start >= kStaticRTablesStart && reservation.end <= kStaticRTablesEnd) {
+            RT_LOG(RT_TAG_MOD) << "MEM1 range 0x" << std::hex << std::uppercase << reservation.start << "-0x"
+                      << reservation.end << " for " << reservation.name
+                      << " lies in StaticR's relocation tables; no arena reservation"
+                      << std::dec << std::nouppercase << std::endl;
+            continue;
+        }
         if (reservation.start >= kMem1ArenaLoDefault &&
             reservation.start < mem1ArenaHiDefault &&
             reservation.end <= 0x81800000u) {
