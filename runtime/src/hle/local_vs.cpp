@@ -1575,3 +1575,31 @@ extern "C" void LocalVs_BalloonsPosition_8059098c(CpuContext* ctx) {
     }
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8059098C, LocalVs_BalloonsPosition_8059098c, "LocalVs_BalloonsPosition_8059098c");
+
+// Retro Rewind's leaderboard display (rr-pulsar UI/Leaderboard/LeaderboardDisplay.cpp; L/R or the
+// d-pad toggles names and times) refills every result row after the page is filled:
+// fillLeaderboardResults gives row i the racer in place i + 1 (Raceinfo playerIdInEachPosition)
+// through fillLeaderboardResult (0x81859FDC, CtrlRaceResult&, playerId), which calls FillName or
+// FillFinishTime. Past 12 racers the rows show a window (149th-160th), so each row got the name of
+// a top-12 racer under another racer's icon and place (the player's own row a CPU's skin name;
+// the series standings page, which Retro Rewind does not refill, was right). The row's racer is
+// the one this page shows in it. Known Retro Rewind build only.
+extern "C" void LocalVs_RrFillLeaderboardResult_81859fdc(CpuContext* ctx) {
+    using namespace results_scroll;
+    if (ModBuild::IsKnownRetroRewind() && page != 0 && count > kRows) {
+        for (uint32_t row = 0; row < kRows; ++row) {
+            if (Control(page, row) == ctx->gpr[3]) {
+                static uint32_t logged = 0;
+                if (ctx->gpr[4] != rowPlayer[row] && logged < 24) {
+                    ++logged;
+                    RT_LOGF("local-vs", "leaderboard row %u: racer %u (Retro Rewind's display gave %u)\n", row,
+                            rowPlayer[row], ctx->gpr[4]);
+                }
+                ctx->gpr[4] = rowPlayer[row];
+                break;
+            }
+        }
+    }
+    MKW_GUEST_NEXT(81859FDC)(ctx);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x81859FDC, LocalVs_RrFillLeaderboardResult_81859fdc, "LocalVs_RrFillLeaderboardResult_81859fdc");
