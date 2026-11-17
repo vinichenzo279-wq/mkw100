@@ -39,7 +39,8 @@ namespace RrItemFever {
 // previous round's items were used.
 void TestGiveItem(CpuContext* ctx, uint32_t raceinfo) {
     static const long item = GiveItemFromEnv();
-    if (item < 0) return;
+    // Plain Item Fever has its own (item_fever.cpp); here only the combined build.
+    if (item < 0 || ModBuild::Current() != ModBuild::Kind::RetroRewindItemFever) return;
     if (Memory::Read32(raceinfo + 0x28) != 2) return;  // racing
     const uint32_t frame = Memory::Read32(raceinfo + 0x20);
     if (frame < 600 || frame % 300 != 0) return;
