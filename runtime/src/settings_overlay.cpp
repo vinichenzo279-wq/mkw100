@@ -1,5 +1,7 @@
 #include "settings_overlay.h"
 #include "local_vs.h"
+#include "hle/formula_kart.h"
+#include "hle/mod_build.h"
 #include "gx_worker.h"
 #include "audio_backend.h"
 #include "aurora_events.h"
@@ -1499,6 +1501,10 @@ void DrawTopBar() {
     ImGui::Separator();
     if (ImGui::BeginMenu("Local VS")) {
         LocalVs::DrawSettings();
+        ImGui::EndMenu();
+    }
+    if (ModBuild::IsKnownFormulaKart() && ImGui::BeginMenu("Formula Kart")) {
+        FormulaKart::DrawSettings();
         ImGui::EndMenu();
     }
     const auto resolutionIt = std::find_if(kResolutions.begin(), kResolutions.end(), [](const ResolutionItem& item) {

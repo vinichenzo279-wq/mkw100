@@ -52,6 +52,14 @@ struct RuntimeUserConfig {
     std::optional<std::string> localVsTeamScoring;       // "average" or "total"
     std::optional<bool> localVsTeamHits;                 // items hit teammates (default true)
     std::optional<bool> localVsSpeedometer;              // HUD speedometer (default true)
+    // [formula_kart]: the Formula Kart Wii options its code reads during races (formula_kart.cpp).
+    std::optional<std::string> formulaKartGreenShell;    // "green", "red", "banana", "fib", "bomb", "blue", "feather", "pow"
+    std::optional<bool> formulaKartBetterItems;          // Newbie Helper's better item pool (default true)
+    std::optional<bool> formulaKartBulletClouds;         // Bullet Bill thunderclouds (default true)
+    std::optional<bool> formulaKartFeatherCuts;          // feather cut indicators (default false)
+    std::optional<std::string> formulaKartDriftBikes;    // "default", "outside", "inside"
+    std::optional<std::string> formulaKartDriftKarts;    // "default", "inside"
+    std::optional<std::string> formulaKartRaceMusic;     // "normal", "accelerating"
     std::optional<std::string> localVsTeamColour;        // "random" or a colour name ("red".."cyan")
     std::optional<std::string> localVsTeamColourP2, localVsTeamColourP3, localVsTeamColourP4;  // split screen
     std::optional<bool> localVsTeamCustom;               // team_sizes instead of count/size
@@ -468,6 +476,13 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     config.localVsTeamScoring = FindConfigValue<std::string>(document, "local_vs", "team_scoring");
     config.localVsTeamHits = FindConfigValue<bool>(document, "local_vs", "team_hits");
     config.localVsSpeedometer = FindConfigValue<bool>(document, "local_vs", "speedometer");
+    config.formulaKartGreenShell = FindConfigValue<std::string>(document, "formula_kart", "green_shell");
+    config.formulaKartBetterItems = FindConfigValue<bool>(document, "formula_kart", "better_items");
+    config.formulaKartBulletClouds = FindConfigValue<bool>(document, "formula_kart", "bullet_thunderclouds");
+    config.formulaKartFeatherCuts = FindConfigValue<bool>(document, "formula_kart", "feather_cut_indicators");
+    config.formulaKartDriftBikes = FindConfigValue<std::string>(document, "formula_kart", "drift_bikes");
+    config.formulaKartDriftKarts = FindConfigValue<std::string>(document, "formula_kart", "drift_karts");
+    config.formulaKartRaceMusic = FindConfigValue<std::string>(document, "formula_kart", "race_music");
     config.localVsTeamColour = FindConfigValue<std::string>(document, "local_vs", "team_colour");
     config.localVsTeamColourP2 = FindConfigValue<std::string>(document, "local_vs", "team_colour_p2");
     config.localVsTeamColourP3 = FindConfigValue<std::string>(document, "local_vs", "team_colour_p3");
