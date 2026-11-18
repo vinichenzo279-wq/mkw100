@@ -121,6 +121,17 @@ extern "C" uint32_t PAD__Read_HLE(uint32_t statusPtr)
     InputBindings::Apply(statuses);
     MotionTrick::Apply(statuses);
     AutoDriver::FillPad(statuses[0]);  // --race-auto only
+    // DIAG MKW100_TEST_MENU_PRESS=<reads>: pad 0 presses A for 6 reads every <reads> reads (from
+    // read 600), walking the menus with their default choices.
+    if (static const long every = [] { const char* t = std::getenv("MKW100_TEST_MENU_PRESS"); return t ? std::strtol(t, nullptr, 0) : 0L; }();
+        every > 0) {
+        static uint32_t reads = 0;
+        ++reads;
+        if (reads >= 600 && (reads % uint32_t(every)) < 6) {
+            statuses[0].err = PAD_ERR_NONE;
+            statuses[0].button |= PAD_BUTTON_A;
+        }
+    }
     // R26_PAD_TRACE: host-to-guest PAD sample. Do not synthesize inputs.
     // Bounded to the first 3000 reads or 24 changes to avoid per-frame logs.
     if (const char* diag = std::getenv("MKW100_R26_INPUT_DIAG"); diag && std::strcmp(diag, "1") == 0) {
