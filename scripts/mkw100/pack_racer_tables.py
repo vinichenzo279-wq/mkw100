@@ -37,6 +37,41 @@ from pul_hooks import parse_pul  # noqa: E402
 
 MODULE_BASE = 0x81800000
 INLINE = 12
+BIG_TABLE = 24  # a left-out table holding this many racers or more bounds a check instead of blocking it
+
+# Indexed accesses checked by hand: not racer-indexed, or a game array the game bounds itself; ignored
+# as untracked-base uses (Item
+# Fever 1.1.1 module offsets; another build's offsets match nothing here):
+NOT_RACER_SITES = {
+    # 0x58094 (a kart's model visibility, called by the Boo Mushroom's ghost 0x56564 via 0x5c540):
+    # r3 is a model object, r29 / r30 loop counters capped at 4 over its arrays. The caller's racer
+    # number only looks passed in because r3 held it earlier in that caller.
+    0x58674, 0x58750,
+    # 0x5d3bc (the Black Bob-omb's slots, called by 0x55f04 with an object in r3): r29 is a slot
+    # number from 0x5cf84 into 8-slot tables at 0x818BE3A8.
+    0x5d428, 0x5d430, 0x5d440, 0x5d444, 0x5d550, 0x5d558,
+    0x5f124,  # 0x5f08c, same caller and slots
+}
+# Item Fever functions whose parameter registers are not racer numbers, checked by hand (a caller's
+# racer only looks passed in because the register held it earlier in the caller).
+NOT_RACER_PARAMS = {
+    0x5d3bc: set(range(3, 11)), 0x5f08c: set(range(3, 11)),  # the Black Bob-omb's slots: 0x55f04 passes an item object
+}
+# Racer-indexed accesses to game arrays MKW100 sizes for every racer, each checked by hand; they count
+# as a racer use that is safe past 12, like a call to a racer function (RACER_TAKERS).
+GAME_ARRAY_SITES = {
+    # 0x58810 (a racer's effects on or off, same caller): the game's effect manager (0x809C21D0)
+    # array of Effects::Player at +0x68, read only below that manager's own count (+0x0).
+    0x58858,
+    # The Boo Mushroom's steal (0x563bc, 0x560e0, 0x5c864): Item::Manager's Item::Players (+0x14, 0x248 each),
+    # which MKW100 sizes for every racer, indexed only below the manager's count (+0x10).
+    0x56470, 0x5615c, 0x5616c, 0x5c8c0, 0x5c944, 0x5c960,
+    0x571c4, 0x57220,  # 0x57188 / 0x571e4: a racer's held item / its count
+    0x3bc8c,  # 0x3bba4 (the same Item::Players, below the count)
+    # 0x56e38: Racedata's player entries (0xF0 each); the `mulli 0xF0` at 0x56e5c is a player-slot site
+    # (player-slot-sites.txt), so racers 12+ read their own entry in the overflow region.
+    0x56e60, 0x46b78,  # 0x46b54 too: its `mulli 0xF0` at 0x46b74 is a player-slot site
+}
 RACERS = 255
 XLOAD = {23, 87, 279, 343, 535, 599}          # lwzx lbzx lhzx lhax lfsx lfdx
 XSTORE = {151, 215, 407, 663, 727}            # stwx stbx sthx stfsx stfdx
@@ -136,6 +171,22 @@ class Func:
         for reg in self.seeds:
             compared.setdefault(reg, start)
         self.alias = alias
+        # Code inside a loop: between a backward branch and its target. `addi rP, rP, k` there steps
+        # a pointer; outside a loop it just names base + k (0x81856564: `addi r31, r31, 0x20`).
+        loops = []
+        for o in range(start, end, 4):
+            w = word(blob, o)
+            if (w >> 26) == 18 and not (w & 2):
+                d = w & 0x03FFFFFC
+                d = d - 0x04000000 if d & 0x02000000 else d
+            elif (w >> 26) == 16 and not (w & 2):
+                d = w & 0xFFFC
+                d = d - 0x10000 if d & 0x8000 else d
+            else:
+                continue
+            if d <= 0 and start <= o + d:
+                loops.append((o + d, o))
+        in_loop = lambda o: any(t <= o <= b for t, b in loops)
         origin = set()  # registers holding a relocation's address itself
         mod = {}      # reg -> table address (module offset)
         racer = {}    # reg -> guard register it came from
@@ -167,14 +218,15 @@ class Func:
                     origin.add(rd)
                     self.addrs.add(target)
                 elif ra != 0 and ra in mod:
-                    if rd == ra and simm > 0:
+                    stepping = rd == ra and in_loop(o)
+                    if stepping and simm > 0:
                         self.steps.add(mod[ra])
                     target = mod[ra] + simm
                     from_origin = ra in origin
                     kill(rd)
                     if from_origin:
                         self.members.add(target)  # a variable named as base + constant
-                    if rd != ra:
+                    if not stepping:
                         mod[rd] = target
                 elif ra != 0 and rd == ra and simm == 1:
                     self.counters.add(rd)
@@ -231,6 +283,10 @@ class Func:
                     kill(ra)
                     if src is not None:
                         racer[ra] = src
+                elif xo == 467:                            # mtspr: no GPR written (rA/rB hold the SPR)
+                    pass
+                elif xo in (339, 371):                     # mfspr, mftb: only rD
+                    kill(rd)
                 else:
                     # other X-form arithmetic/logic writes rA (logic) or rD (arith); drop both
                     kill(ra)
@@ -271,7 +327,7 @@ class Func:
         elif rb in mod:
             table_reg, idx_reg = rb, ra
         src, stride = None, None
-        if idx_reg is not None:
+        if idx_reg is not None and o not in NOT_RACER_SITES:
             if idx_reg in scaled:
                 src, stride = scaled[idx_reg]
             elif idx_reg in racer or idx_reg in compared:
@@ -283,7 +339,14 @@ class Func:
             self.accesses.append((o, kind, table_reg, idx_reg, mod[table_reg], stride, self.canon(src)))
         else:
             # racer-derived offset on a base we cannot name
-            for reg in (ra, rb):
+            if o in GAME_ARRAY_SITES:
+                for reg in (ra, rb):
+                    if reg in scaled:
+                        self.taken[self.canon(scaled[reg][0])].append(o)
+                    elif reg in racer or reg in compared:
+                        self.taken[self.canon(racer.get(reg, reg))].append(o)
+                return
+            for reg in (() if o in NOT_RACER_SITES else (ra, rb)):
                 if reg in scaled:
                     self.unknown[self.canon(scaled[reg][0])].append(o)
                 elif reg in racer or reg in compared:
@@ -319,7 +382,8 @@ def analyse(pul, known):
             for src, lst in f.module_calls.items():
                 for callee, reg in lst:
                     seeds[callee].add(reg)
-        funcs = [Func(blob, relocs, calls, s, e, seeds.get(s, ())) for s, e in spans_all]
+        funcs = [Func(blob, relocs, calls, s, e, set(seeds.get(s, ())) - NOT_RACER_PARAMS.get(s, set()))
+                 for s, e in spans_all]
     by_start = {f.start: f for f in funcs}
     # 1. tables: a racer-indexed access names the table and its element size
     strides = collections.defaultdict(collections.Counter)
@@ -337,6 +401,7 @@ def analyse(pul, known):
         return bounds[i] if i < len(bounds) else None
 
     tables, left_out = {}, {}
+    capacity = {}  # left-out tables with more than 12 elements: how many they hold
     for table, c in strides.items():
         stride = c.most_common(1)[0][0]
         if len(c) > 1:
@@ -353,6 +418,7 @@ def analyse(pul, known):
                 left_out[table] = f'next variable at +0x{nb - table:x}, inside 12 elements (0x{size:x})'
             elif nb is not None and nb - table > ((size + 7) & ~7) + 8:
                 left_out[table] = f'next variable at +0x{nb - table:x}: more than 12 elements (0x{size:x})'
+                capacity[table] = min((nb - table) // stride, RACERS)
             else:
                 tables[table] = stride
     spans = sorted((t, t + INLINE * s) for t, s in tables.items())
@@ -374,14 +440,18 @@ def analyse(pul, known):
     memo = {}
 
     def why_unsafe(f, reg, depth=0):
-        """None when racers 12+ reaching `reg` in f only touch shadowed tables, else the reason."""
+        """(None, limit) when racers 12+ reaching `reg` in f only touch shadowed tables, or tables that
+        already hold `limit` racers (Item Fever's 64-racer tables); else (the reason, 0)."""
         key = (f.start, reg)
         if key in memo:
             return memo[key]
-        memo[key] = None  # a cycle: assume safe while it is being decided
-        reason = None
+        memo[key] = (None, RACERS)  # a cycle: assume safe while it is being decided
+        reason, limit = None, RACERS
         uses = [a for a in f.accesses if a[6] == reg]
-        off = sorted({hex(a[4]) for a in uses if a[4] not in shadowed})
+        big = {a[4] for a in uses if a[4] not in shadowed and capacity.get(a[4], 0) >= BIG_TABLE}
+        off = sorted({hex(a[4]) for a in uses if a[4] not in shadowed and a[4] not in big})
+        if big:
+            limit = min(capacity[t] for t in big)
         if off:
             reason = 'indexes tables not shadowed: ' + ','.join(off)
         elif f.unknown.get(reg):
@@ -395,12 +465,13 @@ def analyse(pul, known):
                 own_guard = [o for o, r in c.guards if r == arg]
                 if own_guard and any(o not in widen_set for o in own_guard):
                     continue  # the callee keeps racers 12+ out itself
-                sub = why_unsafe(c, arg, depth + 1)
+                sub, sub_limit = why_unsafe(c, arg, depth + 1)
                 if sub:
                     reason = f'via 0x{callee:x}: {sub}'
                     break
-        memo[key] = reason
-        return reason
+                limit = min(limit, sub_limit)
+        memo[key] = (reason, 0 if reason else limit)
+        return memo[key]
 
     widen_set = set()
     widen, keep = {}, []
@@ -417,13 +488,13 @@ def analyse(pul, known):
             if pointer_loop and reg in f.counters:
                 keep.append((o, f.start, 'loop counter of a pointer-stepping loop'))
                 continue
-            reason = why_unsafe(f, reg)
+            reason, limit = why_unsafe(f, reg)
             if not reason and not uses and not taken:
                 reason = 'only passed on to Item Fever functions (no table or racer function of its own)'
             if reason:
                 keep.append((o, f.start, reason))
             else:
-                widen[o] = (f.start, len(uses), len(taken))
+                widen[o] = (f.start, len(uses), len(taken), limit)
                 widen_set.add(o)
     return tables, left_out, sites, widen, keep
 
@@ -500,12 +571,14 @@ def main():
     for o in raised:
         if MODULE_BASE + o in taken_sites:
             continue
-        lines.append(f'0x{MODULE_BASE + o:08X}  0  cmpimm  {RACERS}  0x0  profile={a.profile}  '
-                     f'# racer < 12 in 0x{MODULE_BASE + widen[o][0]:08X}')
+        limit = widen[o][3]
+        note = '' if limit >= RACERS else f' (its tables hold {limit} racers)'
+        lines.append(f'0x{MODULE_BASE + o:08X}  0  cmpimm  {limit}  0x0  profile={a.profile}  '
+                     f'# racer < 12 in 0x{MODULE_BASE + widen[o][0]:08X}{note}')
     report = [
         f'{len(tables)} tables shadowed ({shadow - int(a.shadow, 16):#x} bytes from {a.shadow}), '
         f'{len(left_out)} left out, {len(sites)} access sites ({clash} already listed), '
-        f'{len(widen)} compares raised to 255, {len(keep)} kept at 12',
+        f'{len(widen)} compares raised ({sum(1 for v in widen.values() if v[3] < RACERS)} of them below 255), {len(keep)} kept at 12',
     ]
     report += [f'table 0x{MODULE_BASE + t:08X} x{tables[t]} shadow 0x{shadows[t]:08X}' for t in sorted(tables)]
     report += [f'left out 0x{MODULE_BASE + t:08X}: {why}' for t, why in sorted(left_out.items())]
