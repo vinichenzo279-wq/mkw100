@@ -18,11 +18,17 @@ param(
     # and stages it into play-rr-if\ instead of play-rr\. Remembered; -NoItemFeverItems turns it off.
     [string]$ItemFeverItems,
     [switch]$NoItemFeverItems,
+    # Or build Formula Kart Wii and stage it into play-fkw\: the unzipped FKW download (the folder
+    # holding fkw\ and riivolution\) or its fkw folder. Needs python (the build converts FKW's
+    # payload, scripts/mkw100/fkw_to_kamek.py). Remembered like -ItemFever; -NoFormulaKart turns it off.
+    [string]$FormulaKart,
+    [switch]$NoFormulaKart,
     [switch]$AllowSourceDependencies,
     [switch]$PreflightOnly
 )
 # Builds MKW100 from this checkout and stages it into play\ (base game) and, optionally, play-rr\
-# (Retro Rewind) or play-if\ (Item Fever). Rerun after every git pull; settings and saves in the play folders are kept.
+# (Retro Rewind), play-if\ (Item Fever) or play-fkw\ (Formula Kart Wii). Rerun after every git pull;
+# settings and saves in the play folders are kept.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Repo = $PSScriptRoot
@@ -60,7 +66,7 @@ function Resolve-RetroRewindPack([string]$Path) {
 
 if ($NoRetroRewind) {
     $RetroRewind = ''
-} elseif (!$RetroRewind -and !$ItemFever -and $saved -and $saved.PSObject.Properties['RetroRewind'] -and $saved.RetroRewind) {
+} elseif (!$RetroRewind -and !$ItemFever -and !$FormulaKart -and $saved -and $saved.PSObject.Properties['RetroRewind'] -and $saved.RetroRewind) {
     $RetroRewind = $saved.RetroRewind
 } elseif (!$RetroRewind -and $interactive) {
     $recorded = Get-RecordedRetroRewind
@@ -85,15 +91,40 @@ function Resolve-ItemFeverPack([string]$Path) {
 
 if ($NoItemFever) {
     $ItemFever = ''
-} elseif (!$ItemFever -and !$RetroRewind -and $saved -and $saved.PSObject.Properties['ItemFever'] -and $saved.ItemFever) {
+} elseif (!$ItemFever -and !$RetroRewind -and !$FormulaKart -and $saved -and $saved.PSObject.Properties['ItemFever'] -and $saved.ItemFever) {
     $ItemFever = $saved.ItemFever
-} elseif (!$ItemFever -and !$RetroRewind -and $interactive) {
+} elseif (!$ItemFever -and !$RetroRewind -and !$FormulaKart -and $interactive) {
     $ItemFever = Read-Host 'Item Fever folder (the unzipped download) to build it instead, or Enter to skip'
 }
 if ($ItemFever -and $RetroRewind) {
     throw 'One checkout builds one mod: pass -RetroRewind or -ItemFever (use a second clone for the other, or -NoRetroRewind / -NoItemFever).'
 }
 if ($ItemFever) { $ItemFever = Resolve-ItemFeverPack $ItemFever }
+
+# Formula Kart Wii: the folder holding fkw\ and riivolution\fkw.xml, or fkw\ itself; returns the
+# download folder (what Build-MKW100.ps1 -FormulaKart takes).
+function Resolve-FormulaKartPack([string]$Path) {
+    $Path = [IO.Path]::GetFullPath($Path.Trim('"'))
+    foreach ($candidate in @($Path, (Split-Path -Parent $Path))) {
+        if ($candidate -and (Test-Path -LiteralPath (Join-Path $candidate 'fkw\fkw\FormulaKartWiiP.bin')) -and
+            (Test-Path -LiteralPath (Join-Path $candidate 'riivolution\fkw.xml'))) {
+            return $candidate
+        }
+    }
+    throw "Not a Formula Kart Wii download (needs fkw\fkw\FormulaKartWiiP.bin and riivolution\fkw.xml): $Path"
+}
+
+if ($NoFormulaKart) {
+    $FormulaKart = ''
+} elseif (!$FormulaKart -and !$RetroRewind -and !$ItemFever -and $saved -and $saved.PSObject.Properties['FormulaKart'] -and $saved.FormulaKart) {
+    $FormulaKart = $saved.FormulaKart
+} elseif (!$FormulaKart -and !$RetroRewind -and !$ItemFever -and $interactive) {
+    $FormulaKart = Read-Host 'Formula Kart Wii folder (the unzipped download) to build it instead, or Enter to skip'
+}
+if ($FormulaKart -and ($RetroRewind -or $ItemFever)) {
+    throw 'One checkout builds one mod: pass only one of -RetroRewind, -ItemFever, -FormulaKart (use a second clone for another, or -NoRetroRewind / -NoItemFever / -NoFormulaKart).'
+}
+if ($FormulaKart) { $FormulaKart = Resolve-FormulaKartPack $FormulaKart }
 
 if ($RetroRewind -eq 'auto') {
     $RetroRewind = Get-RecordedRetroRewind
@@ -109,13 +140,14 @@ if ($NoItemFeverItems -or !$RetroRewind) {
 }
 if ($ItemFeverItems) { $ItemFeverItems = Resolve-ItemFeverPack $ItemFeverItems }
 
-[pscustomobject]@{ InstallRoot = $InstallRoot; RetroRewind = $RetroRewind; ItemFever = $ItemFever; ItemFeverItems = $ItemFeverItems } |
+[pscustomobject]@{ InstallRoot = $InstallRoot; RetroRewind = $RetroRewind; ItemFever = $ItemFever; ItemFeverItems = $ItemFeverItems; FormulaKart = $FormulaKart } |
     ConvertTo-Json | Set-Content -LiteralPath $OptionsFile -Encoding UTF8
 
 $buildArgs = @{ InstallRoot = $InstallRoot; Jobs = $Jobs; AllowSourceDependencies = $AllowSourceDependencies; PreflightOnly = $PreflightOnly }
 if ($RetroRewind) { $buildArgs.RetroRewind = $RetroRewind }
 if ($ItemFever) { $buildArgs.ItemFever = $ItemFever }
 if ($ItemFeverItems) { $buildArgs.ItemFeverItems = $ItemFeverItems }
+if ($FormulaKart) { $buildArgs.FormulaKart = $FormulaKart }
 & (Join-Path $Repo 'Build-MKW100.ps1') @buildArgs
 if ($LASTEXITCODE -ne 0) { throw 'Build failed; see build-logs.' }
 if ($PreflightOnly) { return }
@@ -255,7 +287,17 @@ if ($ItemFever) {
         -Destination (Join-Path $stageIf 'riivolution') -Force
 }
 
+if ($FormulaKart) {
+    # The fkw\ folder mirrored like a pack (the build's overlay root is "fkw" beside the exe), and
+    # the XML beside it as in the download (recomp.yml: ../riivolution/fkw.xml).
+    $stageFkw = Join-Path $Repo 'play-fkw'
+    Install-ModProduct -Name 'Formula Kart Wii' -Stage $stageFkw -Pack (Join-Path $FormulaKart 'fkw') -Players 100 -ConfigKey ''
+    New-Item -ItemType Directory -Force (Join-Path $stageFkw 'riivolution') | Out-Null
+    Copy-Item -LiteralPath (Join-Path $FormulaKart 'riivolution\fkw.xml') -Destination (Join-Path $stageFkw 'riivolution') -Force
+}
+
 $launchers = if ($RetroRewind -and $ItemFeverItems) { 'Play-MKW100.cmd or Play-RetroRewindItemFever.cmd' }
              elseif ($RetroRewind) { 'Play-MKW100.cmd or Play-RetroRewind.cmd' }
-             elseif ($ItemFever) { 'Play-MKW100.cmd or Play-ItemFever.cmd' } else { 'Play-MKW100.cmd' }
+             elseif ($ItemFever) { 'Play-MKW100.cmd or Play-ItemFever.cmd' }
+             elseif ($FormulaKart) { 'Play-MKW100.cmd or Play-FormulaKart.cmd' } else { 'Play-MKW100.cmd' }
 Write-Host "Installed. Run $launchers. Settings and saves are kept on updates."

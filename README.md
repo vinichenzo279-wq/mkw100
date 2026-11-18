@@ -58,6 +58,7 @@ The first build takes a while: it translates the game, builds aurora (the graphi
 | `play-rr\` | `RetroRewind.exe` with its own `UserData`, plus `RetroRewind6\`, a folder of links to your pack. Retro Rewind's own save lives in `play-rr\riivolution\save`, so your Dolphin or WheelWizard save is left alone. |
 | `play-if\` | `RetroRewind.exe` built from Item Fever, with its own `UserData`, `ItemFever\` (links to your pack) and `riivolution\ItemFever.xml` |
 | `play-rr-if\` | Experimental: `RetroRewind.exe` built from Retro Rewind with Item Fever's items, with its own `UserData`, `RetroRewind6\` (links) and `ItemFeverItems\` (Item Fever's item files, merged from your download) |
+| `play-fkw\` | `RetroRewind.exe` built from Formula Kart Wii, with its own `UserData`, `fkw\` (links to your download) and `riivolution\fkw.xml` |
 | `install-options.json` | Your WiiCompiled folder and mod choice, reused on the next run |
 
 Your WiiCompiled installation is only read from: the game data and the clean DOL/REL stay there, so keep it where it is. Nothing in it is changed, and your original WiiCompiled saves are not copied.
@@ -85,6 +86,16 @@ With `-RetroRewind`, `-ItemFeverItems` adds Item Fever's items and their logic t
 ```
 
 Play with **Play-RetroRewindItemFever.cmd**. It lives in `play-rr-if\`, so `play-rr\` keeps the plain Retro Rewind of an earlier install; this checkout's Retro Rewind executable is then the combined one. `-NoItemFeverItems` goes back to plain Retro Rewind. Item Fever's licence allows personal use only: don't share this version.
+
+### Formula Kart Wii
+
+A checkout can also build **Formula Kart Wii** (offline, PAL; [source](https://github.com/CLF78/FormulaKartWii)): 50-lap races, its item system and two-digit lap counter, up to 255 racers. FKW is a Riivolution patch, not a Pulsar pack: the build runs its one-time patcher over your download and translates the result (`scripts/mkw100/fkw_to_kamek.py`, so **python** must be on PATH). Unzip the FKW download anywhere and pass the folder that holds `fkw\` and `riivolution\`:
+
+```powershell
+./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -FormulaKart 'D:\Mods\FKW'
+```
+
+Play with **Play-FormulaKart.cmd**. It lives in `play-fkw\` with its own `UserData`. Like the other mods it uses the mod executable, so it takes the checkout's one mod slot; `-NoFormulaKart` turns it off. FKW's options are fixed at its Riivolution defaults, and its online code stays unused. FKW has no licence: build it from your own download, and don't share a built copy.
 
 ## Development
 
