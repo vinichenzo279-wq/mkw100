@@ -132,9 +132,11 @@ public sealed class GuestAddressTableTests
             .SelectMany(static path => Regex.Matches(File.ReadAllText(path), @"MKW_GUEST_(?:FUNC|NEXT)\(\s*([0-9A-Fa-f]{8})\s*\)")
                 .Select(static match => Convert.ToUInt32(match.Groups[1].Value, 16)))
             .Distinct()
-            // Retro Rewind's Code.pul module (0x81800000..0x818FFFFF, guest_versions.inc) is not in
-            // MAP.txt; natives there wrap the mod translation, which exists only in that product.
-            .Where(static address => address < 0x81800000 || address > 0x818FFFFF)
+            // Pulsar pack modules (loaded from 0x81800000: Retro Rewind's Code.pul, Item Fever's, and
+            // the combined Retro Rewind + Item Fever module, whose Item Fever part sits 0xC0000 higher
+            // and reaches past 0x81900000) are not in MAP.txt; natives there wrap the mod translation,
+            // which exists only in that product.
+            .Where(static address => address < 0x81800000 || address > 0x819FFFFF)
             .ToArray();
         Assert.NotEmpty(calls);
         var entries = new Dictionary<GuestRegion, HashSet<uint>>
