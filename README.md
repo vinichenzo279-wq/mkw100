@@ -95,7 +95,7 @@ A checkout can also build **Formula Kart Wii** (offline, PAL; [source](https://g
 ./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -FormulaKart 'D:\Mods\FKW'
 ```
 
-Play with **Play-FormulaKart.cmd**. It lives in `play-fkw\` with its own `UserData`. Like the other mods it uses the mod executable, so it takes the checkout's one mod slot; `-NoFormulaKart` turns it off. FKW's options are fixed at its Riivolution defaults, and its online code stays unused. FKW has no licence: build it from your own download, and don't share a built copy.
+Play with **Play-FormulaKart.cmd**. It lives in `play-fkw\` with its own `UserData`. Like the other mods it uses the mod executable, so it takes the checkout's one mod slot; `-NoFormulaKart` turns it off. The options FKW reads during races are in F10 → **Formula Kart** and under `[formula_kart]` in `play-fkw\UserData\Config.toml`: `green_shell` (`"blue"`, or `"green"`, `"red"`, `"banana"`, `"fib"`, `"bomb"`, `"feather"`, `"pow"`), `better_items`, `bullet_thunderclouds`, `feather_cut_indicators`, `drift_bikes` (`"default"`, `"outside"`, `"inside"`), `drift_karts` (`"default"`, `"inside"`) and `race_music` (`"normal"`, `"accelerating"`). Its other options stay at its Riivolution defaults, and its online code stays unused. FKW has no licence: build it from your own download, and don't share a built copy.
 
 ## Development
 
