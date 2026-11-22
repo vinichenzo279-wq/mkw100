@@ -106,7 +106,8 @@ The window shows an error and stops. The common ones:
 | `Clean PAL RMCP01 DOL/REL checksum mismatch` | The game files are not from a clean PAL disc. MKW100 only works with the European version. |
 | `dotnet.exe not on PATH` or `no SDK installed` | Do step 2 again, then open a **new** window and rerun. |
 | `git.exe is needed` | Do step 3 again, then open a new window and rerun. |
-| `Aurora source (run "git submodule update --init" ...)` | You cloned without `--recurse-submodules`. Run `git submodule update --init` in the `mkw100` folder, then rerun. |
+| `Aurora source (run "git submodule update --init" ...)` | You cloned without `--recurse-submodules`, or downloaded the code as a ZIP (a ZIP has no submodule). Run `git submodule update --init` in the `mkw100` folder, or clone as in step 4, then rerun. |
+| `error NU1100: Unable to resolve 'YamlDotNet'` (or `Tomlyn`) | The .NET SDK could not download its packages. Check that you are online, update to the latest `mkw100` (it brings its own package source), then rerun. |
 | `Close WiiCompiled.exe, then rerun the installer` | The game is still open. Close it and run the installer again. |
 | `Build failed; see build-logs` | Something went wrong while compiling. Send the newest files in `mkw100\build-logs\` to whoever helps you. |
 
