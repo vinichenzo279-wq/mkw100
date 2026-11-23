@@ -8,9 +8,10 @@ A fork of the WiiCompiled Mario Kart Wii (PAL) recompiler for big offline races:
 - **Team VS**: 2 to 12 teams, chosen by team count, by team size, or with a custom size per colour. Races of more than 12 racers use MKW100's team colours, HUD tinting and team results.
 - **Balloon battle**: past 12 players, with red/blue team sizes and your team picked on the battle team screen.
 - **Grand Prix**: past 12 racers through the award ceremony, with points scaled to the field and a GP rank.
-- **Split screen**: 2 to 4 local players, with CPUs filling the rest of the field.
+- **Split screen**: 2 to 4 local players, with CPUs filling the rest of the field (5 to 8 with the [8 Player Splitscreen](#8-player-splitscreen) build).
+- **Laps**: 1 to 99 laps per race (F10 → Local VS → Laps). The lap counter shows up to 9.
 - **200cc** in place of Mirror (the class button reads 200cc), with Pulsar's brake drifting, fast falling and cannon cap. A 200cc Grand Prix has Very Hard CPUs.
-- **Harder CPUs**: the CPU row on the rules page offers Hard, Very Hard and Impossible.
+- **Harder CPUs**: the CPU row on the rules page offers Hard, Very Hard and Impossible. F10 → Local VS has a CPU difficulty slider and the speed boost of Very Hard and Impossible (+40 and +80 by default).
 - Position icons 13th to 255th, a speedometer in the race HUD (Pulsar's, as Retro Rewind shows it), instant item boxes, scoring and item-distribution options for big fields, all characters/vehicles/cups unlocked, and optional 30 FPS rendering.
 - **Debug item cycler**: a port of _Ro's code. In a race, hold Y and press D-pad left/right to pick an item. It is off by default.
 - **F10** opens the settings overlay. The Local VS tab holds the options above. They are saved to `UserData/Config.toml` in the play folder.
@@ -19,7 +20,9 @@ Online play is not supported: the installer turns networking off.
 
 ### Retro Rewind
 
-The same checkout can also build a Retro Rewind version from your Retro Rewind 6 pack (offline, no Retro WFC). It runs up to **128 racers**. CPUs get varied skins up to racer 64; past that they keep the stock look, because every skin loads a large kart archive and 128 of them don't fit in memory. The racer fixes are measured on the WheelWizard RetroRewind6 `Code.pul`; with another build they switch themselves off (and the build warns).
+The same checkout can also build a Retro Rewind version from your Retro Rewind 6 pack (offline, no Retro WFC). It runs up to **160 racers**. CPUs get varied skins up to racer 100; past that they keep the stock look, because every skin loads a large kart archive and 128 of them don't fit in memory. Retro Rewind's Knockout, Lap Knockout and Royale modes work past 12 racers; Lap Knockout takes a fixed number of knockouts per lap (1 to 25, F10 → Local VS) over up to 50 laps.
+
+Character skin packs that install into the Retro Rewind folder, such as **Character Expansion** (YouthfulAngelF), need no installer option: install them into your `RetroRewind6` folder as their readme says, then run the installer with that folder. The game log lists how many skins it found per character. The racer fixes are measured on the WheelWizard RetroRewind6 `Code.pul`; with another build they switch themselves off (and the build warns).
 
 ## Installing on Windows
 
@@ -70,13 +73,13 @@ Run `git pull` and `git submodule update --init`, then run **Install-MKW100.cmd*
 
 ### Item Fever
 
-Instead of Retro Rewind, a checkout can build an **Item Fever 1.1.1** version (offline, PAL): its 21 new items, Item Rain and Loot Party, up to 100 racers. Unzip the Item Fever download anywhere and pass the folder that holds `ItemFever\` and `riivolution\`:
+Instead of Retro Rewind, a checkout can build an **Item Fever 1.1.1** version (offline, PAL): its 21 new items, Item Rain and Loot Party, up to 255 racers. Unzip the Item Fever download anywhere and pass the folder that holds `ItemFever\` and `riivolution\`:
 
 ```powershell
 ./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -ItemFever 'D:\Mods\item-fever-110'
 ```
 
-Play with **Play-ItemFever.cmd**. It lives in `play-if\` with its own `UserData`; Item Fever's own save (`ifever.dat`) is made from that NAND's save on the first launch. Both mods build the same mod executable, so one checkout holds the base game plus **one** mod: for both, use a second clone in another folder. Known gaps: Item Fever's own per-racer data is made for 12 racers, and not all of it has been extended yet, so a crash in a big race is possible.
+Play with **Play-ItemFever.cmd**. It lives in `play-if\` with its own `UserData`; Item Fever's own save (`ifever.dat`) is made from that NAND's save on the first launch. Both mods build the same mod executable, so one checkout holds the base game plus **one** mod: for both, use a second clone in another folder. Known gaps: Item Fever's own per-racer data is made for 12 racers, and not all of it has been extended yet, so a crash in a big race is possible. The Boo works for every racer, but racers past the 12th can't be robbed by one yet.
 
 ### Retro Rewind with Item Fever's items (experimental)
 
