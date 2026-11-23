@@ -41,36 +41,36 @@ BIG_TABLE = 24  # a left-out table holding this many racers or more bounds a che
 
 # Indexed accesses checked by hand: not racer-indexed, or a game array the game bounds itself; ignored
 # as untracked-base uses (Item
-# Fever 1.1.1 module offsets; another build's offsets match nothing here):
+# Fever 1.1.2 module offsets; another build's offsets match nothing here):
 NOT_RACER_SITES = {
-    # 0x58094 (a kart's model visibility, called by the Boo Mushroom's ghost 0x56564 via 0x5c540):
+    # 0x59d4c (a kart's model visibility, called by the Boo Mushroom's ghost 0x5821c via 0x5e3ec):
     # r3 is a model object, r29 / r30 loop counters capped at 4 over its arrays. The caller's racer
     # number only looks passed in because r3 held it earlier in that caller.
-    0x58674, 0x58750,
-    # 0x5d3bc (the Black Bob-omb's slots, called by 0x55f04 with an object in r3): r29 is a slot
-    # number from 0x5cf84 into 8-slot tables at 0x818BE3A8.
-    0x5d428, 0x5d430, 0x5d440, 0x5d444, 0x5d550, 0x5d558,
-    0x5f124,  # 0x5f08c, same caller and slots
+    0x5a32c, 0x5a408,
+    # 0x5f268 (the Black Bob-omb's slots, called by 0x57bbc with an object in r3): r29 is a slot
+    # number from 0x5ee30 into 8-slot tables at 0x818BE3A8.
+    0x5f2d4, 0x5f2dc, 0x5f2ec, 0x5f2f0, 0x5f3fc, 0x5f404,
+    0x60fd0,  # 0x60f38, same caller and slots
 }
 # Item Fever functions whose parameter registers are not racer numbers, checked by hand (a caller's
 # racer only looks passed in because the register held it earlier in the caller).
 NOT_RACER_PARAMS = {
-    0x5d3bc: set(range(3, 11)), 0x5f08c: set(range(3, 11)),  # the Black Bob-omb's slots: 0x55f04 passes an item object
+    0x5f268: set(range(3, 11)), 0x60f38: set(range(3, 11)),  # the Black Bob-omb's slots: 0x57bbc passes an item object
 }
 # Racer-indexed accesses to game arrays MKW100 sizes for every racer, each checked by hand; they count
 # as a racer use that is safe past 12, like a call to a racer function (RACER_TAKERS).
 GAME_ARRAY_SITES = {
-    # 0x58810 (a racer's effects on or off, same caller): the game's effect manager (0x809C21D0)
+    # 0x5a4c8 (a racer's effects on or off, same caller): the game's effect manager (0x809C21D0)
     # array of Effects::Player at +0x68, read only below that manager's own count (+0x0).
-    0x58858,
-    # The Boo Mushroom's steal (0x563bc, 0x560e0, 0x5c864): Item::Manager's Item::Players (+0x14, 0x248 each),
+    0x5a510,
+    # The Boo Mushroom's steal (0x58074, 0x57d98, 0x5e710): Item::Manager's Item::Players (+0x14, 0x248 each),
     # which MKW100 sizes for every racer, indexed only below the manager's count (+0x10).
-    0x56470, 0x5615c, 0x5616c, 0x5c8c0, 0x5c944, 0x5c960,
-    0x571c4, 0x57220,  # 0x57188 / 0x571e4: a racer's held item / its count
-    0x3bc8c,  # 0x3bba4 (the same Item::Players, below the count)
-    # 0x56e38: Racedata's player entries (0xF0 each); the `mulli 0xF0` at 0x56e5c is a player-slot site
+    0x58128, 0x57e14, 0x57e24, 0x5e76c, 0x5e7f0, 0x5e80c,
+    0x58e7c, 0x58ed8,  # 0x58e40 / 0x58e9c: a racer's held item / its count
+    0x3c38c,  # 0x3c2a4 (the same Item::Players, below the count)
+    # 0x58af0: Racedata's player entries (0xF0 each); the `mulli 0xF0` at 0x58b14 is a player-slot site
     # (player-slot-sites.txt), so racers 12+ read their own entry in the overflow region.
-    0x56e60, 0x46b78,  # 0x46b54 too: its `mulli 0xF0` at 0x46b74 is a player-slot site
+    0x58b18, 0x47900,  # 0x478dc too: its `mulli 0xF0` at 0x478fc is a player-slot site
 }
 RACERS = 255
 XLOAD = {23, 87, 279, 343, 535, 599}          # lwzx lbzx lhzx lhax lfsx lfdx

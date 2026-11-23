@@ -18,8 +18,8 @@ constexpr KnownBuild kKnownBuilds[] = {
      {0x50, 0x61, 0x37, 0x4C, 0x93, 0x7B, 0x8E, 0xBE, 0x70, 0xFA, 0x67, 0xBE, 0xF7, 0xF3, 0x5B, 0x16, 0xF6, 0xE9, 0x22, 0x8B},
      "WheelWizard RetroRewind6"},
     {ModBuild::Kind::ItemFever,
-     {0x47, 0x81, 0x63, 0x37, 0xC3, 0x8D, 0xFD, 0x92, 0xFD, 0x0F, 0xA1, 0x9E, 0x82, 0xFE, 0x72, 0xB3, 0xAF, 0x3F, 0x62, 0x3C},
-     "Item Fever 1.1.1"},
+     {0xCC, 0x8A, 0x2C, 0xD8, 0x87, 0x25, 0x79, 0x82, 0x4E, 0x32, 0xBD, 0x11, 0xF5, 0x5D, 0xA6, 0x37, 0xA2, 0x39, 0xC9, 0xC3},
+     "Item Fever 1.1.2"},
     {ModBuild::Kind::FormulaKart,
      // The converted image (fkw_to_kamek.py blanks the code it only copies into the game and
      // rewrites bl-over-data, seeds indirect entries, moves ItemAmounts to the shadow window), from
@@ -75,7 +75,7 @@ Kind Current() {
     }
     if (kind == Kind::Unknown && CombinedFromKnownBuilds()) {
         kind = Kind::RetroRewindItemFever;
-        name = "Retro Rewind + Item Fever items (combined from WheelWizard RetroRewind6 and Item Fever 1.1.1)";
+        name = "Retro Rewind + Item Fever items (combined from WheelWizard RetroRewind6 and Item Fever 1.1.2)";
     }
     if (kind == Kind::Unknown) {
         RT_LOGF("mod-build", "WARNING: this Code.pul is not a build MKW100's pack fixes were measured on "

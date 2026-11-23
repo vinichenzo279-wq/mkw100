@@ -69,10 +69,10 @@ Run `git pull` and `git submodule update --init`, then run **Install-MKW100.cmd*
 
 ### Item Fever
 
-Instead of Retro Rewind, a checkout can build an **Item Fever 1.1.1** version (offline, PAL): its 21 new items, Item Rain and Loot Party, up to 100 racers. Unzip the Item Fever download anywhere and pass the folder that holds `ItemFever\` and `riivolution\`:
+Instead of Retro Rewind, a checkout can build an **Item Fever 1.1.2** version (offline, PAL): its 21 new items, Item Rain and Loot Party, up to 100 racers. Unzip the Item Fever download anywhere and pass the folder that holds `ItemFever\` and `riivolution\`:
 
 ```powershell
-./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -ItemFever 'D:\Mods\item-fever-110'
+./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -ItemFever 'D:\Mods\item-fever-112'
 ```
 
 Play with **Play-ItemFever.cmd**. It lives in `play-if\` with its own `UserData`; Item Fever's own save (`ifever.dat`) is made from that NAND's save on the first launch. Both mods build the same mod executable, so one checkout holds the base game plus **one** mod: for both, use a second clone in another folder. Known gaps: Item Fever's own per-racer data is made for 12 racers, and not all of it has been extended yet, so a crash in a big race is possible.
@@ -81,10 +81,10 @@ Play with **Play-ItemFever.cmd**. It lives in `play-if\` with its own `UserData`
 
 With `-RetroRewind`, `-ItemFeverItems` adds Item Fever's items and their logic to Retro Rewind: its item table, the 21 new items and the four reworked ones, without Item Fever's menus, settings pages or save. Retro Rewind's own item rules (custom item toggles, item modes) are off in this version, Item Fever's settings stay at their defaults, Item Rain and Loot Party are off, and it is offline only (Retro Rewind's check for a modified game is switched off, so it must never go online). Headless races of up to 128 racers and every Item Fever item at 24 racers pass, and the menus lead into a race. See `docs/mkw100/rr-item-fever.md`.
 
-You need both mods already installed, in folders of your own: Retro Rewind (`-RetroRewind auto` finds WheelWizard's copy) and **Item Fever 1.1.1** (the folder that holds `Binaries`, `Assets` and `Disc`). MKW100 ships nothing from either mod. The installer reads them from those folders and builds the combined version on your PC, with WiiCompiled, like the other builds (about half an hour).
+You need both mods already installed, in folders of your own: Retro Rewind (`-RetroRewind auto` finds WheelWizard's copy) and **Item Fever 1.1.2** (the folder that holds `Binaries`, `Assets` and `Disc`). MKW100 ships nothing from either mod. The installer reads them from those folders and builds the combined version on your PC, with WiiCompiled, like the other builds (about half an hour).
 
 ```powershell
-./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -RetroRewind auto -ItemFeverItems 'D:\Mods\ItemFever-1.1.1\ItemFever'
+./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -RetroRewind auto -ItemFeverItems 'D:\Mods\ItemFever-1.1.2\ItemFever'
 ```
 
 Play with **Play-RetroRewindItemFever.cmd**. It lives in `play-rr-if\`, so `play-rr\` keeps the plain Retro Rewind of an earlier install; this checkout's Retro Rewind executable is then the combined one. `-NoItemFeverItems` goes back to plain Retro Rewind.

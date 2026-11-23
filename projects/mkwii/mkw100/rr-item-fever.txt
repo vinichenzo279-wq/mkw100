@@ -5,6 +5,10 @@
 # left out here like the rest of Item Fever's settings: branches at 0x8082874C and 0x8082884C and a
 # data word at 0x808D9124 (presumably its new Random items rule and Item Box Respawn setting, which
 # are off by default).
+# 1.1.2 (cc8a2cd8...) adds five: Sound3DActor::SetupSound (kept with its keep-func below),
+# Item::SlotData::DecideItem (its Custom Items fix; kept, an own-func), and three left out: its new
+# Frame Rate setting for real Wiis (RaceScene::CreateAndInitInstances / OnReinit -> SetFramerate)
+# and an effects speed-up for real Wiis (Effects::Player::UpdateValues).
 
 if-offset 0xC0000   # Item Fever's module at 0x818C0000
 

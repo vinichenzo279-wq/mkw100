@@ -94,7 +94,7 @@ public static class ModFunctionDiscovery
         }
 
         // Pointers Kamek writes into base-game memory (a vtable slot replaced with a module
-        // method) are only ever reached indirectly. Item Fever's page vtable entry 0x81809A68 (1.1.1)
+        // method) are only ever reached indirectly. Item Fever's page vtable entry 0x81809A68 (1.1.1, 1.1.2)
         // builds an argument (lis) before its stwu, so it fails the prologue test above.
         foreach (var command in chunk.Commands)
         {
