@@ -26,8 +26,8 @@
 //   (1-25) or else Retro Rewind's KO-per-race setting (1-4), and the race gets the laps that takes
 //   (LapKoLaps sets them before the race): 100 racers at 25 a lap, 4 laps; 160 at 5, 32 laps. At
 //   most 50 laps (the two-digit lap counter's most); a field too big for that at N gets just enough
-//   more per lap. Retro Rewind's own
-//   code reads 12 rounds of the plan: past lap 12 its "in danger" highlight is off.
+//   more per lap. Retro Rewind's plan holds 12 rounds; its round's knockout count (which the
+//   "in danger" mark reads) comes from the full plan here.
 //   (The first version kept Retro Rewind's 12-racer race length and knocked out 48 per lap.)
 // - KO Royale needs no scaling: every racer starts with the balloon setting's count.
 // - KO knocks out the same share of the field per KO race as at 12: KOs per race x racers / 12,
@@ -645,6 +645,40 @@ extern "C" void RrKoModes_LapKoProcessElimination_8180ff90(CpuContext* ctx) {
     MKW_GUEST_NEXT(8180FF90)(ctx);
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8180FF90, RrKoModes_LapKoProcessElimination_8180ff90, "RrKoModes_LapKoProcessElimination_8180ff90");
+
+// LapKO::Mgr's knockouts of the current round (mgr, usualLaps): plan[round - 1] (plan[0] in round
+// 0) while that round is below totalRounds, at most activeCount - 1; 0 with one racer left, all but
+// one on a 1-lap course. Its plan holds 12 rounds, so from round 13 on it read 0, and the "in
+// danger" mark (GetPendingKoCount, 0x8180F990: this minus the knockouts already done) was off.
+// Past 12 racers the round's count comes from the full plan here.
+extern "C" void RrKoModes_LapKoRoundKoCount_8180fe60(CpuContext* ctx) {
+    using namespace rr_ko_detail;
+    const uint32_t mgr = ctx->gpr[3];
+    if (!lapko::s.on || lapko::s.mgr != mgr || !KnownOffline()) {
+        MKW_GUEST_NEXT(8180FE60)(ctx);
+        return;
+    }
+    const uint32_t active = Memory::Read8(mgr + lapko::kActiveCount);
+    const uint32_t usual = ctx->gpr[4] & 0xFF;
+    uint32_t count = 0;
+    if (active > 1) {
+        if (usual <= 1) {
+            count = active - 1;
+        } else {
+            const uint32_t round = Memory::Read8(mgr + lapko::kRoundIndex);
+            const uint32_t r = round == 0 ? 0 : round - 1;
+            if (r < Memory::Read8(mgr + lapko::kTotalRounds) && r < lapko::s.plan.size())
+                count = std::min(lapko::s.plan[r], active - 1);
+            static uint32_t logged = 0xFF;
+            if (r >= 12 && r != logged) {
+                logged = r;
+                RT_LOGF("rr-ko", "lap ko round %u: %u to go out (%u active)\n", round, count, active);
+            }
+        }
+    }
+    ctx->gpr[3] = count;
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8180FE60, RrKoModes_LapKoRoundKoCount_8180fe60, "RrKoModes_LapKoRoundKoCount_8180fe60");
 
 // --- KO hooks ---
 
