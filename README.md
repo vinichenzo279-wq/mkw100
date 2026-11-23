@@ -79,13 +79,17 @@ Play with **Play-ItemFever.cmd**. It lives in `play-if\` with its own `UserData`
 
 ### Retro Rewind with Item Fever's items (experimental)
 
-With `-RetroRewind`, `-ItemFeverItems` adds Item Fever's items and their logic to Retro Rewind: its item table, the 21 new items and the four reworked ones, without Item Fever's menus, settings pages or save. Retro Rewind's own item rules (custom item toggles, item modes) are off in this version, Item Fever's settings stay at their defaults, Item Rain and Loot Party are off, and it is offline only. Headless races of up to 128 racers have been tested; menus and the item icons on screen have not been checked yet. See `docs/mkw100/rr-item-fever.md`.
+With `-RetroRewind`, `-ItemFeverItems` adds Item Fever's items and their logic to Retro Rewind: its item table, the 21 new items and the four reworked ones, without Item Fever's menus, settings pages or save. Retro Rewind's own item rules (custom item toggles, item modes) are off in this version, Item Fever's settings stay at their defaults, Item Rain and Loot Party are off, and it is offline only (Retro Rewind's check for a modified game is switched off, so it must never go online). Headless races of up to 128 racers and every Item Fever item at 24 racers pass, and the menus lead into a race. See `docs/mkw100/rr-item-fever.md`.
+
+You need both mods already installed, in folders of your own: Retro Rewind (`-RetroRewind auto` finds WheelWizard's copy) and **Item Fever 1.1.1** (the folder that holds `Binaries`, `Assets` and `Disc`). MKW100 ships nothing from either mod. The installer reads them from those folders and builds the combined version on your PC, with WiiCompiled, like the other builds (about half an hour).
 
 ```powershell
-./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -RetroRewind auto -ItemFeverItems 'D:\Mods\item-fever-110'
+./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -RetroRewind auto -ItemFeverItems 'D:\Mods\ItemFever-1.1.1\ItemFever'
 ```
 
-Play with **Play-RetroRewindItemFever.cmd**. It lives in `play-rr-if\`, so `play-rr\` keeps the plain Retro Rewind of an earlier install; this checkout's Retro Rewind executable is then the combined one. `-NoItemFeverItems` goes back to plain Retro Rewind. Item Fever's licence allows personal use only: don't share this version.
+Play with **Play-RetroRewindItemFever.cmd**. It lives in `play-rr-if\`, so `play-rr\` keeps the plain Retro Rewind of an earlier install; this checkout's Retro Rewind executable is then the combined one. `-NoItemFeverItems` goes back to plain Retro Rewind.
+
+Item Fever's licence allows personal, non-commercial play and forbids redistributing it, modified or not, without the author's written permission. What the installer makes (`play-rr-if\`, its executable and its `ItemFeverItems\` folder) contains both mods: keep it for yourself and don't share it. Anyone else needs their own downloads of both mods and runs the installer themselves.
 
 ### Formula Kart Wii
 
