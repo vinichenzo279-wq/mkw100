@@ -9,6 +9,7 @@
 #include "hle/teams.h"
 #include "hle/rank_icons.h"
 #include "hle/mod_build.h"
+#include "hle/splitscreen8.h"
 #include "memory.h"
 #include "runtime_config.h"
 #include "runtime_product.h"
@@ -666,6 +667,12 @@ void PrepareRace(uint32_t rd) {
     const bool first = !restart && (Memory::Read8(menu+0xB6C)==0 || seriesCount==0);
     if (first) {
         seriesCount=desiredCount.load();
+        // 5-8 local players (MKWii 8P Splitscreen): at most SplitScreen8::kWideMaxRacers racers.
+        if (SplitScreen8::MenuLocals() > 4 && seriesCount > SplitScreen8::kWideMaxRacers) {
+            RT_LOGF("local-vs", "%u local players: %u racers instead of %u\n", SplitScreen8::MenuLocals(),
+                    unsigned(SplitScreen8::kWideMaxRacers), seriesCount);
+            seriesCount=SplitScreen8::kWideMaxRacers;
+        }
         { std::lock_guard lock(standingsMutex); standings.clear(); }
         // The course intro (gameType 5) and the race after it are both race 0 and the intro loads
         // the karts: the race keeps the intro's deal, or it waited for karts never loaded (black

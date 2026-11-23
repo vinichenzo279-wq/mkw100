@@ -22,6 +22,7 @@
 #include "boot_race.h"
 #include "guest_function_imports.h"
 #include "hle/mod_build.h"
+#include "hle/splitscreen8.h"
 #include "memory.h"
 #include "recomp_mod_loader.h"
 #include "runtime_log.h"
@@ -166,3 +167,9 @@ extern "C" void SplitScreen8_FirstDeactivatedPad_81807e94(CpuContext* ctx) {
     }
 }
 REGISTER_NATIVE_WRAPPER_AS(0x81807E94, SplitScreen8_FirstDeactivatedPad_81807e94, "SplitScreen8_FirstDeactivatedPad_81807e94");
+
+
+uint32_t SplitScreen8::MenuLocals() {
+    constexpr uint32_t kMenuLocalCount = 0x8181312E;  // u8 menuLocalCount (Entry.cpp)
+    return ModBuild::IsKnownSplitScreen8() ? Memory::Read8(kMenuLocalCount) : 0;
+}

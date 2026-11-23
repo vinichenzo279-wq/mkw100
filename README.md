@@ -59,6 +59,7 @@ The first build takes a while: it translates the game, builds aurora (the graphi
 | `play-if\` | `RetroRewind.exe` built from Item Fever, with its own `UserData`, `ItemFever\` (links to your pack) and `riivolution\ItemFever.xml` |
 | `play-rr-if\` | Experimental: `RetroRewind.exe` built from Retro Rewind with Item Fever's items, with its own `UserData`, `RetroRewind6\` (links) and `ItemFeverItems\` (Item Fever's item files, merged from your download) |
 | `play-fkw\` | `RetroRewind.exe` built from Formula Kart Wii, with its own `UserData`, `fkw\` (links to your download) and `riivolution\fkw.xml` |
+| `play-ss8\` | `RetroRewind.exe` built from MKWii 8P Splitscreen, with its own `UserData` and `SplitScreen8\` (links to the pack the build made in the checkout) |
 | `install-options.json` | Your WiiCompiled folder and mod choice, reused on the next run |
 
 Your WiiCompiled installation is only read from: the game data and the clean DOL/REL stay there, so keep it where it is. Nothing in it is changed, and your original WiiCompiled saves are not copied.
@@ -96,6 +97,16 @@ A checkout can also build **Formula Kart Wii** (offline, PAL; [source](https://g
 ```
 
 Play with **Play-FormulaKart.cmd**. It lives in `play-fkw\` with its own `UserData`. Like the other mods it uses the mod executable, so it takes the checkout's one mod slot; `-NoFormulaKart` turns it off. FKW's options are fixed at its Riivolution defaults, and its online code stays unused. FKW has no licence: build it from your own download, and don't share a built copy.
+
+### 8 Player Splitscreen
+
+A checkout can also build **MKWii 8P Splitscreen** by therenow9 ([source](https://github.com/therenow9/mkwii-8p-splitscreen), GPLv3): 5 to 8 local players on one screen (6 or 8 tiles) in VS and Battle, with MKW100's CPUs filling the field past 12: up to 128 racers with 5 to 8 players (eight views of a bigger field overflow the renderer's per-frame buffers), the usual 255 with 1 to 4. It uses the release's "Mario Kart Wii" build (the game plus the 8-player module, no Retro Rewind). Download the release zip (`mkwii-8p-splitscreen-1.2.0.zip`), unzip it anywhere and pass that folder; you don't need to run its setup. The build makes the character pages' extra controls from your own disc files (`scripts/mkw100/ss8_stage_pack.py`, so **python** must be on PATH):
+
+```powershell
+./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -SplitScreen8 'D:\Mods\mkwii-8p-splitscreen-1.2.0'
+```
+
+Play with **Play-SplitScreen8.cmd**. It lives in `play-ss8\` with its own `UserData`. Players 1-4 are the GameCube rows in F10's controller page; players 5-8 are its "Wii Remote 1-4" rows (shown only in this build), where any gamepad plays as a Wii Remote with a Classic Controller, or a real Wii Remote on that channel. The main menu gets 5 to 8 Players buttons next to the game's own. Like the other mods it takes the checkout's one mod slot; `-NoSplitScreen8` turns it off.
 
 ## Development
 
