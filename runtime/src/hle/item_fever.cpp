@@ -30,9 +30,9 @@
 
 namespace {
 
-constexpr uint32_t kFeverFlagsShadow = 0x82D00000;  // u8 flags[12] at 0x818A3364, racers 12..254
-constexpr uint32_t kFeverTimerShadow = 0x82D20000;  // float[12] at 0x818A3370
-constexpr uint32_t kFeverStateShadow = 0x82D20600;  // u8[12] at 0x818A33A0
+constexpr uint32_t kFeverFlagsShadow = 0x82D00000;  // u8 flags[12] at 0x818A5B08, racers 12..254
+constexpr uint32_t kFeverTimerShadow = 0x82D20000;  // float[12] at 0x818A5B14
+constexpr uint32_t kFeverStateShadow = 0x82D20600;  // u8[12] at 0x818A5B44
 constexpr uint32_t kFeverShadowRacers = 255 - 12;
 
 // A [12] table and its shadow (racers 12..254; array-sites.txt, profile item-fever).
@@ -49,41 +49,41 @@ void CopyResetToShadow(const FeverTable& t) {
     }
 }
 
-// The struct at 0x818B9020 (one item's per-racer state, its functions 0x818489A0..0x8184A30C).
-// Reset by 0x818489A0; the rest of it (0x818B9110 [12] x 64 bytes, ...) by 0x81848BFC's loop,
+// The struct at 0x818BB9BC (one item's per-racer state, its functions 0x81849494..0x8184B644).
+// Reset by 0x81849494; the rest of it (0x818BBAAC [12] x 64 bytes, ...) by 0x818496F0's loop,
 // whose bound is a cmpimm site, so it fills the shadows itself.
 constexpr FeverTable kResetTables89F0[] = {
-    {0x818B9020, 2, 0x82D23000},
-    {0x818B9038, 4, 0x82D23300},
-    {0x818B9068, 4, 0x82D23900},
-    {0x818B9098, 1, 0x82D23F00},
-    {0x818B90A4, 1, 0x82D24200},
-    {0x818B90B0, 1, 0x82D24500},
-    {0x818B90C0, 4, 0x82D24800},
-    {0x818B90F0, 1, 0x82D24E00},
+    {0x818BB9BC, 2, 0x82D23000},
+    {0x818BB9D4, 4, 0x82D23300},
+    {0x818BBA04, 4, 0x82D23900},
+    {0x818BBA34, 1, 0x82D23F00},
+    {0x818BBA40, 1, 0x82D24200},
+    {0x818BBA4C, 1, 0x82D24500},
+    {0x818BBA5C, 4, 0x82D24800},
+    {0x818BBA8C, 1, 0x82D24E00},
 };
-// The struct at 0x818B9710 (the per-kart routine Item Fever hooks into Kart::Sub::Update,
-// 0x8184BDD4), reset by 0x8184CA38.
+// The struct at 0x818BC318 (the per-kart routine Item Fever hooks into Kart::Sub::Update,
+// 0x8184D5AC), reset by 0x8184E210.
 constexpr FeverTable kResetTables90E0[] = {
-    {0x818B9710, 1, 0x82D2DE00},
-    {0x818B971C, 1, 0x82D2E100},
-    {0x818B9728, 1, 0x82D2E400},
-    {0x818B9734, 1, 0x82D2E700},
-    {0x818B9740, 1, 0x82D2EA00},
-    {0x818B974C, 1, 0x82D2ED00},
-    {0x818B9758, 2, 0x82D2F000},
-    {0x818B9770, 4, 0x82D2F300},
-    {0x818B97A0, 4, 0x82D2F900},
-    {0x818B97D0, 1, 0x82D2FF00},
-    {0x818B97DC, 1, 0x82D30200},
+    {0x818BC318, 1, 0x82D2DE00},
+    {0x818BC324, 1, 0x82D2E100},
+    {0x818BC330, 1, 0x82D2E400},
+    {0x818BC33C, 1, 0x82D2E700},
+    {0x818BC348, 1, 0x82D2EA00},
+    {0x818BC354, 1, 0x82D2ED00},
+    {0x818BC360, 2, 0x82D2F000},
+    {0x818BC378, 4, 0x82D2F300},
+    {0x818BC3A8, 4, 0x82D2F900},
+    {0x818BC3D8, 1, 0x82D2FF00},
+    {0x818BC3E4, 1, 0x82D30200},
 };
 
 void LogFeverUnlocks(CpuContext* ctx);  // below, with Item Fever's unlocks
 
 } // namespace
 
-// Item Fever's race-load hook (node 0x818A33B0): clears its float[12] at 0x818A3370 and u8[12] at
-// 0x818A33A0 (a fixed count of 12, no compare to raise). Their shadows and the flags' are cleared
+// Item Fever's race-load hook (node 0x818A5B54): clears its float[12] at 0x818A5B14 and u8[12] at
+// 0x818A5B44 (a fixed count of 12, no compare to raise). Their shadows and the flags' are cleared
 // with them, so a racer 12+ starts each race like racers 0..11.
 static void ResetRacerTables(CpuContext* ctx, bool combinedSite) {
     // Each address holds Item Fever's function in one build only; elsewhere it is another pack's code.
@@ -91,8 +91,8 @@ static void ResetRacerTables(CpuContext* ctx, bool combinedSite) {
     for (uint32_t i = 0; i < kFeverShadowRacers; ++i) {
         Memory::Write8(kFeverFlagsShadow + i, 0);
     }
-    CopyResetToShadow({0x818A3370, 4, kFeverTimerShadow});
-    CopyResetToShadow({0x818A33A0, 1, kFeverStateShadow});
+    CopyResetToShadow({0x818A5B14, 4, kFeverTimerShadow});
+    CopyResetToShadow({0x818A5B44, 1, kFeverStateShadow});
     LogFeverUnlocks(ctx);
 }
 static void Reset89F0(bool combinedSite) {
@@ -110,23 +110,23 @@ extern "C" void ItemFever_ResetRacerTables_81816ee8(CpuContext* ctx) {
 }
 REGISTER_NATIVE_WRAPPER_AS(0x81816EE8, ItemFever_ResetRacerTables_81816ee8, "ItemFever_ResetRacerTables_81816ee8");
 
-extern "C" void ItemFever_Reset89F0_818489a0(CpuContext* ctx) {
-    MKW_GUEST_NEXT(818489A0)(ctx);
+extern "C" void ItemFever_Reset89F0_81849494(CpuContext* ctx) {
+    MKW_GUEST_NEXT(81849494)(ctx);
     Reset89F0(false);
 }
-REGISTER_NATIVE_WRAPPER_AS(0x818489A0, ItemFever_Reset89F0_818489a0, "ItemFever_Reset89F0_818489a0");
+REGISTER_NATIVE_WRAPPER_AS(0x81849494, ItemFever_Reset89F0_81849494, "ItemFever_Reset89F0_81849494");
 
-extern "C" void ItemFever_Reset90E0_8184ca38(CpuContext* ctx) {
-    MKW_GUEST_NEXT(8184CA38)(ctx);
+extern "C" void ItemFever_Reset90E0_8184e210(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8184E210)(ctx);
     Reset90E0(false);
 }
-REGISTER_NATIVE_WRAPPER_AS(0x8184CA38, ItemFever_Reset90E0_8184ca38, "ItemFever_Reset90E0_8184ca38");
+REGISTER_NATIVE_WRAPPER_AS(0x8184E210, ItemFever_Reset90E0_8184e210, "ItemFever_Reset90E0_8184e210");
 
 // Item Fever's unlocks, available from the start while "All characters, vehicles and cups
 // available" (local_vs unlock_all, on by default) is on:
 //   200cc: Item Fever opens its 200cc class (picked like mirror) for a license once all 8 cups are
 //       gold on Very Hard. It keeps that as bit <license> of a flags word in its save (ifever.dat:
-//       *(0x818A3358) +0x40 -> buffer, buffer + *(buffer + 0x14) + 0x30; bit 4+n: "200cc unlocked"
+//       *(0x818A5AFC) +0x40 -> buffer, buffer + *(buffer + 0x14) + 0x30; bit 4+n: "200cc unlocked"
 //       shown, 12+n: Meteor Storm shown, 16+n: dark theme shown) and several menu functions test
 //       that bit inline, so the bit is set: for every license, whenever Item Fever asks for the
 //       current license (0x8180A4D4), which every one of those tests does first. Item Fever saves
@@ -140,7 +140,7 @@ REGISTER_NATIVE_WRAPPER_AS(0x8184CA38, ItemFever_Reset90E0_8184ca38, "ItemFever_
 // as it is, and logs at race load what Item Fever's own tests answer.
 namespace {
 
-constexpr uint32_t kFeverSave = 0x818A3358;
+constexpr uint32_t kFeverSave = 0x818A5AFC;
 constexpr uint32_t kFeverUnlockFlags = 0x30;
 constexpr uint32_t kFever200ccBits = 0xF;  // bit n: license n
 
@@ -256,21 +256,21 @@ extern "C" void RrItemFever_ResetRacerTables_818d6ee8(CpuContext* ctx) {
 }
 REGISTER_NATIVE_WRAPPER_AS(0x818D6EE8, RrItemFever_ResetRacerTables_818d6ee8, "RrItemFever_ResetRacerTables_818d6ee8");
 
-extern "C" void RrItemFever_Reset89F0_819089a0(CpuContext* ctx) {
-    MKW_GUEST_NEXT(819089A0)(ctx);
+extern "C" void RrItemFever_Reset89F0_81909494(CpuContext* ctx) {
+    MKW_GUEST_NEXT(81909494)(ctx);
     Reset89F0(true);
 }
-REGISTER_NATIVE_WRAPPER_AS(0x819089A0, RrItemFever_Reset89F0_819089a0, "RrItemFever_Reset89F0_819089a0");
+REGISTER_NATIVE_WRAPPER_AS(0x81909494, RrItemFever_Reset89F0_81909494, "RrItemFever_Reset89F0_81909494");
 
-extern "C" void RrItemFever_Reset90E0_8190ca38(CpuContext* ctx) {
-    MKW_GUEST_NEXT(8190CA38)(ctx);
+extern "C" void RrItemFever_Reset90E0_8190e210(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8190E210)(ctx);
     Reset90E0(true);
 }
-REGISTER_NATIVE_WRAPPER_AS(0x8190CA38, RrItemFever_Reset90E0_8190ca38, "RrItemFever_Reset90E0_8190ca38");
+REGISTER_NATIVE_WRAPPER_AS(0x8190E210, RrItemFever_Reset90E0_8190e210, "RrItemFever_Reset90E0_8190e210");
 
 // Item::Manager +0x42C is the sum of the item pools' capacities minus 30, set by `addi r0, rN, -30`
 // at 0x8079992C (Update) and 0x80799AB0 (UpdateTotalItemCountMinus30). Item Fever rewrites both
-// immediates when a race loads: -100 with Item Rain on, -30 off (0x81840CC4). Translated code keeps
+// immediates when a race loads: -100 with Item Rain on, -30 off (0x818413C4). Translated code keeps
 // -30, so the writes are let through to memory and the wrappers apply the immediate found there.
 // Unpatched (the base game, Retro Rewind) the word holds -30 and nothing changes.
 namespace {

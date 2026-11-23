@@ -3,7 +3,7 @@
 Status (2026-11-15, branch `rr-item-fever`): the go/no-go test below **passed**, and the build now runs headless races of up to 128 racers with Item Fever's item system in Retro Rewind. Not pushed, not play-tested from the menus. Measured on the packs MKW100 supports today:
 
 - Retro Rewind: WheelWizard RetroRewind6, Kamek code SHA-1 `5061374c...`.
-- Item Fever 1.1.0: SHA-1 `2c6c40ca...`. Since 2026-11-17 (rebased onto wiicompiled-0.9.4) the build takes Item Fever 1.1.1 (`47816337...`), the version MKW100 recognises; the plan's entries are game and Retro Rewind addresses and hold for both, and the three game patches 1.1.1 adds (its new settings, off by default) are left out like the rest of its settings. The figures below were measured on 1.1.0.
+- Item Fever 1.1.0: SHA-1 `2c6c40ca...`. Since 2026-11-17 (rebased onto wiicompiled-0.9.4) the build takes Item Fever 1.1.1 (`47816337...`), the version MKW100 recognises; the plan's entries are game and Retro Rewind addresses and hold for both, and the three game patches 1.1.1 adds (its new settings, off by default) are left out like the rest of its settings. Since 2026-11-23 it takes Item Fever 1.1.2 (`cc8a2cd8...`) instead: its code and data moved, so the Item Fever addresses in the site lists and runtime were remapped (1.1.2 also reworked the Snowball's code; its per-racer entries were regenerated). Of the five game patches 1.1.2 adds, two are kept (the Custom Items fix in the roulette, a sound hook) and three left out (the real-Wii Frame Rate setting and an effects speed-up); see the plan's header. The figures below were measured on 1.1.0.
 
 The numbers come from `scripts/mkw100/pul_hooks.py` (see the end of this page).
 
