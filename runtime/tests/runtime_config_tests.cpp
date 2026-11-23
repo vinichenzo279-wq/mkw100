@@ -52,6 +52,18 @@ int main() {
         if (!Require(!config.metalFxSpatialUpscaling, "invalid MetalFX setting was accepted")) return 1;
     }
     {
+        std::istringstream input("[controller]\na = \"south\"\n\n[controller.gamecube2]\na = \"east,left_shoulder\"\n\n"
+                                 "[controller.wii4]\nzl = \"left_trigger@30\"\n\n[controller.wii_accel_offsets]\nx = 0.1\n"
+                                 "\n[controller.player1]\na = \"west\"\n");
+        const RuntimeUserConfig config = RuntimeConfigFile::ParseConfig(input, "rows.toml");
+        if (!Require(config.controllerButtons[0] == std::optional<std::string>{"south"} &&
+                         config.controllerRowButtons[0].empty() &&
+                         config.controllerRowButtons[1].at("a") == "east,left_shoulder" &&
+                         config.controllerRowButtons[7].at("zl") == "left_trigger@30" &&
+                         config.controllerRowButtons[7].size() == 1,
+                     "per-row controller bindings were not loaded")) return 1;
+    }
+    {
         std::istringstream input("[video]\nwidescreen = false\nforce_16_9 = true\n");
         const RuntimeUserConfig config = RuntimeConfigFile::ParseConfig(input, "legacy.toml");
         if (!Require(config.forceAspect == std::optional<bool>{true} &&
@@ -128,6 +140,22 @@ int main() {
     if (!Require(!RuntimeConfigFile::UpdateSettingText("controller = \"custom\"\n", "controller.wii_accel_offsets",
                                                        "x", "0.5"),
                  "a scalar was replaced by a table")) return 1;
+    {
+        const auto removed = RuntimeConfigFile::RemoveTableText(
+            "[controller]\nrumble = true\n\n[controller.wii1]\na = \"south\" # mine\n\n[controller.wii2]\na = \"east\"\n",
+            "controller.wii1");
+        const auto document = removed ? std::optional(toml::parse_str<toml::ordered_type_config>(*removed)) : std::nullopt;
+        if (!Require(document && !document->at("controller").contains("wii1") &&
+                         document->at("controller").at("wii2").at("a").as_string() == "east" &&
+                         document->at("controller").at("rumble").as_boolean(),
+                     "a row table was not removed on its own")) return 1;
+        const std::string original = "[controller]\nrumble = true\n";
+        const auto unchanged = RuntimeConfigFile::RemoveTableText(original, "controller.wii3");
+        if (!Require(unchanged && toml::parse_str<toml::ordered_type_config>(*unchanged).at("controller").at("rumble").as_boolean(),
+                     "a missing row table changed the document")) return 1;
+        if (!Require(!RuntimeConfigFile::RemoveTableText("[controller\n", "controller.wii1"),
+                     "an unparseable document was rewritten")) return 1;
+    }
     {
         const auto document = Update("[video.advanced]\nfoo = 1\n", "video", "show_fps", "true");
         if (!Require(document && document->at("video").at("show_fps").as_boolean() &&

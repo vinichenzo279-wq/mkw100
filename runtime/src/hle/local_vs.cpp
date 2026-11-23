@@ -9,6 +9,7 @@
 #include "hle/teams.h"
 #include "hle/rank_icons.h"
 #include "hle/mod_build.h"
+#include "hle/splitscreen8.h"
 #include "memory.h"
 #include "runtime_config.h"
 #include "runtime_product.h"
@@ -208,6 +209,9 @@ constexpr int kRetroRewindMaxRacers = 160;
 // its one per-racer table (the roulette amounts, [2][12] in low memory) is moved to the shadow
 // window by scripts/mkw100/fkw_to_kamek.py.
 constexpr int kFormulaKartMaxRacers = 255;
+// MKWii 8P Splitscreen's vanilla module keeps the base game's loader and kart archives; its own
+// per-racer state is per local player (8), and its loops over the 12 Racedata slots only look for locals.
+constexpr int kSplitScreen8MaxRacers = 255;
 // A pack build MKW100's pack fixes were not measured on (mod_build.h) keeps the game's 12.
 constexpr int kUnknownModMaxRacers = 12;
 int MaxRacers() {
@@ -215,6 +219,7 @@ int MaxRacers() {
     switch (ModBuild::Current()) {
     case ModBuild::Kind::ItemFever: return kItemFeverMaxRacers;
     case ModBuild::Kind::FormulaKart: return kFormulaKartMaxRacers;
+    case ModBuild::Kind::SplitScreen8: return kSplitScreen8MaxRacers;
     case ModBuild::Kind::Unknown: return kUnknownModMaxRacers;
     default: return kRetroRewindMaxRacers;
     }
@@ -601,8 +606,10 @@ void PrepareRace(uint32_t rd) {
     //   2-4P (4 options, 0-3):  Normal, Hard, Very Hard, Impossible ("Off", the game's no-CPUs)
     // Very Hard and Impossible race Hard CPUs with ai_impossible.cpp's tables (tier 1 and 2); with
     // the stored option "Off" the slots the game left empty get CPUs.
+    // Up to 8 local players: MKWii 8P Splitscreen makes slots 4-7 local in InitRace after this runs, and
+    // its locals stay local in the menu scenario for the series' later races (the game's own are 0-3).
     uint32_t humans=0;
-    for (uint32_t i=0;i<4;++i) humans += Memory::Read32(Player(menu,i)+0x10)==0;
+    for (uint32_t i=0;i<8;++i) humans += Memory::Read32(Player(menu,i)+0x10)==0;
     const uint32_t cpuOption=Memory::Read32(menu+0xB5C);
     // The game's own value is written back below (1 Normal, 2 Hard), and it is read again before
     // the race after the course intro and before every later race: read as the CPU row, Hard and
@@ -636,7 +643,7 @@ void PrepareRace(uint32_t rd) {
     const uint32_t gameType=Memory::Read32(menu+0xB54);
     const uint32_t firstType=Memory::Read32(Player(menu,0)+0x10);
     const bool preview=gameType==5;
-    // 1-4 local players (slots 0..humans-1, type 0), the rest CPUs or empty: split screen too.
+    // 1-8 local players (slots 0..humans-1, type 0), the rest CPUs or empty: split screen too.
     const uint32_t locals = std::max<uint32_t>(humans, 1);
     bool solo = firstType == 0 || (preview && firstType == 1);
     for (uint32_t i=locals;i<12;++i) solo = solo && Memory::Read32(Player(menu,i)+0x10) != 0;
@@ -660,6 +667,12 @@ void PrepareRace(uint32_t rd) {
     const bool first = !restart && (Memory::Read8(menu+0xB6C)==0 || seriesCount==0);
     if (first) {
         seriesCount=desiredCount.load();
+        // 5-8 local players (MKWii 8P Splitscreen): at most SplitScreen8::kWideMaxRacers racers.
+        if (SplitScreen8::MenuLocals() > 4 && seriesCount > SplitScreen8::kWideMaxRacers) {
+            RT_LOGF("local-vs", "%u local players: %u racers instead of %u\n", SplitScreen8::MenuLocals(),
+                    unsigned(SplitScreen8::kWideMaxRacers), seriesCount);
+            seriesCount=SplitScreen8::kWideMaxRacers;
+        }
         { std::lock_guard lock(standingsMutex); standings.clear(); }
         // The course intro (gameType 5) and the race after it are both race 0 and the intro loads
         // the karts: the race keeps the intro's deal, or it waited for karts never loaded (black

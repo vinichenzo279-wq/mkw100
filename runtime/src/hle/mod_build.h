@@ -11,7 +11,7 @@ namespace ModBuild {
 // RetroRewindItemFever: the combined module of Retro Rewind and Item Fever's items
 // (scripts/mkw100/combine_pul.py, docs/mkw100/rr-item-fever.md), made from the two builds below;
 // Retro Rewind's code sits at the module base and Item Fever's kItemFeverCombinedOffset above it.
-enum class Kind { None, RetroRewind, ItemFever, RetroRewindItemFever, FormulaKart, Unknown };
+enum class Kind { None, RetroRewind, ItemFever, RetroRewindItemFever, FormulaKart, SplitScreen8, Unknown };
 
 inline constexpr uint32_t kItemFeverCombinedOffset = 0xC0000;
 
@@ -34,5 +34,8 @@ inline uint32_t ItemFeverOffset() { return Current() == Kind::RetroRewindItemFev
 // Formula Kart Wii: not a Pulsar pack; its payload is converted to a Kamek chunk at build time
 // (scripts/mkw100/fkw_to_kamek.py), so its "Kamek code" digest is the payload's.
 inline bool IsKnownFormulaKart() { return Current() == Kind::FormulaKart; }
+// MKWii 8P Splitscreen (SplitScreen8): its "Mario Kart Wii" build, a Pulsar Kamek module without
+// Retro Rewind (scripts/mkw100/ss8_stage_pack.py) that adds local players 5-8 on 6 or 8 screens.
+inline bool IsKnownSplitScreen8() { return Current() == Kind::SplitScreen8; }
 
 } // namespace ModBuild

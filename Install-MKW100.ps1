@@ -23,6 +23,12 @@ param(
     # payload, scripts/mkw100/fkw_to_kamek.py). Remembered like -ItemFever; -NoFormulaKart turns it off.
     [string]$FormulaKart,
     [switch]$NoFormulaKart,
+    # Or build MKWii 8P Splitscreen (5-8 local players, with CPUs past 12) and stage it into play-ss8\:
+    # the unzipped release (mkwii-8p-splitscreen-1.2.0, holding payload\mkw\Code.pul). Needs python
+    # (the build makes the character pages' controls from your disc, scripts/mkw100/ss8_stage_pack.py).
+    # Remembered like -ItemFever; -NoSplitScreen8 turns it off.
+    [string]$SplitScreen8,
+    [switch]$NoSplitScreen8,
     [switch]$AllowSourceDependencies,
     [switch]$PreflightOnly
 )
@@ -66,9 +72,9 @@ function Resolve-RetroRewindPack([string]$Path) {
 
 if ($NoRetroRewind) {
     $RetroRewind = ''
-} elseif (!$RetroRewind -and !$ItemFever -and !$FormulaKart -and $saved -and $saved.PSObject.Properties['RetroRewind'] -and $saved.RetroRewind) {
+} elseif (!$RetroRewind -and !$ItemFever -and !$FormulaKart -and !$SplitScreen8 -and $saved -and $saved.PSObject.Properties['RetroRewind'] -and $saved.RetroRewind) {
     $RetroRewind = $saved.RetroRewind
-} elseif (!$RetroRewind -and $interactive) {
+} elseif (!$RetroRewind -and !$SplitScreen8 -and $interactive) {
     $recorded = Get-RecordedRetroRewind
     if ($recorded) {
         $answer = Read-Host "Also build Retro Rewind from $recorded ? [y/N]"
@@ -91,9 +97,9 @@ function Resolve-ItemFeverPack([string]$Path) {
 
 if ($NoItemFever) {
     $ItemFever = ''
-} elseif (!$ItemFever -and !$RetroRewind -and !$FormulaKart -and $saved -and $saved.PSObject.Properties['ItemFever'] -and $saved.ItemFever) {
+} elseif (!$ItemFever -and !$RetroRewind -and !$FormulaKart -and !$SplitScreen8 -and $saved -and $saved.PSObject.Properties['ItemFever'] -and $saved.ItemFever) {
     $ItemFever = $saved.ItemFever
-} elseif (!$ItemFever -and !$RetroRewind -and !$FormulaKart -and $interactive) {
+} elseif (!$ItemFever -and !$RetroRewind -and !$FormulaKart -and !$SplitScreen8 -and $interactive) {
     $ItemFever = Read-Host 'Item Fever folder (the unzipped download) to build it instead, or Enter to skip'
 }
 if ($ItemFever -and $RetroRewind) {
@@ -116,15 +122,38 @@ function Resolve-FormulaKartPack([string]$Path) {
 
 if ($NoFormulaKart) {
     $FormulaKart = ''
-} elseif (!$FormulaKart -and !$RetroRewind -and !$ItemFever -and $saved -and $saved.PSObject.Properties['FormulaKart'] -and $saved.FormulaKart) {
+} elseif (!$FormulaKart -and !$RetroRewind -and !$ItemFever -and !$SplitScreen8 -and $saved -and $saved.PSObject.Properties['FormulaKart'] -and $saved.FormulaKart) {
     $FormulaKart = $saved.FormulaKart
-} elseif (!$FormulaKart -and !$RetroRewind -and !$ItemFever -and $interactive) {
+} elseif (!$FormulaKart -and !$RetroRewind -and !$ItemFever -and !$SplitScreen8 -and $interactive) {
     $FormulaKart = Read-Host 'Formula Kart Wii folder (the unzipped download) to build it instead, or Enter to skip'
 }
 if ($FormulaKart -and ($RetroRewind -or $ItemFever)) {
     throw 'One checkout builds one mod: pass only one of -RetroRewind, -ItemFever, -FormulaKart (use a second clone for another, or -NoRetroRewind / -NoItemFever / -NoFormulaKart).'
 }
 if ($FormulaKart) { $FormulaKart = Resolve-FormulaKartPack $FormulaKart }
+
+# MKWii 8P Splitscreen: the unzipped release folder (holding payload\mkw\Code.pul), or the folder above it.
+function Resolve-SplitScreen8Release([string]$Path) {
+    $Path = [IO.Path]::GetFullPath($Path.Trim('"'))
+    $candidates = @($Path) + @(Get-ChildItem -LiteralPath $Path -Directory -Filter 'mkwii-8p-splitscreen-*' -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.FullName })
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath (Join-Path $candidate 'payload\mkw\Code.pul')) { return $candidate }
+    }
+    throw "Not an MKWii 8P Splitscreen release (needs payload\mkw\Code.pul): $Path"
+}
+
+if ($NoSplitScreen8) {
+    $SplitScreen8 = ''
+} elseif (!$SplitScreen8 -and !$RetroRewind -and !$ItemFever -and !$FormulaKart -and $saved -and $saved.PSObject.Properties['SplitScreen8'] -and $saved.SplitScreen8) {
+    $SplitScreen8 = $saved.SplitScreen8
+} elseif (!$SplitScreen8 -and !$RetroRewind -and !$ItemFever -and !$FormulaKart -and $interactive) {
+    $SplitScreen8 = Read-Host 'MKWii 8P Splitscreen release folder (the unzipped mkwii-8p-splitscreen-1.2.0) to build it instead, or Enter to skip'
+}
+if ($SplitScreen8 -and ($RetroRewind -or $ItemFever -or $FormulaKart)) {
+    throw 'One checkout builds one mod: pass only one of -RetroRewind, -ItemFever, -FormulaKart, -SplitScreen8 (use a second clone for another, or -NoRetroRewind / -NoItemFever / -NoFormulaKart / -NoSplitScreen8).'
+}
+if ($SplitScreen8) { $SplitScreen8 = Resolve-SplitScreen8Release $SplitScreen8 }
 
 if ($RetroRewind -eq 'auto') {
     $RetroRewind = Get-RecordedRetroRewind
@@ -140,7 +169,7 @@ if ($NoItemFeverItems -or !$RetroRewind) {
 }
 if ($ItemFeverItems) { $ItemFeverItems = Resolve-ItemFeverPack $ItemFeverItems }
 
-[pscustomobject]@{ InstallRoot = $InstallRoot; RetroRewind = $RetroRewind; ItemFever = $ItemFever; ItemFeverItems = $ItemFeverItems; FormulaKart = $FormulaKart } |
+[pscustomobject]@{ InstallRoot = $InstallRoot; RetroRewind = $RetroRewind; ItemFever = $ItemFever; ItemFeverItems = $ItemFeverItems; FormulaKart = $FormulaKart; SplitScreen8 = $SplitScreen8 } |
     ConvertTo-Json | Set-Content -LiteralPath $OptionsFile -Encoding UTF8
 
 $buildArgs = @{ InstallRoot = $InstallRoot; Jobs = $Jobs; AllowSourceDependencies = $AllowSourceDependencies; PreflightOnly = $PreflightOnly }
@@ -148,6 +177,7 @@ if ($RetroRewind) { $buildArgs.RetroRewind = $RetroRewind }
 if ($ItemFever) { $buildArgs.ItemFever = $ItemFever }
 if ($ItemFeverItems) { $buildArgs.ItemFeverItems = $ItemFeverItems }
 if ($FormulaKart) { $buildArgs.FormulaKart = $FormulaKart }
+if ($SplitScreen8) { $buildArgs.SplitScreen8 = $SplitScreen8 }
 & (Join-Path $Repo 'Build-MKW100.ps1') @buildArgs
 if ($LASTEXITCODE -ne 0) { throw 'Build failed; see build-logs.' }
 if ($PreflightOnly) { return }
@@ -296,8 +326,16 @@ if ($FormulaKart) {
     Copy-Item -LiteralPath (Join-Path $FormulaKart 'riivolution\fkw.xml') -Destination (Join-Path $stageFkw 'riivolution') -Force
 }
 
+if ($SplitScreen8) {
+    # The pack the build made in the checkout (Code.pul, the menu archives generated from your disc,
+    # the XML), mirrored like a pack: the overlay root is "SplitScreen8" beside the exe.
+    $stageSs8 = Join-Path $Repo 'play-ss8'
+    Install-ModProduct -Name 'MKWii 8P Splitscreen' -Stage $stageSs8 -Pack (Join-Path $Repo 'PulsarPacks\completed\SplitScreen8\SplitScreen8') -Players 12 -ConfigKey ''
+}
+
 $launchers = if ($RetroRewind -and $ItemFeverItems) { 'Play-MKW100.cmd or Play-RetroRewindItemFever.cmd' }
              elseif ($RetroRewind) { 'Play-MKW100.cmd or Play-RetroRewind.cmd' }
              elseif ($ItemFever) { 'Play-MKW100.cmd or Play-ItemFever.cmd' }
-             elseif ($FormulaKart) { 'Play-MKW100.cmd or Play-FormulaKart.cmd' } else { 'Play-MKW100.cmd' }
+             elseif ($FormulaKart) { 'Play-MKW100.cmd or Play-FormulaKart.cmd' }
+             elseif ($SplitScreen8) { 'Play-MKW100.cmd or Play-SplitScreen8.cmd' } else { 'Play-MKW100.cmd' }
 Write-Host "Installed. Run $launchers. Settings and saves are kept on updates."

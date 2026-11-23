@@ -6,6 +6,7 @@
 // rumble, extensions, battery).
 
 #include "bluetooth/bt_controller.h"
+#include "controller_button_names.h"
 
 #include <cstddef>
 #include <string>
@@ -37,6 +38,13 @@ void Initialize();
 void Shutdown();
 
 Bluetooth::RemoteHost& Host();
+// Host() on the slots it has a remote on; elsewhere the gamepad assigned to the
+// slot's player index (after the GameCube ports) as a remote with a Classic Controller.
+Bluetooth::RemoteHost& HostWithGamepads();
+// Reads those gamepads for HostWithGamepads(); on the game thread, outside Aurora's frame wait.
+void SampleGamepads();
+// The Classic Controller layout of the gamepad on Wii Remote channel `slot`.
+void SetClassicBindings(size_t slot, const ControllerNames::ClassicBindings& bindings);
 
 SlotInfo Slot(size_t slot);
 PairingInfo Pairing();

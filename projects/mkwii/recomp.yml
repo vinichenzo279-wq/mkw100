@@ -125,3 +125,23 @@ profiles:
         - section: FKW - Core Features
           option: Formula Kart Wii
           choice: 1
+  splitscreen8:
+    # MKWii 8P Splitscreen (github.com/therenow9/mkwii-8p-splitscreen, GPLv3): its "Mario Kart Wii" build,
+    # rr-pulsar's SplitScreen8 module built without Retro Rewind (SS8_VANILLA). Build-MKW100.ps1
+    # -SplitScreen8 stages the release's payload/mkw/Code.pul and the menu archives generated from the
+    # disc (scripts/mkw100/ss8_stage_pack.py) into mod_root.
+    enabled: true
+    requires_game_id: RMCP01
+    requires_dol_sha256: 80d18895b39c63bd80f457398bfcbb91b7d16ac116a41a88967e954080155b05
+    code_pul: PulsarPacks/completed/SplitScreen8/SplitScreen8/Binaries/Code.pul
+    mod_root: PulsarPacks/completed/SplitScreen8/SplitScreen8
+    region: P
+    module_guest_base: 0x81800000
+    module_link_base: 0x803992E0
+    output: build/mods/splitscreen8_full_cpp
+    riivolution:
+      xml: xml/SplitScreen8.xml
+      options:
+        - section: SplitScreen8
+          option: Pack
+          choice: 1
