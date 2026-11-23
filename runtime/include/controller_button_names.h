@@ -15,10 +15,12 @@
 #include <SDL3/SDL_gamepad.h>
 #include <dolphin/pad.h>
 
+#include "gamepad_remote.h"
+
 namespace ControllerNames {
 
 // A GameCube button as the game sees it, with the Config.toml key that selects
-// it. Order matches RuntimeConfigFile::kControllerButtonKeys.
+// it. Order matches ParseConfigDocument's buttonKeys.
 struct GameCubeButtonItem {
     const char* configKey;
     const char* label;
@@ -39,6 +41,102 @@ inline constexpr std::array<GameCubeButtonItem, PAD_BUTTON_COUNT> kGameCubeButto
     {"left", "D-pad Left", PAD_BUTTON_LEFT},
     {"right", "D-pad Right", PAD_BUTTON_RIGHT},
 }};
+
+// A Classic Controller button as the game sees it from a gamepad on a Wii Remote row, with its
+// [controller.wiiN] key and the input it takes by default: a/b/x/y by position, as on a real one.
+struct ClassicButtonItem {
+    const char* configKey;
+    const char* label;
+    uint16_t classicButton;
+    uint32_t nativeButton;
+};
+
+inline constexpr std::array<ClassicButtonItem, 15> kClassicButtons = {{
+    {"a", "A", Wiimote::ClassicButton::A, SDL_GAMEPAD_BUTTON_EAST},
+    {"b", "B", Wiimote::ClassicButton::B, SDL_GAMEPAD_BUTTON_SOUTH},
+    {"x", "X", Wiimote::ClassicButton::X, SDL_GAMEPAD_BUTTON_NORTH},
+    {"y", "Y", Wiimote::ClassicButton::Y, SDL_GAMEPAD_BUTTON_WEST},
+    {"plus", "+", Wiimote::ClassicButton::Plus, SDL_GAMEPAD_BUTTON_START},
+    {"minus", "-", Wiimote::ClassicButton::Minus, SDL_GAMEPAD_BUTTON_BACK},
+    {"home", "Home", Wiimote::ClassicButton::Home, SDL_GAMEPAD_BUTTON_GUIDE},
+    {"l", "L", Wiimote::ClassicButton::L, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER},
+    {"r", "R", Wiimote::ClassicButton::R, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER},
+    {"zl", "ZL", Wiimote::ClassicButton::ZL, PADEncodeAxisButton(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, false)},
+    {"zr", "ZR", Wiimote::ClassicButton::ZR, PADEncodeAxisButton(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, false)},
+    {"up", "D-pad Up", Wiimote::ClassicButton::Up, SDL_GAMEPAD_BUTTON_DPAD_UP},
+    {"down", "D-pad Down", Wiimote::ClassicButton::Down, SDL_GAMEPAD_BUTTON_DPAD_DOWN},
+    {"left", "D-pad Left", Wiimote::ClassicButton::Left, SDL_GAMEPAD_BUTTON_DPAD_LEFT},
+    {"right", "D-pad Right", Wiimote::ClassicButton::Right, SDL_GAMEPAD_BUTTON_DPAD_RIGHT},
+}};
+
+// Each Classic button's primary and alternate native input, indexed like kClassicButtons.
+using ClassicBindings = std::array<std::array<uint32_t, 2>, kClassicButtons.size()>;
+
+// A named layout for both kinds of row, in Config.toml's binding syntax. In the first four one button does
+// the same on both rows (GC Z and Classic ZR look back); the last two keep the Classic layout by position.
+struct ControllerPreset {
+    const char* name;
+    std::array<const char*, kGameCubeButtons.size()> gamecube;
+    std::array<const char*, kClassicButtons.size()> classic;
+};
+
+#define CONTROLLER_PRESET_DPAD "dpad_up", "dpad_down", "dpad_left", "dpad_right"
+// Xbox and PlayStation pads take one layout: A and Cross are both SDL's south.
+inline constexpr std::array<const char*, kGameCubeButtons.size()> kSouthAGameCube = {
+    "south", "east", "west", "north", "start", "right_shoulder", "left_trigger@50", "right_trigger@50",
+    CONTROLLER_PRESET_DPAD};
+inline constexpr std::array<const char*, kClassicButtons.size()> kSouthAClassic = {
+    "south", "east", "west", "north", "start", "back", "guide", "left_trigger@50", "right_trigger@50",
+    "left_shoulder", "right_shoulder", CONTROLLER_PRESET_DPAD};
+inline constexpr std::array<ControllerPreset, 6> kControllerPresets = {{
+    {"Xbox", kSouthAGameCube, kSouthAClassic},
+    {"PlayStation", kSouthAGameCube, kSouthAClassic},
+    {"Nintendo",
+     {"east", "south", "north", "west", "start", "right_shoulder", "left_trigger@50", "right_trigger@50",
+      CONTROLLER_PRESET_DPAD},
+     {"east", "south", "north", "west", "start", "back", "guide", "left_trigger@50", "right_trigger@50",
+      "left_shoulder", "right_shoulder", CONTROLLER_PRESET_DPAD}},
+    // A GameCube controller has no minus: Y, which does nothing in a race, gives it.
+    {"GameCube",
+     {"south", "west", "east", "north", "start", "right_shoulder", "left_trigger@50", "right_trigger@50",
+      CONTROLLER_PRESET_DPAD},
+     {"south", "west", "east", "disabled", "start", "north", "disabled", "left_trigger@50", "right_trigger@50",
+      "disabled", "right_shoulder", CONTROLLER_PRESET_DPAD}},
+    {"Classic Controller Pro",
+     {"east", "south", "north", "west", "start", "back", "left_shoulder", "right_shoulder", CONTROLLER_PRESET_DPAD},
+     {"east", "south", "north", "west", "start", "back", "guide", "left_shoulder", "right_shoulder", "left_trigger",
+      "right_trigger", CONTROLLER_PRESET_DPAD}},
+    {"PlayStation (L1/R1)",
+     {"south", "east", "west", "north", "start", "back", "left_shoulder", "right_shoulder", CONTROLLER_PRESET_DPAD},
+     {"south", "east", "west", "north", "start", "back", "guide", "left_shoulder", "right_shoulder", "left_trigger",
+      "right_trigger", CONTROLLER_PRESET_DPAD}},
+}};
+#undef CONTROLLER_PRESET_DPAD
+
+// The preset an untouched row takes from its controller's type; nullptr keeps that controller's own
+// default. SDL types a Switch Online GameCube controller as GameCube and Linux's Wii U Pro as standard.
+inline const ControllerPreset* AutoPreset(SDL_GamepadType type, uint16_t vendor, uint16_t product) {
+    if (vendor == 0x057e && (product == 0x2073 || product == 0x0330)) {
+        return nullptr;
+    }
+    switch (type) {
+    case SDL_GAMEPAD_TYPE_STANDARD:
+    case SDL_GAMEPAD_TYPE_XBOX360:
+    case SDL_GAMEPAD_TYPE_XBOXONE:
+        return &kControllerPresets[0];
+    case SDL_GAMEPAD_TYPE_PS3:
+    case SDL_GAMEPAD_TYPE_PS4:
+    case SDL_GAMEPAD_TYPE_PS5:
+        return &kControllerPresets[1];
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+        return &kControllerPresets[2];
+    case SDL_GAMEPAD_TYPE_GAMECUBE:
+        return &kControllerPresets[3];
+    default:
+        return nullptr;
+    }
+}
 
 // A physical button on the host pad. Names are positional (south/east/...)
 // rather than Xbox-labelled so one config reads the same on any hardware.

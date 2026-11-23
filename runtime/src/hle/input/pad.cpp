@@ -4,6 +4,7 @@
 #include "hle/controller_status_contract.h"
 #include "input_bindings.h"
 #include "runtime_log.h" // R26_PAD_TRACE
+#include "wiimote_host.h"
 #include "motion_trick.h"
 
 #include <algorithm>
@@ -116,6 +117,7 @@ extern "C" uint32_t PAD__Read_HLE(uint32_t statusPtr)
 
     PADStatus statuses[PAD_CHANMAX]{};
     uint32_t rumbleMask = PADRead(statuses);
+    Wiimote::SampleGamepads();
 
     FillTriggersHeldByButtons(statuses);
     InputBindings::Apply(statuses);

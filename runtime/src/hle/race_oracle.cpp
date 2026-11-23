@@ -16,6 +16,7 @@
 #include "guest_function_imports.h"
 #include "hle_stubs.h"
 #include "memory.h"
+#include "recomp_mod_loader.h"
 #include "runtime_exit.h"
 #include "runtime_log.h"
 #include "local_vs.h"
@@ -24,6 +25,7 @@
 #include "hle/rr_item_fever.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -194,6 +196,50 @@ void Finish(uint32_t raceinfo, uint32_t playerCount) {
 extern "C" void Raceinfo_Update_805331b4(CpuContext* ctx) {
     const uint32_t raceinfo = ctx->gpr[3];
     MKW_GUEST_NEXT(805331B4)(ctx);
+    // Tests: MKW100_TEST_HEARTBEAT=<n> logs the race stage and frame every n updates (to stderr,
+    // flushed), so a stuck headless race shows where it stopped.
+    static const uint32_t heartbeat = [] {
+        const char* v = std::getenv("MKW100_TEST_HEARTBEAT");
+        return v ? uint32_t(std::atol(v)) : 0u;
+    }();
+    if (heartbeat != 0) {
+        static std::atomic<uint32_t> updates{0};
+        // Once updates stop for 5 s, sample what the game thread runs: the active translation, its
+        // LR and the first saved LRs of the guest stack's back chain.
+        static const bool watchdog = [ctx] {
+            std::thread([ctx] {
+                uint32_t last = 0;
+                int quiet = 0;
+                for (;;) {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    const uint32_t now = updates.load();
+                    quiet = now == last ? quiet + 1 : 0;
+                    last = now;
+                    if (quiet != 5) continue;
+                    for (int s = 0; s < 12; ++s) {
+                        uint32_t sp = ctx->gpr[1];
+                        std::fprintf(stderr, "[race-oracle] stalled at update %u: active 0x%08X lr 0x%08X chain", now,
+                                     RecompMod::CurrentTranslatedExecutionAddress(), ctx->lr);
+                        for (int f = 0; f < 6 && sp >= 0x80000000u && sp < 0x81800000u; ++f) {
+                            sp = Memory::Read32(sp);
+                            if (sp < 0x80000000u || sp >= 0x81800000u) break;
+                            std::fprintf(stderr, " 0x%08X", Memory::Read32(sp + 4));
+                        }
+                        std::fprintf(stderr, "\n");
+                        std::fflush(stderr);
+                        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                    }
+                }
+            }).detach();
+            return true;
+        }();
+        (void)watchdog;
+        if (++updates % heartbeat == 0) {
+            std::fprintf(stderr, "[race-oracle] heartbeat: update %u stage %u race frame %u\n", updates.load(),
+                         Memory::Read32(raceinfo + kRaceinfoStage), Memory::Read32(raceinfo + kRaceinfoFrames));
+            std::fflush(stderr);
+        }
+    }
     LocalVs::TestItems(ctx, raceinfo);
     ItemFever::RaceFrame(ctx, raceinfo);
     RrItemFever::TestGiveItem(ctx, raceinfo);

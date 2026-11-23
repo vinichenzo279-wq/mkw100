@@ -121,6 +121,14 @@ constexpr uint32_t kBlockPlaza = 0x21;
 constexpr uint32_t kLastArena = 0x29;
 constexpr uint32_t kGameModeBattle = 3;
 bool g_autoDriven = false;
+// --race-locals=N: players 1..N are local (split screen), the rest CPUs. The game's own sections go to 4
+// players (P1VS + 0..3); MKWii 8P Splitscreen races 5-8 locals in the 4-player section on 6 or 8 screens.
+uint32_t g_locals = 1;
+constexpr uint32_t kMaxLocals = 8;
+uint32_t RaceSection() {
+    const uint32_t extra = std::min<uint32_t>(g_locals, 4) - 1;
+    return g_battle ? kSectionP1Battle + extra : g_gp ? kSectionP1Gp : g_teams ? kSectionP1TeamVs + extra : kSectionP1Vs + extra;
+}
 bool g_lockstep = false;
 bool g_heapCheck = false;
 
@@ -163,6 +171,9 @@ void SetUpMenuScenario(uint32_t course) {
     if (g_players > most) {
         throw std::invalid_argument("--race-players: this build goes to " + std::to_string(most) + " racers");
     }
+    if (g_locals > g_players || (g_locals > 1 && g_gp)) {
+        throw std::invalid_argument("--race-locals: at most --race-players, and not with --race-gp (1P only)");
+    }
     // Players 12+ live in the overflow slots (guest_abi/player_slots.h); the roster repeats.
     for (uint32_t i = 0; i < std::max(g_players, kPlayerCount); ++i) {
         const uint32_t player = PlayerSlots::PlayerAddress(racedata, scenario, i);
@@ -170,7 +181,7 @@ void SetUpMenuScenario(uint32_t course) {
         Memory::Write32(player + kPlayerKartOffset, racer.kart);
         Memory::Write32(player + kPlayerCharacterOffset, racer.character);
         Memory::Write32(player + kPlayerTypeOffset,
-                        i >= g_players ? kPlayerNone : i == 0 ? kPlayerRealLocal : kPlayerCpu);
+                        i >= g_players ? kPlayerNone : i < g_locals ? kPlayerRealLocal : kPlayerCpu);
         Memory::Write32(player + kPlayerTeamOffset, g_teams || g_battle ? i % 2 : 0);
     }
     const uint32_t settings = scenario + kSettingsOffset;
@@ -239,6 +250,16 @@ bool ParseArgument(std::string_view arg) {
         g_gp = true;
         return true;
     }
+    if (arg.starts_with("--race-locals=")) {
+        const std::string_view text = arg.substr(sizeof("--race-locals=") - 1);
+        uint32_t locals = 0;
+        const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), locals);
+        if (text.empty() || ec != std::errc{} || end != text.data() + text.size() || locals < 1 || locals > kMaxLocals) {
+            throw std::invalid_argument("--race-locals expects 1 to 8");
+        }
+        g_locals = locals;
+        return true;
+    }
     if (arg == "--race-teams") {
         g_teams = true;
         return true;
@@ -300,7 +321,7 @@ bool HeapCheck() {
 }
 
 uint32_t Section() {
-    return g_battle ? kSectionP1Battle : g_gp ? kSectionP1Gp : g_teams ? kSectionP1TeamVs : kSectionP1Vs;
+    return RaceSection();
 }
 
 } // namespace BootRace
@@ -349,12 +370,12 @@ extern "C" void ArgumentParser_Parse_805b9344(CpuContext* ctx) {
                 inputMgr ? Memory::Read32(inputMgr + 8) : 0);
     }
 
-    RT_LOGF("boot-race", "booting into 1P %s on course 0x%02X with %u racers%s\n", g_battle ? "battle" : g_gp ? "GP" : "VS",
+    RT_LOGF("boot-race", "booting into %uP %s on course 0x%02X with %u racers%s\n", g_locals, g_battle ? "battle" : g_gp ? "GP" : "VS",
             g_battle && *g_course <= kLastRaceCourse ? kBlockPlaza : *g_course, g_players,
             g_cpuDriven ? " (CPU driven)" : g_autoDriven ? " (scripted human)" : "");
     if (g_teams) RT_LOGF("boot-race", "team mode: racers alternate red / blue\n");
     g_raceSectionPicked = true;
-    ctx->gpr[3] = g_battle ? kSectionP1Battle : g_gp ? kSectionP1Gp : g_teams ? kSectionP1TeamVs : kSectionP1Vs;
+    ctx->gpr[3] = RaceSection();
 }
 REGISTER_NATIVE_FUNCTION_AS(0x805B9344, ArgumentParser_Parse_805b9344, "ArgumentParser_Parse_805b9344");
 
@@ -366,7 +387,7 @@ extern "C" void Pulsar_BootSection_8184ec74(CpuContext* ctx) {
     MKW_GUEST_NEXT(8184EC74)(ctx);
     if (g_raceSectionPicked) {
         g_raceSectionPicked = false;
-        ctx->gpr[3] = g_battle ? kSectionP1Battle : g_gp ? kSectionP1Gp : g_teams ? kSectionP1TeamVs : kSectionP1Vs;
+        ctx->gpr[3] = RaceSection();
     }
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8184EC74, Pulsar_BootSection_8184ec74, "Pulsar_BootSection_8184ec74");
@@ -377,7 +398,7 @@ extern "C" void ItemFever_BootSection_8180d180(CpuContext* ctx) {
     MKW_GUEST_NEXT(8180D180)(ctx);
     if (g_raceSectionPicked) {
         g_raceSectionPicked = false;
-        ctx->gpr[3] = g_battle ? kSectionP1Battle : g_gp ? kSectionP1Gp : g_teams ? kSectionP1TeamVs : kSectionP1Vs;
+        ctx->gpr[3] = RaceSection();
     }
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8180D180, ItemFever_BootSection_8180d180, "ItemFever_BootSection_8180d180");
@@ -467,7 +488,9 @@ extern "C" void SectionPad_GetFirstDeactivatedPad_8061b9bc(CpuContext* ctx) {
         }
         previous = result;
     }
-    if (g_cpuDriven) {
+    // CPU-driven racers need no controller; nor do --race-locals' players 2-8, who have none headless
+    // (a disconnected local pauses the race).
+    if (g_cpuDriven || (g_course && g_locals > 1)) {
         ctx->gpr[3] = static_cast<uint32_t>(-1);
     }
 }

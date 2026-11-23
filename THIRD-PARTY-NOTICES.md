@@ -215,6 +215,26 @@ Not code, but the documentation this project depends on:
   offline logic of rr-pulsar's `PulsarEngine/Gamemodes/KO/KOMgr.cpp` and
   `PulsarEngine/Gamemodes/LapKO/LapKOMgr.cpp` ([rr-pulsar](https://github.com/Retro-Rewind-Team/rr-pulsar),
   GPL-3) for any number of racers, with field offsets and addresses from the released `Code.pul`.
+- MKWii 8P Splitscreen (SplitScreen8) by therenow9
+  ([mkwii-8p-splitscreen](https://github.com/therenow9/mkwii-8p-splitscreen), GPL-3; release 1.2.0, commit
+  `c1529e5e`). The 8 Player Splitscreen build (`Build-MKW100.ps1 -SplitScreen8`) translates the release's
+  own `payload/mkw/Code.pul`, its rr-pulsar fork's SplitScreen8 module built without Retro Rewind
+  ([therenow9/rr-pulsar](https://github.com/therenow9/rr-pulsar) commit `20e03cdf`, GPL-3, with Pulsar and
+  MKW-SP under MIT); the release is supplied by the user and not redistributed here. Adapted into this repo:
+  - `scripts/mkw100/ss8/gen_charselect_multi.py` and `gen_same_button.py` (from its `tools/assets/`), which
+    derive the character pages' controls from the user's own disc files at build time;
+  - from its WiiCompiled fork ([therenow9/Wiicompiled](https://github.com/therenow9/Wiicompiled) commit
+    `2bb4361e`, GPL-3): gamepads as Wii Remotes with a Classic Controller (`runtime/include/gamepad_remote.h`,
+    `runtime/src/wiimote/gamepad_remote.cpp`, `runtime/tests/gamepad_remote_tests.cpp`, the gamepad source in
+    `runtime/src/wiimote/wiimote_host.cpp`), F10's per-row controller layouts and Wii Remote rows
+    (`runtime/src/settings_overlay.cpp`, `runtime/include/runtime_config.h`,
+    `runtime/include/controller_button_names.h`) and the optional `window-title.txt`;
+  - from its aurora fork ([therenow9/aurora-wiicompiled](https://github.com/therenow9/aurora-wiicompiled)
+    commits `ad4def6`, `cba1dcf`): `patches/aurora/0002-splitscreen8-ports.patch` (8 assignable controller
+    ports, frame buffer use logging).
+- [wuj5](https://github.com/stblr/wuj5) by Pablo Stebler (MIT, commit `3876815b`): its U8, Yaz0, BRLYT
+  and BRCTR readers and writers, vendored in `scripts/mkw100/third_party/wuj5/` with their licence, used
+  by the SplitScreen8 asset generators.
 
 ---
 

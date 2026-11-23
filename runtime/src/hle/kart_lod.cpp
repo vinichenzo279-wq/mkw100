@@ -60,7 +60,8 @@ bool KartLod_UseLowDetail(uint32_t racer) {
     const int forced = KartLod_ForcedMode();
     if (forced == 0) return false;
     const ModBuild::Kind kind = ModBuild::Current();
-    if (kind != ModBuild::Kind::None && kind != ModBuild::Kind::ItemFever && kind != ModBuild::Kind::FormulaKart) return false;
+    if (kind != ModBuild::Kind::None && kind != ModBuild::Kind::ItemFever && kind != ModBuild::Kind::FormulaKart &&
+        kind != ModBuild::Kind::SplitScreen8) return false;
     const uint32_t rd = Memory::Read32(KartLod_Racedata);
     if (rd < 0x80000000u || rd >= 0x98000000u) return false;
     if (forced < 0 && (!RuntimeConfigFile::LowDetailCpus(true) || Memory::Read8(rd + KartLod_RacerCount) <= 12)) {

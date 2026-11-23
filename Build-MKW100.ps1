@@ -21,13 +21,17 @@ param(
     # A Formula Kart Wii download folder (holding fkw\fkw\FormulaKartWiiP.bin and riivolution\fkw.xml):
     # builds the mod product from it. FKW is a Riivolution patch, not a Pulsar pack; its payload is
     # converted to a Kamek chunk first (scripts/mkw100/fkw_to_kamek.py, needs python on PATH).
-    [string]$FormulaKart
+    [string]$FormulaKart,
+    # An unzipped MKWii 8P Splitscreen release (mkwii-8p-splitscreen-1.2.0, holding payload\mkw\Code.pul):
+    # builds the mod product from its "Mario Kart Wii" module (5-8 local players). The character pages'
+    # menu controls are generated from the install's disc files (scripts/mkw100/ss8_stage_pack.py, needs python).
+    [string]$SplitScreen8
 )
 # Standalone, isolated Windows fork build. Never calls LocalBuild.ps1, never
 # modifies original Install\Base or the older R13/R23 build cache.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-if (@($RetroRewind, $ItemFever, $FormulaKart | Where-Object { $_ }).Count -gt 1) { throw 'Pass only one of -RetroRewind, -ItemFever, -FormulaKart.' }
+if (@($RetroRewind, $ItemFever, $FormulaKart, $SplitScreen8 | Where-Object { $_ }).Count -gt 1) { throw 'Pass only one of -RetroRewind, -ItemFever, -FormulaKart, -SplitScreen8.' }
 if ($ItemFeverItems -and -not $RetroRewind) { throw '-ItemFeverItems goes with -RetroRewind.' }
 # The mod product's pack, its recomp.yml profile, where that profile reads Code.pul, and its output.
 $ModPack = $null
@@ -40,6 +44,10 @@ if ($RetroRewind) {
 } elseif ($FormulaKart) {
     $ModPack = Join-Path $FormulaKart 'fkw'; $ModProfile = 'formula-kart'; $ModName = 'Formula Kart Wii'
     $ModStagedPul = 'PulsarPacks\completed\FormulaKart\fkw\Binaries'; $ModOut = 'build\mods\formula_kart_full_cpp'
+} elseif ($SplitScreen8) {
+    # The pack is made inside the checkout (Code.pul plus menu archives generated from the disc).
+    $ModPack = 'PulsarPacks\completed\SplitScreen8\SplitScreen8'; $ModProfile = 'splitscreen8'; $ModName = 'MKWii 8P Splitscreen'
+    $ModStagedPul = 'PulsarPacks\completed\SplitScreen8\SplitScreen8\Binaries'; $ModOut = 'build\mods\splitscreen8_full_cpp'
 }
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Repo = $Here
@@ -176,6 +184,7 @@ try {
     MakeJunction (Join-Path $OriginalWorkspace 'Dependencies') (Join-Path $Repo 'Dependencies')
     Record 'Clean PAL inputs validated; shared Dependencies are a junction (not copied).'
     if ($ModPack) {
+        if ($SplitScreen8) { $ModPack = Join-Path $Repo $ModPack }
         $ModPack = [IO.Path]::GetFullPath($ModPack)
         # The project's profile reads the pul from this workspace path, and the base
         # leg blocks leaf inlining at every address it patches, so it must be staged first.
@@ -194,6 +203,15 @@ try {
                 --dol $dol --rel $rel --out $stagedPul --report (Join-Path $Logs 'fkw_patches.json') |
                 ForEach-Object { Record $_ }
             if ($LASTEXITCODE -ne 0) { throw 'fkw_to_kamek.py failed' }
+            $retroPul = [IO.Path]::GetFullPath($stagedPul)
+        } elseif ($SplitScreen8) {
+            $discUi = Join-Path $InstallRoot 'GameAssets\DATA\files\Scene\UI'
+            Require (Join-Path $discUi 'MenuMulti.szs') 'disc menu archive (the WiiCompiled install''s GameAssets)'
+            $python = Get-Command python.exe -ErrorAction SilentlyContinue
+            if (-not $python) { throw 'python.exe is needed on PATH to stage MKWii 8P Splitscreen (scripts/mkw100/ss8_stage_pack.py).' }
+            & $python.Source -I (Join-Path $Repo 'scripts\mkw100\ss8_stage_pack.py') --release ([IO.Path]::GetFullPath($SplitScreen8)) `
+                --disc-ui $discUi --out $ModPack | ForEach-Object { Record $_ }
+            if ($LASTEXITCODE -ne 0) { throw 'ss8_stage_pack.py failed' }
             $retroPul = [IO.Path]::GetFullPath($stagedPul)
         } else {
             $retroPul = Join-Path $ModPack 'Binaries\Code.pul'

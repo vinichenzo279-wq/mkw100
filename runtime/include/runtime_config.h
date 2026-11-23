@@ -121,6 +121,9 @@ struct RuntimeUserConfig {
     // comma-separated SDL-style physical button names ("south", or
     // "dpad_up,left_shoulder") as values; pressing either bound button counts.
     std::array<std::optional<std::string>, 12> controllerButtons;
+    // [controller.gamecube1..4] and [controller.wii1..4]: one F10 row's own bindings, in the same form. The
+    // GameCube rows fall back to the shared keys above; the Wii Remote rows hold Classic Controller keys.
+    std::array<std::map<std::string, std::string>, 8> controllerRowButtons;
     std::optional<bool> rumbleEnabled;
     // Shake a motion controller to press the D-pad, like shaking a Wii Remote.
     std::optional<bool> motionTrick;
@@ -318,7 +321,7 @@ inline void EnsureConfigFile() {
               "skip_unready_pipelines = true\n"
               "vsync = false\n"
               "# Runs GX command processing on its own thread. Read once, at startup.\n"
-              "gx_worker = true\n"
+              "gx_worker = false\n"
               "disable_copy_filter = true\n"
               "show_fps = true\n"
               "# Dolphin-style custom textures. When enabled, the renderer indexes\n"
@@ -418,6 +421,11 @@ inline void AppendOverlayRoots(RuntimeUserConfig& config, const std::string& roo
     }
 }
 
+// F10's controller row as its [controller.<table>]: gamecube1..gamecube4, then wii1..wii4.
+inline std::string ControllerRowTable(size_t row) {
+    return row < 4 ? "gamecube" + std::to_string(row + 1) : "wii" + std::to_string(row - 3);
+}
+
 // Reads every supported setting out of a parsed Config.toml document.
 inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     RuntimeUserConfig config;
@@ -444,6 +452,16 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
         for (const auto& [key, value] : section->as_table()) {
             if (key.rfind("expr_", 0) == 0 && value.is_string()) {
                 config.controllerExpressions[key] = value.as_string();
+            }
+            for (size_t row = 0; row < config.controllerRowButtons.size(); ++row) {
+                if (key != ControllerRowTable(row) || !value.is_table()) {
+                    continue;
+                }
+                for (const auto& [button, binding] : value.as_table()) {
+                    if (binding.is_string()) {
+                        config.controllerRowButtons[row][button] = binding.as_string();
+                    }
+                }
             }
         }
     }
@@ -610,10 +628,6 @@ inline RuntimeUserConfig& Mutable() {
     return const_cast<RuntimeUserConfig&>(Get());
 }
 
-inline constexpr std::array<std::string_view, 12> kControllerButtonKeys = {
-    "a", "b", "x", "y", "start", "z", "l", "r", "up", "down", "left", "right",
-};
-
 inline const std::optional<std::string>& ControllerButton(size_t index) {
     static const std::optional<std::string> empty;
     return index < Get().controllerButtons.size() ? Get().controllerButtons[index] : empty;
@@ -651,15 +665,40 @@ inline std::optional<std::string> UpdateSettingText(const std::string& text, std
     }
 }
 
-// Update one TOML value without discarding unrelated settings or user-specific paths. This is
+// Removes the table at section (a dotted path), keeping the rest of the document's keys; a missing
+// table removes nothing. Returns nullopt when the document does not parse.
+inline std::optional<std::string> RemoveTableText(const std::string& text, std::string_view section) {
+    try {
+        auto root = toml::parse_str<toml::ordered_type_config>(text);
+        auto* table = &root;
+        std::istringstream path{std::string(section)};
+        std::string part;
+        std::getline(path, part, '.');
+        for (std::string next; std::getline(path, next, '.'); part = next) {
+            if (!table->is_table() || !table->as_table().contains(part)) {
+                return toml::format(root);
+            }
+            table = &table->as_table().at(part);
+        }
+        if (table->is_table()) {
+            table->as_table().erase(part);
+        }
+        return toml::format(root);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+// Rewrites the file with edit(text), keeping unrelated settings and user-specific paths. This is
 // used by the in-game F10 settings bar. An unparseable file is left untouched.
-inline bool WriteSetting(std::string_view section, std::string_view key, std::string_view value) {
+template <typename Edit>
+inline bool RewriteConfig(Edit&& edit) {
     const auto path = ResolveConfigPath();
     std::ostringstream existing;
     if (std::ifstream input(path, std::ios::binary); input) {
         existing << input.rdbuf();
     }
-    const auto updated = UpdateSettingText(existing.str(), section, key, value);
+    const std::optional<std::string> updated = edit(existing.str());
     if (!updated) {
         std::cerr << "[runtime-config] Not updating invalid " << PathToUtf8(path) << std::endl;
         return false;
@@ -676,6 +715,10 @@ inline bool WriteSetting(std::string_view section, std::string_view key, std::st
     }
     output << *updated;
     return static_cast<bool>(output);
+}
+
+inline bool WriteSetting(std::string_view section, std::string_view key, std::string_view value) {
+    return RewriteConfig([&](const std::string& text) { return UpdateSettingText(text, section, key, value); });
 }
 
 inline std::string FormatString(std::string_view value) {
@@ -766,12 +809,31 @@ inline bool SetDisabledPostProcessingPaths(uint32_t value) {
     return WriteSetting("video", "disabled_post_processing_paths", formatted.str());
 }
 
-inline bool SetControllerButton(size_t index, std::string value) {
-    if (index >= kControllerButtonKeys.size()) {
+inline std::optional<std::string> ControllerRowButton(size_t row, std::string_view key) {
+    if (row >= Get().controllerRowButtons.size()) {
+        return std::nullopt;
+    }
+    const auto& own = Get().controllerRowButtons[row];
+    const auto it = own.find(std::string(key));
+    return it == own.end() ? std::nullopt : std::optional<std::string>(it->second);
+}
+
+inline bool SetControllerRowButton(size_t row, std::string_view key, std::string value) {
+    if (row >= Get().controllerRowButtons.size()) {
         return false;
     }
-    Mutable().controllerButtons[index] = value;
-    return WriteSetting("controller", kControllerButtonKeys[index], FormatString(value));
+    Mutable().controllerRowButtons[row][std::string(key)] = value;
+    return WriteSetting("controller." + ControllerRowTable(row), key, FormatString(value));
+}
+
+// Removes the row's table, so the row takes its controller's preset again.
+inline bool ClearControllerRow(size_t row) {
+    if (row >= Get().controllerRowButtons.size()) {
+        return false;
+    }
+    Mutable().controllerRowButtons[row].clear();
+    return RewriteConfig(
+        [&](const std::string& text) { return RemoveTableText(text, "controller." + ControllerRowTable(row)); });
 }
 
 inline std::string ControllerExpression(const std::string& key) {
@@ -959,7 +1021,9 @@ inline bool AudioMixWorkerEnabled(bool fallback = true) {
     return Get().audioMixWorker.value_or(fallback);
 }
 
-inline bool GxWorkerEnabled(bool fallback = true) {
+// Off by default: while the worker's ring is full the game thread waits without feeding audio,
+// which crackles in splitscreen races.
+inline bool GxWorkerEnabled(bool fallback = false) {
     return Get().gxWorker.value_or(fallback);
 }
 
@@ -982,7 +1046,8 @@ inline bool AttenuateMusicWhenMediaPlays(bool fallback = false) {
 
 // Bluetooth Wii Remotes. Read once before SDL's joystick subsystem comes up, so a
 // change only takes effect on the next launch.
-inline bool WiiRemotesEnabled(bool fallback = false) {
+// On by default: off, SDL's own Wii driver takes a remote as an ordinary gamepad.
+inline bool WiiRemotesEnabled(bool fallback = true) {
     return Get().wiiRemotes.value_or(fallback);
 }
 
@@ -1001,7 +1066,8 @@ inline uint32_t SteamInputAppId(uint32_t fallback = 480) {
     return Get().steamInputAppId.value_or(fallback);
 }
 
-inline bool WiiAutoPairEnabled(bool fallback = true) {
+// Off by default: the search, repeated while no remote is connected, can stutter other Bluetooth devices.
+inline bool WiiAutoPairEnabled(bool fallback = false) {
     return Get().wiiAutoPair.value_or(fallback);
 }
 
