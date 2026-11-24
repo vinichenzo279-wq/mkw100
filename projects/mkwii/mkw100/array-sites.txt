@@ -109,6 +109,17 @@
 0x81816EB8  0  index  1  0x818A5B08  0x82D00000  profile=item-fever  # lbzx flag
 0x81817948  0  index  1  0x818A5B08  0x82D00000  profile=item-fever  # lbzx flag
 0x818173AC  0  index  1  0x818A5B08  0x82D00000  profile=item-fever  # stbx flag = 0
+# Insane Kart Wii 3.4.1 (profile insane-kart): u8[12] at 0x81872384, one per racer, cleared each
+# frame by its hook in Kart::Manager::Update (0x8182B384) and read by 0x8182B2F0 / 0x8182BBxx. No
+# `racer < 12` compare guards it, so pack_racer_tables.py does not see it. Unshadowed, racers 20..23
+# zeroed Settings::Mgr::sInstance (0x81872398) and later racers the singletons after it: every
+# settings read then came from low memory (wrong minimap icon names: the race-start crash in
+# SetPicturePane; missing character models, empty texts). Racers 12+ use a shadow at 0x82E04000.
+0x8182B338  0  index  1  0x81872384  0x82E04000  profile=insane-kart  # stbx table[racer] = 1
+0x8182B340  0  index  1  0x81872384  0x82E04000  profile=insane-kart  # lbzx table[racer]
+0x8182B3B0  0  index  1  0x81872384  0x82E04000  profile=insane-kart  # stbx table[racer] = 0
+0x8182B3DC  0  index  1  0x81872384  0x82E04000  profile=insane-kart  # lbzx table[racer]
+0x8182BC28  0  index  1  0x81872384  0x82E04000  profile=insane-kart  # lbzx table[racer]
 # RaceBalloons (name tags, one object per race HUD screen): Vec3 positions[12] at +0x20, element i at
 # object + i*12 + 0x20, and the class's own fields right after it. Players 12+ use a per-object shadow
 # (0x82D10000, 0x1000 each) so RaceBalloons::Update can walk every racer (race_balloons.cpp).
