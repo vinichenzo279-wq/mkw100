@@ -1392,7 +1392,6 @@
 0x81858110  0  cmpimm  255  0x0  profile=item-fever  # racer < 12 in 0x81858074
 0x8185834C  0  cmpimm  255  0x0  profile=item-fever  # racer < 12 in 0x8185831C
 0x818583E8  0  cmpimm  255  0x0  profile=item-fever  # racer < 12 in 0x818583E8
-0x81858450  0  cmpimm  255  0x0  profile=item-fever  # racer < 12 in 0x81858414
 0x818589C8  0  cmpimm  255  0x0  profile=item-fever  # racer < 12 in 0x818589C0
 0x81858A2C  0  cmpimm  255  0x0  profile=item-fever  # racer < 12 in 0x81858A24
 0x81858A7C  0  cmpimm  255  0x0  profile=item-fever  # racer < 12 in 0x81858A74

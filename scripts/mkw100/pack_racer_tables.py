@@ -72,6 +72,17 @@ GAME_ARRAY_SITES = {
     # (player-slot-sites.txt), so racers 12+ read their own entry in the overflow region.
     0x58b18, 0x47900,  # 0x478dc too: its `mulli 0xF0` at 0x478fc is a player-slot site
 }
+# Compares kept at 12 although their racer uses are shadowed, checked by hand: the bound also limits
+# a second index into a [12][12] table, whose rows are widened but whose columns are not.
+KEEP_AT_12 = {
+    # 0x58414 (the Boo Mushroom passing through racers): r19 = min(racer count, 12) bounds both the
+    # Boo user (row of the 0xc0278 table, u16[12] per racer) and the racer passed through (column,
+    # 0x584a8 / 0x58628 / 0x58694). Raised, columns 12+ ran off each row; from row 11 into the race
+    # hook list at 0xc0398: its per-frame countdown overwrote the hook node, so the next race's load
+    # (or a restart) jumped to garbage. Any race of more than 12 did it, no Boo needed; headless
+    # one-race runs never reload, so only menu play and MKW100_TEST_SERIES runs showed it.
+    0x58450: 'bounds a column of the [12][12] table 0xc0278 (the Boo Mushroom pass-through counters)',
+}
 RACERS = 255
 XLOAD = {23, 87, 279, 343, 535, 599}          # lwzx lbzx lhzx lhax lfsx lfdx
 XSTORE = {151, 215, 407, 663, 727}            # stwx stbx sthx stfsx stfdx
@@ -484,6 +495,9 @@ def analyse(pul, known):
             passed = f.module_calls.get(reg, [])
             if not uses and not taken and not passed:
                 keep.append((o, f.start, 'no racer use found'))
+                continue
+            if o in KEEP_AT_12:
+                keep.append((o, f.start, KEEP_AT_12[o]))
                 continue
             if pointer_loop and reg in f.counters:
                 keep.append((o, f.start, 'loop counter of a pointer-stepping loop'))
