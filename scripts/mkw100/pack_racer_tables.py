@@ -71,6 +71,28 @@ GAME_ARRAY_SITES = {
     # 0x58af0: Racedata's player entries (0xF0 each); the `mulli 0xF0` at 0x58b14 is a player-slot site
     # (player-slot-sites.txt), so racers 12+ read their own entry in the overflow region.
     0x58b18, 0x47900,  # 0x478dc too: its `mulli 0xF0` at 0x478fc is a player-slot site
+    # 0x35cdc (are two racers on the same team; checked by the freeze 0x3e0c8 and the Boo Mushroom's
+    # pass-through): the same Racedata entries, its `mulli 0xF0` at 0x35d28 / 0x35d30 player-slot sites.
+    0x35d2c, 0x35d38,
+    # 0x2deb4 (the Pull Star's grab): the owner's Item::Player (Item::Manager +0x14, 0x248 each), the owner
+    # being a racer of this race, so below the manager's count.
+    0x2df88,
+}
+# [12] tables whose only references inside 12 elements are the table's own members (fields of element 0,
+# element 1 from a loop pointer), checked by hand; their end is the next relocation or table instead.
+# The Boo Mushroom's per-racer state (0x51a04, 0x51c68, 0x53114, 0x5334c, 0x55c34 ...): with them at 12,
+# its steal (0x58074 -> 0x57d98) never took from racers 12+.
+OWN_MEMBERS_ONLY = {
+    0xbdbd4,  # 4 each; member +0x4 (loop pointer; 0x558c8, 0x561ac, 0x562f8), ends at 0xbdc04
+    0xbdc04,  # 0x8C each; members +0x2, +0x4 (0x55c34), +0x8C (loop pointer)
+    0xbe304,  # 0x40 each; members +0x1 (0x562f8, 0x56584), +0x40 (loop pointer)
+}
+# Tables in the module's initialised data shadowed all the same, checked by hand: Item Fever's race
+# reset writes every element (the shadow takes that value when a race starts, ReadyRacerTables).
+INITIALISED_TABLES = {
+    # u8[12] (0xFF at boot only for element 0) set to 0xFF for all 12 by 0x30e7c's reset loop; the
+    # Pull Star's grab (0x2deb4) writes the owner's, 0x2e214 reads one.
+    0xa2df8: 'the Pull Star grab state, reset to 0xFF for all racers by 0x30e7c',
 }
 # Compares kept at 12 although their racer uses are shadowed, checked by hand: the bound also limits
 # a second index into a [12][12] table, whose rows are widened but whose columns are not.
@@ -82,6 +104,14 @@ KEEP_AT_12 = {
     # (or a restart) jumped to garbage. Any race of more than 12 did it, no Boo needed; headless
     # one-race runs never reload, so only menu play and MKW100_TEST_SERIES runs showed it.
     0x58450: 'bounds a column of the [12][12] table 0xc0278 (the Boo Mushroom pass-through counters)',
+}
+# Compares whose racer is only passed on to Item Fever functions the analysis cannot follow, raised
+# after checking those functions by hand (no [12] table of their own, or their own guard).
+PASSED_ON_SAFE = {
+    # 0x2deb4 (the Pull Star grabbing a racer): the grabbed racer r4 is only stored as a value and passed
+    # to 0x2fba8, which stores it as a value into hook slots and passes it to 0x2e2f0: its own
+    # `cmplwi 12` guard (raised), Kart::Manager::GetKartPlayer and a sound on that kart.
+    0x2def4: 'the Pull Star grab: the grabbed racer is only stored and passed to 0x2fba8 / 0x2e2f0',
 }
 RACERS = 255
 XLOAD = {23, 87, 279, 343, 535, 599}          # lwzx lbzx lhzx lhax lfsx lfdx
@@ -406,10 +436,13 @@ def analyse(pul, known):
     # and loop pointers inside a table are not boundaries)
     bounds = sorted(set(relocs.values()) | set(strides) | {m for f in funcs for m in f.members})
 
+    strict = sorted(set(relocs.values()) | set(strides))
+
     def next_bound(t):
         import bisect
-        i = bisect.bisect_right(bounds, t)
-        return bounds[i] if i < len(bounds) else None
+        lst = strict if t in OWN_MEMBERS_ONLY else bounds
+        i = bisect.bisect_right(lst, t)
+        return lst[i] if i < len(lst) else None
 
     tables, left_out = {}, {}
     capacity = {}  # left-out tables with more than 12 elements: how many they hold
@@ -419,12 +452,15 @@ def analyse(pul, known):
             left_out[table] = f'several element sizes {dict(c)}'
         elif MODULE_BASE + table in known:
             left_out[table] = 'already shadowed by a site list'
-        elif table < code:
+        elif table < code and table not in INITIALISED_TABLES:
             left_out[table] = 'initialised data'
         else:
             # a [12] table ends where the next variable starts (give or take alignment)
             nb = next_bound(table)
             size = INLINE * stride
+            if table in INITIALISED_TABLES:  # bounds checked by hand (a reset loop's pointer steps look like variables)
+                tables[table] = stride
+                continue
             if nb is not None and nb - table < size:
                 left_out[table] = f'next variable at +0x{nb - table:x}, inside 12 elements (0x{size:x})'
             elif nb is not None and nb - table > ((size + 7) & ~7) + 8:
@@ -503,7 +539,7 @@ def analyse(pul, known):
                 keep.append((o, f.start, 'loop counter of a pointer-stepping loop'))
                 continue
             reason, limit = why_unsafe(f, reg)
-            if not reason and not uses and not taken:
+            if not reason and not uses and not taken and o not in PASSED_ON_SAFE:
                 reason = 'only passed on to Item Fever functions (no table or racer function of its own)'
             if reason:
                 keep.append((o, f.start, reason))

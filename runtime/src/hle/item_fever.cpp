@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -128,13 +129,18 @@ REGISTER_NATIVE_WRAPPER_AS(0x8184E210, ItemFever_Reset90E0_8184e210, "ItemFever_
 // the ghost (flag +0xC0234, frames left +0xC0250) and the boost of a Boo Mushroom used during a
 // spin (+0xC0268). A racer 12+ starts a ghost like the others (+0x5821C, its tables shadowed),
 // but nothing ended it: invisible for the rest of the race. The countdowns run here for racers
-// 12+, on the shadows, with Item Fever's own calls; their pass-through (stealing) still does not.
+// 12+, on the shadows, with Item Fever's own calls, and so does the pass-through (stealing) of
+// every pair with a racer 12+ (BooPassPast12). Its steal (+0x58074) takes a held item from racers
+// up to 63 (pack_racer_tables.py: its tables hold 64).
+static uint32_t ShadowOfRacerTable(uint32_t table);  // below, from item_fever_racer_tables.inc
 namespace {
-constexpr uint32_t kBooGhostShadow = 0x82E65C50;   // u8  [12] at +0xC0234
-constexpr uint32_t kBooBlockShadow = 0x82E65D44;   // u8  [12] at +0xC0240
-constexpr uint32_t kBooFramesShadow = 0x82E65E38;  // s16 [12] at +0xC0250
-constexpr uint32_t kBooSpinShadow = 0x82E66020;    // u8  [12] at +0xC0268
-constexpr uint32_t kBooPassShadow = 0x82E66114;    // u16 [12][12] at +0xC0278
+// The Boo Mushroom's [12] tables (module +0xC0234 ghost flag u8, +0xC0240 no-steal flag u8, +0xC0250
+// ghost frames s16, +0xC0268 post-spin countdown u8, +0xC0278 pass-through counters u16[12] per racer).
+struct BooShadows { uint32_t ghost, block, frames, spin, pass; };
+BooShadows Shadows() {
+    return {ShadowOfRacerTable(0x818C0234), ShadowOfRacerTable(0x818C0240), ShadowOfRacerTable(0x818C0250),
+            ShadowOfRacerTable(0x818C0268), ShadowOfRacerTable(0x818C0278)};
+}
 
 uint32_t BooCall(CpuContext* ctx, uint32_t function, uint32_t r3, uint32_t r4 = 0) {
     const CpuContext saved = *ctx;
@@ -151,60 +157,123 @@ bool BooSite(bool combinedSite) {
                                                                                            ModBuild::ItemFeverOffset() == 0;
 }
 
+// Pass-through counters for the pairs Item Fever's [12][12] table has no room for (a racer 12+ on
+// either side): frames before that Boo user can go through that racer again.
+std::vector<uint16_t> g_booPairs;
+
+float GuestFloat(uint32_t address) {
+    const uint32_t bits = Memory::Read32(address);
+    float value;
+    std::memcpy(&value, &bits, sizeof value);
+    return value;
+}
+
+// Item Fever's pass-through (0x585d4..0x586f0) for every pair with a racer 12+: a Boo user whose
+// ghost is on goes through a racer within 140 units (squared distance from module +0x9B65C), not on
+// its team (+0x35CDC), at most once every 60 frames; that racer gets the Boo's effects and the
+// user what +0x58074 takes from it.
+void BooPassPast12(CpuContext* ctx, uint32_t code, uint32_t manager, uint32_t count, const BooShadows& sh) {
+    const uint32_t tables = 0x818C0000 + ModBuild::ItemFeverOffset();
+    if (g_booPairs.size() != 255u * 255u) g_booPairs.assign(255u * 255u, 0);
+    for (uint32_t u = 0; u < count; ++u) {
+        for (uint32_t j = 0; j < count; ++j) {
+            uint16_t& left = g_booPairs[u * 255u + j];
+            if (left) --left;
+        }
+    }
+    if (count <= 12) return;
+    const float reach = GuestFloat(code + 0x9B65C);
+    for (uint32_t u = 0; u < count; ++u) {
+        const bool high = u >= 12;
+        const uint32_t ghost = high ? sh.ghost + (u - 12) : tables + 0x234 + u;
+        const uint32_t block = high ? sh.block + (u - 12) : tables + 0x240 + u;
+        if (!Memory::Read8(ghost) || Memory::Read8(block)) continue;
+        if ((BooCall(ctx, code + 0x34AD0, u) & 0xFF) || (BooCall(ctx, code + 0x22808, u) & 0xFF)) continue;
+        const uint32_t user = BooCall(ctx, 0x80590100, manager, u);  // Kart::Manager::GetKartPlayer
+        if (!user) continue;
+        const uint32_t at = BooCall(ctx, 0x8059020C, user);          // Kart::Link::GetKartPosition
+        const float ux = GuestFloat(at), uy = GuestFloat(at + 4), uz = GuestFloat(at + 8);
+        for (uint32_t j = 0; j < count; ++j) {
+            if (j == u || (!high && j < 12)) continue;  // racers 0..11 with each other: Item Fever's own pass
+            uint16_t& left = g_booPairs[u * 255u + j];
+            if (left) continue;
+            if (BooCall(ctx, code + 0x35CDC, u, j) & 0xFF) continue;
+            const uint32_t other = BooCall(ctx, 0x80590100, manager, j);
+            if (!other) continue;
+            const uint32_t to = BooCall(ctx, 0x8059020C, other);
+            const float dx = GuestFloat(to) - ux, dy = GuestFloat(to + 4) - uy, dz = GuestFloat(to + 8) - uz;
+            if (dx * dx + dy * dy + dz * dz > reach) continue;
+            left = 60;
+            BooCall(ctx, code + 0x5E3D0, j);
+            BooCall(ctx, code + 0x5E550, j);
+            BooCall(ctx, code + 0x5E514, j);
+            const uint32_t taken = BooCall(ctx, code + 0x58074, u, j);
+            BooCall(ctx, code + 0x5E67C, u, taken);
+            RT_LOGF("item-fever", "Boo: p%u goes through p%u -> %s\n", u, j, taken ? "STEAL" : "nothing taken");
+        }
+    }
+}
+
 void BooPast12(CpuContext* ctx, bool combinedSite) {
     if (!BooSite(combinedSite)) return;
     const uint32_t code = 0x81800000 + ModBuild::ItemFeverOffset();
     const uint32_t manager = Memory::Read32(0x809C18F8);  // Kart::Manager
     if (!manager) return;
     const uint32_t count = Memory::Read8(manager + 0x24);
+    const BooShadows sh = Shadows();
+    if (!sh.ghost || !sh.frames || !sh.spin) return;
     for (uint32_t p = 12; p < count; ++p) {
         const uint32_t i = p - 12;
         // A Boo Mushroom used during a spin: its boost until the spin ends, then the ghost (0x584C4).
-        if (const uint8_t spin = Memory::Read8(kBooSpinShadow + i)) {
+        if (const uint8_t spin = Memory::Read8(sh.spin + i)) {
             const uint32_t player = BooCall(ctx, 0x80590100, manager, p);  // Kart::Manager::GetKartPlayer
             const uint32_t movement = player ? Memory::Read32(player + 0x44) : 0;
             if (!movement) {
-                Memory::Write8(kBooSpinShadow + i, 0);
+                Memory::Write8(sh.spin + i, 0);
             } else {
                 BooCall(ctx, 0x8057F3D8, movement);  // Kart::Movement::ActivateMushroom
                 if (BooCall(ctx, code + 0x58188, movement) & 0xFF) {
-                    Memory::Write8(kBooSpinShadow + i, 0);
+                    Memory::Write8(sh.spin + i, 0);
                     BooCall(ctx, code + 0x5821C, p);
                 } else {
-                    Memory::Write8(kBooSpinShadow + i, uint8_t(spin - 1));
+                    Memory::Write8(sh.spin + i, uint8_t(spin - 1));
                     if (spin == 1) BooCall(ctx, code + 0x5821C, p);
                 }
             }
         }
         // The ghost (0x58548): its frames count down, then Item Fever ends it.
-        if (!Memory::Read8(kBooGhostShadow + i)) continue;
+        if (!Memory::Read8(sh.ghost + i)) continue;
         const uint32_t player = BooCall(ctx, 0x80590100, manager, p);
         if (!player || !Memory::Read32(player + 0x20)) {
-            Memory::Write8(kBooGhostShadow + i, 0);
+            Memory::Write8(sh.ghost + i, 0);
             continue;
         }
         BooCall(ctx, code + 0x5E58C, p);
-        int16_t frames = int16_t(Memory::Read16(kBooFramesShadow + 2 * i));
-        if (frames > 0) Memory::Write16(kBooFramesShadow + 2 * i, uint16_t(--frames));
+        int16_t frames = int16_t(Memory::Read16(sh.frames + 2 * i));
+        if (frames > 0) Memory::Write16(sh.frames + 2 * i, uint16_t(--frames));
         if (frames > 0) continue;
         BooCall(ctx, code + 0x5E3EC, p, 0);
         BooCall(ctx, code + 0x5E3D0, p);
         BooCall(ctx, code + 0x5E6D0, p);
-        Memory::Write8(kBooGhostShadow + i, 0);
+        Memory::Write8(sh.ghost + i, 0);
         RT_LOGF("item-fever", "Boo: ghost of racer %u over\n", p);
     }
+    if (sh.block && sh.pass) BooPassPast12(ctx, code, manager, count, sh);
 }
 
 // Its race reset (+0x581AC, on Pulsar's race-load list) clears racers 0..11; the shadows with it.
 void BooReset(bool combinedSite) {
     if (!BooSite(combinedSite)) return;
+    const BooShadows sh = Shadows();
+    if (!sh.ghost || !sh.block || !sh.frames || !sh.spin || !sh.pass) return;
     for (uint32_t i = 0; i < kFeverShadowRacers; ++i) {
-        Memory::Write8(kBooGhostShadow + i, 0);
-        Memory::Write8(kBooBlockShadow + i, 0);
-        Memory::Write16(kBooFramesShadow + 2 * i, 0);
-        Memory::Write8(kBooSpinShadow + i, 0);
-        for (uint32_t b = 0; b < 0x18; ++b) Memory::Write8(kBooPassShadow + i * 0x18 + b, 0);
+        Memory::Write8(sh.ghost + i, 0);
+        Memory::Write8(sh.block + i, 0);
+        Memory::Write16(sh.frames + 2 * i, 0);
+        Memory::Write8(sh.spin + i, 0);
+        for (uint32_t b = 0; b < 0x18; ++b) Memory::Write8(sh.pass + i * 0x18 + b, 0);
     }
+    g_booPairs.assign(255u * 255u, 0);
 }
 } // namespace
 
@@ -437,6 +506,16 @@ constexpr RacerTable kRacerTables[] = {
 #include "item_fever_racer_tables.inc"
 };
 constexpr uint32_t kShadowRacers = 255 - 12;
+} // namespace
+
+// The shadow of one of Item Fever's [12] tables (its plain Item Fever address), 0 if it has none.
+static uint32_t ShadowOfRacerTable(uint32_t table) {
+    for (const RacerTable& t : kRacerTables) {
+        if (t.table == table) return t.shadow;
+    }
+    return 0;
+}
+namespace {
 
 // In Retro Rewind with Item Fever's items the tables sit ModBuild::ItemFeverOffset() higher (the
 // shadows stay where they are).
