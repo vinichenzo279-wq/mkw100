@@ -141,7 +141,10 @@ internal sealed class TranslationProjectConfig
                     $"profiles.{name}.retro_wfc_legacy_bootstrap_hook"),
                 profileDto.RequiresGameId,
                 NormalizeHash(profileDto.RequiresDolSha256),
-                ResolveRiivolution(profileDto.Riivolution, name));
+                ResolveRiivolution(profileDto.Riivolution, name),
+                (profileDto.DropCommands ?? [])
+                    .Select((value, index) => ParseOptionalUInt32(value, $"profiles.{name}.drop_commands[{index}]")!.Value)
+                    .ToArray());
         }
 
         var config = new TranslationProjectConfig(
@@ -456,6 +459,7 @@ internal sealed class TranslationProjectConfig
         public string? RequiresGameId { get; init; }
         public string? RequiresDolSha256 { get; init; }
         public RiivolutionDto? Riivolution { get; init; }
+        public List<string>? DropCommands { get; init; }
     }
 
     private sealed class RiivolutionDto
@@ -513,7 +517,8 @@ internal sealed record ProjectProfile(
     uint? RetroWfcLegacyBootstrapHook,
     string? RequiresGameId,
     string? RequiresDolSha256,
-    ProjectRiivolution? Riivolution);
+    ProjectRiivolution? Riivolution,
+    IReadOnlyList<uint>? DropCommands = null);
 internal sealed record ProjectRiivolution(
     string Xml,
     IReadOnlyList<ProjectRiivolutionOption> Options);

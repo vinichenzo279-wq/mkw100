@@ -22,6 +22,7 @@
 #include "local_vs.h"
 #include "hle/teams.h"
 #include "hle/item_fever.h"
+#include "hle/insane_kart.h"
 #include "hle/rr_item_fever.h"
 
 #include <algorithm>
@@ -242,6 +243,7 @@ extern "C" void Raceinfo_Update_805331b4(CpuContext* ctx) {
     }
     LocalVs::TestItems(ctx, raceinfo);
     ItemFever::RaceFrame(ctx, raceinfo);
+    InsaneKart::RaceFrame(raceinfo);
     RrItemFever::TestGiveItem(ctx, raceinfo);
     LocalVs::PollFinishNow(ctx);
     LocalVs::AdaptiveFramerate(ctx);

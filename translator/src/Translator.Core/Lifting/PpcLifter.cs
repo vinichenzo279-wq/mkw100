@@ -12,6 +12,109 @@ namespace Translator.Core.Lifting;
 /// </summary>
 public sealed partial class PpcLifter
 {
+    /// <summary>
+    /// mkw100: addresses of `bl` instructions that jump over inline data to an `mflr` (see the
+    /// "bl" case). Empty for the base game; translate-mod fills it from the Kamek module
+    /// (<see cref="FindBlOverDataSites"/>).
+    /// </summary>
+    public static IReadOnlyDictionary<uint, uint> BlOverData
+    {
+        get => _blOverData;
+        set
+        {
+            _blOverData = value;
+            _blOverDataSites = value.Keys.ToHashSet();
+            // The data words between each such bl and its target: never run (the bl ends its block
+            // and doesn't fall through), lifted as a comment so data that isn't an instruction can't
+            // fail the translation.
+            var data = new HashSet<uint>();
+            foreach (var (site, target) in value)
+            {
+                for (var address = site + 4; address < target; address += 4)
+                {
+                    data.Add(address);
+                }
+            }
+            _blOverDataWords = data;
+        }
+    }
+    /// <summary>The bl addresses of <see cref="BlOverData"/>.</summary>
+    public static IReadOnlySet<uint> BlOverDataSites => _blOverDataSites;
+    private static IReadOnlyDictionary<uint, uint> _blOverData = new Dictionary<uint, uint>();
+    private static IReadOnlySet<uint> _blOverDataSites = new HashSet<uint>();
+    private static IReadOnlySet<uint> _blOverDataWords = new HashSet<uint>();
+
+    /// <summary>
+    /// The `bl` sites in a code image (loaded at <paramref name="baseAddress"/>) that branch forward
+    /// at most 0x100 bytes onto `mflr rX` with rX != r0: a jump over inline data whose address the
+    /// mflr takes. Function prologues read LR into r0, so ordinary calls are not matched.
+    /// </summary>
+    public static Dictionary<uint, uint> FindBlOverDataSites(ReadOnlySpan<byte> code, uint baseAddress)
+    {
+        var sites = new Dictionary<uint, uint>();
+        for (var offset = 0; offset + 4 <= code.Length; offset += 4)
+        {
+            var word = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(code.Slice(offset, 4));
+            if (word >> 26 != 18 || (word & 3) != 1)
+                continue;
+            var displacement = (int)(word & 0x03FFFFFC);
+            if ((displacement & 0x02000000) != 0)
+                displacement -= 0x04000000;
+            if (displacement <= 4 || displacement > 0x104)
+                continue;
+            var target = offset + displacement;
+            if (target + 4 > code.Length)
+                continue;
+            var targetWord = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(code.Slice(target, 4));
+            if ((targetWord & 0xFC1FFFFF) == 0x7C0802A6 && ((targetWord >> 21) & 0x1F) != 0)
+                sites[baseAddress + (uint)offset] = baseAddress + (uint)target;
+        }
+        return sites;
+    }
+
+    /// <summary>
+    /// mkw100: lifts one instruction word a module writes at run time (RuntimePatchSites) as if it
+    /// were the instruction at its address in this function: branch targets inside the function
+    /// become labels, others calls.
+    /// </summary>
+    public IReadOnlyList<IrInstruction> LiftVariant(
+        PpcInstruction variant,
+        IReadOnlyList<PpcInstruction> functionInstructions,
+        bool allowUnsupported,
+        uint? functionEntryPoint,
+        IReadOnlySet<uint>? knownFunctionEntryPoints)
+    {
+        var validAddresses = new HashSet<uint>(functionInstructions.Select(i => i.Address));
+        var instructionsByAddress = new Dictionary<uint, PpcInstruction>();
+        foreach (var instruction in functionInstructions)
+            instructionsByAddress.TryAdd(instruction.Address, instruction);
+        return LiftInstruction(variant, validAddresses, instructionsByAddress, allowUnsupported,
+            functionEntryPoint, knownFunctionEntryPoints);
+    }
+
+    /// <summary>
+    /// mkw100: an addi/li, cmplwi/cmpwi or ori whose immediate a module rewrites at run time
+    /// (Mods.RuntimePatchSites.Immediates), lifted with the immediate taken from
+    /// <paramref name="immediateRegister"/> (already sign- or zero-extended as the form needs).
+    /// </summary>
+    public static IReadOnlyList<IrInstruction> LiftWithRuntimeImmediate(PpcInstruction ins, string immediateRegister)
+    {
+        var word = ins.Word;
+        var rd = (int)((word >> 21) & 31);
+        var ra = (int)((word >> 16) & 31);
+        var immediate = IrValue.Register(immediateRegister);
+        return (word >> 26) switch
+        {
+            14 => ra == 0
+                ? new IrInstruction[] { new IrAssign($"r{rd}", immediate) }
+                : new IrInstruction[] { new IrBinary($"r{rd}", IrValue.Register($"r{ra}"), immediate, "add") },
+            24 => new IrInstruction[] { new IrBinary($"r{ra}", IrValue.Register($"r{rd}"), immediate, "or") },
+            10 or 11 => LiftCompare($"cr{(word >> 23) & 7}", IrValue.Register($"r{ra}"), immediate, "sub",
+                isUnsigned: word >> 26 == 10),
+            _ => throw new InvalidOperationException($"0x{ins.Address:X8}: no run-time immediate form for 0x{word:X8}")
+        };
+    }
+
     public IReadOnlyList<LiftedInstruction> Lift(
         IReadOnlyList<PpcInstruction> instructions,
         bool allowUnsupported = false,
@@ -87,6 +190,11 @@ public sealed partial class PpcLifter
         uint? functionEntryPoint,
         IReadOnlySet<uint>? knownFunctionEntryPoints)
     {
+        if (_blOverDataWords.Contains(ins.Address))
+        {
+            return new IrInstruction[] { new IrComment("inline data (bl over data)") };
+        }
+
         var mnemonic = ins.Mnemonic.ToLowerInvariant();
         var ops = ins.Operands ?? Array.Empty<PpcOperand>();
 
@@ -1944,6 +2052,20 @@ public sealed partial class PpcLifter
                 {
                     return new IrInstruction[] {
                         new IrAssign("lr", IrValue.Imm((int)ins.EndAddress))
+                    };
+                }
+
+                // mkw100: `bl over; .string "..."; over: mflr rX` (Pulsar packs' inline strings,
+                // Insane Kart Wii): the bl only puts the data's address in LR, it is no call; the
+                // code after the data continues the same routine and never returns here. Every bl
+                // target is a function of its own, so tail-call it with LR set (the data after the
+                // bl is then never run). translate-mod lists these bl sites (BlOverDataSites).
+                if (BlOverDataSites.Contains(ins.Address))
+                {
+                    return new IrInstruction[] {
+                        new IrAssign("lr", IrValue.Imm((int)ins.EndAddress)),
+                        new IrCall(string.Empty, TargetLabel(ins, validAddresses, preferFallthrough: false), AbiCallArguments),
+                        new IrReturn(null)
                     };
                 }
 

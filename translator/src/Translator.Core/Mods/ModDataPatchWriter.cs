@@ -201,6 +201,19 @@ public static class ModDataPatchWriter
             sb.AppendLine(
                 $"        RecompMod::RegisterRiivolutionOption(\"{EscapeCxxStringLiteral(option.Section)}\", \"{EscapeCxxStringLiteral(option.Option)}\", {option.Choice}u);");
         }
+        // mkw100: words the module may write at its run-time patch sites (RuntimePatchSites), the
+        // ones the translated code at each site can run.
+        foreach (var (address, words) in RuntimePatchSites.Current.OrderBy(site => site.Key))
+        {
+            foreach (var word in words)
+            {
+                sb.AppendLine($"        RecompMod::RegisterRuntimePatchWord(0x{address:X8}u, 0x{word:X8}u);");
+            }
+        }
+        foreach (var address in RuntimePatchSites.Immediates.OrderBy(a => a))
+        {
+            sb.AppendLine($"        RecompMod::RegisterRuntimePatchImmediate(0x{address:X8}u);");
+        }
         sb.AppendLine("    }");
         sb.AppendLine("};");
         sb.AppendLine();

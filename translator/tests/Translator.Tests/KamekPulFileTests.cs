@@ -51,6 +51,30 @@ public class KamekPulFileTests
     }
 
     [Fact]
+    public void ParsesFiveChunkCombinedFile()
+    {
+        // Insane Kart Wii's Code.pul: P, E, J, K and a fifth (demo disc) chunk, five sizes up front.
+        var chunks = new[] { 0x10u, 0x20u, 0x30u, 0x40u, 0x50u }
+            .Select(bss => BuildChunk(bss, [0x60, 0x00, 0x00, 0x00], [BuildCommand(KamekCommandId.Write8, false, 0x10, [0x7F])]))
+            .ToArray();
+        var combined = new byte[0x14 + chunks.Sum(c => c.Length)];
+        var offset = 0x14;
+        for (var i = 0; i < chunks.Length; i++)
+        {
+            WriteU32(combined, i * 4, (uint)chunks[i].Length);
+            chunks[i].CopyTo(combined, offset);
+            offset += chunks[i].Length;
+        }
+
+        var pul = KamekPulFile.Parse(combined);
+
+        Assert.True(pul.IsCombined);
+        Assert.Equal(5, pul.Chunks.Count);
+        Assert.Equal(0x10u, pul.SelectRegion("P").BssSize);
+        Assert.Equal(0x40u, pul.SelectRegion("K").BssSize);
+    }
+
+    [Fact]
     public void ParsesKamekV2CombinedChunks()
     {
         var p = BuildChunk(0x10, [0x4E, 0x80, 0x00, 0x20],

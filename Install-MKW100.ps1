@@ -29,11 +29,16 @@ param(
     # Remembered like -ItemFever; -NoSplitScreen8 turns it off.
     [string]$SplitScreen8,
     [switch]$NoSplitScreen8,
+    # Or build Insane Kart Wii and stage it into play-ikw\: the unzipped IKW download (the folder
+    # holding IKWv3\) or its IKWv3 folder. Remembered like -ItemFever; -NoInsaneKart turns it off.
+    [string]$InsaneKart,
+    [switch]$NoInsaneKart,
     [switch]$AllowSourceDependencies,
     [switch]$PreflightOnly
 )
 # Builds MKW100 from this checkout and stages it into play\ (base game) and, optionally, play-rr\
-# (Retro Rewind), play-if\ (Item Fever) or play-fkw\ (Formula Kart Wii). Rerun after every git pull;
+# (Retro Rewind), play-if\ (Item Fever), play-fkw\ (Formula Kart Wii) or play-ikw\ (Insane Kart Wii).
+# Rerun after every git pull;
 # settings and saves in the play folders are kept.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -72,9 +77,9 @@ function Resolve-RetroRewindPack([string]$Path) {
 
 if ($NoRetroRewind) {
     $RetroRewind = ''
-} elseif (!$RetroRewind -and !$ItemFever -and !$FormulaKart -and !$SplitScreen8 -and $saved -and $saved.PSObject.Properties['RetroRewind'] -and $saved.RetroRewind) {
+} elseif (!$RetroRewind -and !$ItemFever -and !$FormulaKart -and !$SplitScreen8 -and !$InsaneKart -and $saved -and $saved.PSObject.Properties['RetroRewind'] -and $saved.RetroRewind) {
     $RetroRewind = $saved.RetroRewind
-} elseif (!$RetroRewind -and !$SplitScreen8 -and $interactive) {
+} elseif (!$RetroRewind -and !$SplitScreen8 -and !$InsaneKart -and $interactive) {
     $recorded = Get-RecordedRetroRewind
     if ($recorded) {
         $answer = Read-Host "Also build Retro Rewind from $recorded ? [y/N]"
@@ -97,9 +102,9 @@ function Resolve-ItemFeverPack([string]$Path) {
 
 if ($NoItemFever) {
     $ItemFever = ''
-} elseif (!$ItemFever -and !$RetroRewind -and !$FormulaKart -and !$SplitScreen8 -and $saved -and $saved.PSObject.Properties['ItemFever'] -and $saved.ItemFever) {
+} elseif (!$ItemFever -and !$RetroRewind -and !$FormulaKart -and !$SplitScreen8 -and !$InsaneKart -and $saved -and $saved.PSObject.Properties['ItemFever'] -and $saved.ItemFever) {
     $ItemFever = $saved.ItemFever
-} elseif (!$ItemFever -and !$RetroRewind -and !$FormulaKart -and !$SplitScreen8 -and $interactive) {
+} elseif (!$ItemFever -and !$RetroRewind -and !$FormulaKart -and !$SplitScreen8 -and !$InsaneKart -and $interactive) {
     $ItemFever = Read-Host 'Item Fever folder (the unzipped download) to build it instead, or Enter to skip'
 }
 if ($ItemFever -and $RetroRewind) {
@@ -122,9 +127,9 @@ function Resolve-FormulaKartPack([string]$Path) {
 
 if ($NoFormulaKart) {
     $FormulaKart = ''
-} elseif (!$FormulaKart -and !$RetroRewind -and !$ItemFever -and !$SplitScreen8 -and $saved -and $saved.PSObject.Properties['FormulaKart'] -and $saved.FormulaKart) {
+} elseif (!$FormulaKart -and !$RetroRewind -and !$ItemFever -and !$SplitScreen8 -and !$InsaneKart -and $saved -and $saved.PSObject.Properties['FormulaKart'] -and $saved.FormulaKart) {
     $FormulaKart = $saved.FormulaKart
-} elseif (!$FormulaKart -and !$RetroRewind -and !$ItemFever -and !$SplitScreen8 -and $interactive) {
+} elseif (!$FormulaKart -and !$RetroRewind -and !$ItemFever -and !$SplitScreen8 -and !$InsaneKart -and $interactive) {
     $FormulaKart = Read-Host 'Formula Kart Wii folder (the unzipped download) to build it instead, or Enter to skip'
 }
 if ($FormulaKart -and ($RetroRewind -or $ItemFever)) {
@@ -145,15 +150,40 @@ function Resolve-SplitScreen8Release([string]$Path) {
 
 if ($NoSplitScreen8) {
     $SplitScreen8 = ''
-} elseif (!$SplitScreen8 -and !$RetroRewind -and !$ItemFever -and !$FormulaKart -and $saved -and $saved.PSObject.Properties['SplitScreen8'] -and $saved.SplitScreen8) {
+} elseif (!$SplitScreen8 -and !$RetroRewind -and !$ItemFever -and !$FormulaKart -and !$InsaneKart -and $saved -and $saved.PSObject.Properties['SplitScreen8'] -and $saved.SplitScreen8) {
     $SplitScreen8 = $saved.SplitScreen8
-} elseif (!$SplitScreen8 -and !$RetroRewind -and !$ItemFever -and !$FormulaKart -and $interactive) {
+} elseif (!$SplitScreen8 -and !$RetroRewind -and !$ItemFever -and !$FormulaKart -and !$InsaneKart -and $interactive) {
     $SplitScreen8 = Read-Host 'MKWii 8P Splitscreen release folder (the unzipped mkwii-8p-splitscreen-1.2.0) to build it instead, or Enter to skip'
 }
-if ($SplitScreen8 -and ($RetroRewind -or $ItemFever -or $FormulaKart)) {
-    throw 'One checkout builds one mod: pass only one of -RetroRewind, -ItemFever, -FormulaKart, -SplitScreen8 (use a second clone for another, or -NoRetroRewind / -NoItemFever / -NoFormulaKart / -NoSplitScreen8).'
+if ($SplitScreen8 -and ($RetroRewind -or $ItemFever -or $FormulaKart -or $InsaneKart)) {
+    throw 'One checkout builds one mod: pass only one of -RetroRewind, -ItemFever, -FormulaKart, -SplitScreen8, -InsaneKart (use a second clone for another, or -NoRetroRewind / -NoItemFever / -NoFormulaKart / -NoSplitScreen8 / -NoInsaneKart).'
 }
 if ($SplitScreen8) { $SplitScreen8 = Resolve-SplitScreen8Release $SplitScreen8 }
+
+# Insane Kart Wii: the folder holding IKWv3\, or IKWv3\ itself; returns IKWv3\ (what
+# Build-MKW100.ps1 -InsaneKart takes). Its Riivolution XML is IKWv3\Binaries\boot.thfs.
+function Resolve-InsaneKartPack([string]$Path) {
+    $Path = [IO.Path]::GetFullPath($Path.Trim('"'))
+    foreach ($candidate in @((Join-Path $Path 'IKWv3'), $Path)) {
+        if ((Test-Path -LiteralPath (Join-Path $candidate 'Binaries\Code.pul')) -and
+            (Test-Path -LiteralPath (Join-Path $candidate 'Binaries\boot.thfs'))) {
+            return $candidate
+        }
+    }
+    throw "Not an Insane Kart Wii download (needs IKWv3\Binaries\Code.pul and IKWv3\Binaries\boot.thfs): $Path"
+}
+
+if ($NoInsaneKart) {
+    $InsaneKart = ''
+} elseif (!$InsaneKart -and !$RetroRewind -and !$ItemFever -and !$FormulaKart -and !$SplitScreen8 -and $saved -and $saved.PSObject.Properties['InsaneKart'] -and $saved.InsaneKart) {
+    $InsaneKart = $saved.InsaneKart
+} elseif (!$InsaneKart -and !$RetroRewind -and !$ItemFever -and !$FormulaKart -and !$SplitScreen8 -and $interactive) {
+    $InsaneKart = Read-Host 'Insane Kart Wii folder (the unzipped download) to build it instead, or Enter to skip'
+}
+if ($InsaneKart -and ($RetroRewind -or $ItemFever -or $FormulaKart -or $SplitScreen8)) {
+    throw 'One checkout builds one mod: pass only one of -RetroRewind, -ItemFever, -FormulaKart, -SplitScreen8, -InsaneKart (use a second clone for another, or -NoRetroRewind / -NoItemFever / -NoFormulaKart / -NoSplitScreen8 / -NoInsaneKart).'
+}
+if ($InsaneKart) { $InsaneKart = Resolve-InsaneKartPack $InsaneKart }
 
 if ($RetroRewind -eq 'auto') {
     $RetroRewind = Get-RecordedRetroRewind
@@ -169,7 +199,7 @@ if ($NoItemFeverItems -or !$RetroRewind) {
 }
 if ($ItemFeverItems) { $ItemFeverItems = Resolve-ItemFeverPack $ItemFeverItems }
 
-[pscustomobject]@{ InstallRoot = $InstallRoot; RetroRewind = $RetroRewind; ItemFever = $ItemFever; ItemFeverItems = $ItemFeverItems; FormulaKart = $FormulaKart; SplitScreen8 = $SplitScreen8 } |
+[pscustomobject]@{ InstallRoot = $InstallRoot; RetroRewind = $RetroRewind; ItemFever = $ItemFever; ItemFeverItems = $ItemFeverItems; FormulaKart = $FormulaKart; SplitScreen8 = $SplitScreen8; InsaneKart = $InsaneKart } |
     ConvertTo-Json | Set-Content -LiteralPath $OptionsFile -Encoding UTF8
 
 $buildArgs = @{ InstallRoot = $InstallRoot; Jobs = $Jobs; AllowSourceDependencies = $AllowSourceDependencies; PreflightOnly = $PreflightOnly }
@@ -178,6 +208,7 @@ if ($ItemFever) { $buildArgs.ItemFever = $ItemFever }
 if ($ItemFeverItems) { $buildArgs.ItemFeverItems = $ItemFeverItems }
 if ($FormulaKart) { $buildArgs.FormulaKart = $FormulaKart }
 if ($SplitScreen8) { $buildArgs.SplitScreen8 = $SplitScreen8 }
+if ($InsaneKart) { $buildArgs.InsaneKart = $InsaneKart }
 & (Join-Path $Repo 'Build-MKW100.ps1') @buildArgs
 if ($LASTEXITCODE -ne 0) { throw 'Build failed; see build-logs.' }
 if ($PreflightOnly) { return }
@@ -333,9 +364,24 @@ if ($SplitScreen8) {
     Install-ModProduct -Name 'MKWii 8P Splitscreen' -Stage $stageSs8 -Pack (Join-Path $Repo 'PulsarPacks\completed\SplitScreen8\SplitScreen8') -Players 12 -ConfigKey ''
 }
 
+if ($InsaneKart) {
+    # IKWv3\ mirrored like a pack (its XML, Binaries\boot.thfs, comes along). IKW's own code writes
+    # its save to IKWv3\save\IKWSave<n>, so that folder is a real copy here, not a link that would
+    # write into the download.
+    $stageIkw = Join-Path $Repo 'play-ikw'
+    Install-ModProduct -Name 'Insane Kart Wii' -Stage $stageIkw -Pack $InsaneKart -Players 100 -ConfigKey ''
+    $ikwSave = Join-Path $stageIkw 'IKWv3\save'
+    $existing = Get-Item -LiteralPath $ikwSave -Force -ErrorAction SilentlyContinue
+    if ($existing -and $existing.LinkType) {
+        [IO.Directory]::Delete($ikwSave, $false)   # the link only
+        Copy-Item -LiteralPath (Join-Path $InsaneKart 'save') -Destination $ikwSave -Recurse
+    }
+}
+
 $launchers = if ($RetroRewind -and $ItemFeverItems) { 'Play-MKW100.cmd or Play-RetroRewindItemFever.cmd' }
              elseif ($RetroRewind) { 'Play-MKW100.cmd or Play-RetroRewind.cmd' }
              elseif ($ItemFever) { 'Play-MKW100.cmd or Play-ItemFever.cmd' }
              elseif ($FormulaKart) { 'Play-MKW100.cmd or Play-FormulaKart.cmd' }
-             elseif ($SplitScreen8) { 'Play-MKW100.cmd or Play-SplitScreen8.cmd' } else { 'Play-MKW100.cmd' }
+             elseif ($SplitScreen8) { 'Play-MKW100.cmd or Play-SplitScreen8.cmd' }
+             elseif ($InsaneKart) { 'Play-MKW100.cmd or Play-InsaneKart.cmd' } else { 'Play-MKW100.cmd' }
 Write-Host "Installed. Run $launchers. Settings and saves are kept on updates."

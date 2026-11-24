@@ -32,9 +32,13 @@ def parse_pul(path, region='P'):
     if data[:4] == b'Kame':  # a raw chunk (combine_pul.py output)
         sizes, idx, off = (len(data), 0, 0, 0), 0, 0
     else:
-        sizes = struct.unpack('>4I', data[:16])
+        # Four sizes (P, E, J, K) up front, or five when a pack adds a demo-disc chunk (Insane Kart Wii).
+        count = 4
+        if 20 + sum(struct.unpack('>5I', data[:20])) == len(data) and 16 + sum(struct.unpack('>4I', data[:16])) != len(data):
+            count = 5
+        sizes = struct.unpack(f'>{count}I', data[:4 * count])
         idx = REGIONS.index(region)
-        off = 16 + sum(sizes[:idx])
+        off = 4 * count + sum(sizes[:idx])
     m0, _m1, bss, code, ctor_start, ctor_end, _csz, _ = struct.unpack('>8I', data[off:off + 32])
     if m0 != 0x4B616D65:
         raise ValueError(f'{path}: no Kamek chunk for region {region}')

@@ -1829,6 +1829,14 @@ int RunTranslateModCore(string[] argsTail, string? outputDirectoryOverride)
 
     var pul = KamekPulFile.Load(codePul);
     var selected = pul.SelectRegion(region);
+    Translator.Core.Lifting.PpcLifter.BlOverData =
+        Translator.Core.Lifting.PpcLifter.FindBlOverDataSites(selected.CodeBlob, moduleGuestBase);
+    LrAdjustingHooks.Current = LrAdjustingHooks.Scan(selected.CodeBlob, moduleGuestBase);
+    if (LrAdjustingHooks.Current.Count > 0)
+        Console.WriteLine($"[translator] {LrAdjustingHooks.Current.Count} module hook(s) return to LR + K: " +
+            string.Join(", ", LrAdjustingHooks.Current.Select(h => $"0x{h.Key:X8} (+{string.Join("/+", h.Value.Select(k => $"0x{k:X}"))})")));
+    if (Translator.Core.Lifting.PpcLifter.BlOverDataSites.Count > 0)
+        Console.WriteLine($"[translator] {Translator.Core.Lifting.PpcLifter.BlOverDataSites.Count} bl-over-inline-data site(s) in the module lifted as tail calls.");
     // The server validates the hash of the unmodified chunk.
     var sourceKamekCodeSha1 = SHA1.HashData(selected.CodeBlob);
     Mkw100CheckModBuild(profile?.Name, sourceKamekCodeSha1);
@@ -1843,6 +1851,22 @@ int RunTranslateModCore(string[] argsTail, string? outputDirectoryOverride)
         if (!ReferenceEquals(esrb, corrected))
             Console.WriteLine("[translator] Applied Retro Rewind's NTSC-U ESRB skip statically at 0x80604094.");
         selected = esrb;
+    }
+    // Absolute commands the profile drops (recomp.yml drop_commands): patches of code the recomp
+    // doesn't have, such as a pack's online-only .init word or a hook into its console launcher.
+    // Each address must name exactly one command, so a pack update that moves one fails loudly.
+    foreach (var dropAddress in profile?.DropCommands ?? [])
+    {
+        var matching = selected.Commands.Where(c => c.AddressIsAbsolute && c.Address == dropAddress).ToArray();
+        if (matching.Length != 1)
+        {
+            Console.Error.WriteLine($"[translator] drop_commands: expected one absolute command at 0x{dropAddress:X8}, found {matching.Length}.");
+            return 1;
+        }
+        selected = new KamekChunk(selected.Index, selected.FileOffset, selected.BssSize, selected.CodeSize,
+            selected.CtorStart, selected.CtorEnd, selected.ChunkSize, selected.CodeBlob,
+            selected.Commands.Where(c => !ReferenceEquals(c, matching[0])).ToArray());
+        Console.WriteLine($"[translator] Dropped {matching[0].Id} at 0x{dropAddress:X8} (profile drop_commands).");
     }
     if (requestedRetroWfc && profile?.RetroWfcLegacyBootstrapHook is { } legacyBootstrapHook)
     {
@@ -1890,6 +1914,56 @@ int RunTranslateModCore(string[] argsTail, string? outputDirectoryOverride)
         Console.WriteLine($"[translator] Retro WFC shared payload validated: {retroWfcLoweringPlan.StaticBytePatches.Count:N0} static byte patch(es), {retroWfcLoweringPlan.ExecutableHooks.Count:N0} executable hook(s), {retroWfcLoweringPlan.StaticPointers.Count:N0} static pointer(s).");
     }
 
+    selected = LowMemoryVeneerFolder.Fold(selected,
+        address => baseManifest.Sections.Any(s => s.Executable && address >= s.GuestStart && address < s.GuestEnd),
+        moduleGuestBase, message => Console.WriteLine($"[translator] {message}"));
+    // mkw100: game instructions the module rewrites at run time (Insane Kart Wii's
+    // KamekRuntimeWrite) are translated with every word it can write there. A no-op conditional
+    // write per site makes the containing game function an overlay of this mod, retranslated with
+    // the site's variants (FunctionTranslator); the runtime is told which words may be written.
+    {
+        uint? BaseWord(uint address) => image.Value.Contains(address, 4)
+            ? BinaryPrimitives.ReadUInt32BigEndian(image.Value.Memory.AsSpan(image.Value.GetOffset(address, 4), 4))
+            : null;
+        bool InBaseCode(uint address) =>
+            baseManifest.Sections.Any(s => s.Executable && address >= s.GuestStart && address < s.GuestEnd);
+        var scan = RuntimePatchSites.Scan(selected, moduleGuestBase, BaseWord);
+        var sites = scan.Sites
+            .Where(s => InBaseCode(s.Key) && BaseWord(s.Key) is not null)
+            .ToDictionary(s => s.Key, s => s.Value);
+        // An address also written with computed values is an immediate site when its known words
+        // only differ in the immediate (it then reads the immediate at run time instead).
+        // Likewise any site whose words are all the game's instruction with another immediate
+        // (a constant the scan saw on one path may stand for a computed one, IKW's battle time).
+        var immediates = (scan.ImmediateSites ?? new HashSet<uint>())
+            .Concat(sites.Keys)
+            .Where(address => InBaseCode(address) && BaseWord(address) is { } original &&
+                              RuntimePatchSites.IsImmediateForm(original) &&
+                              (!sites.TryGetValue(address, out var words) ||
+                               words.All(w => (w & 0xFFFF0000u) == (original & 0xFFFF0000u))))
+            .ToHashSet();
+        foreach (var address in immediates)
+        {
+            sites.Remove(address);
+        }
+        RuntimePatchSites.Current = sites;
+        RuntimePatchSites.Immediates = immediates;
+        if (scan.Helpers.Count > 0)
+        {
+            Console.WriteLine($"[translator] run-time code patches: {scan.Helpers.Count} helper(s), {scan.Calls} call(s), " +
+                $"{sites.Count} game instruction(s) translated with {sites.Sum(s => s.Value.Count)} variant word(s); " +
+                $"{RuntimePatchSites.Immediates.Count} immediate(s) read at run time; " +
+                $"{scan.UnknownCalls} call(s) with an unknown address or value left out.");
+            var injected = sites.Keys.Concat(RuntimePatchSites.Immediates)
+                .Where(address => !selected.Commands.Any(c => c.AddressIsAbsolute && c.Address == address))
+                .Select(address => new KamekCommand(0, 0, KamekCommandId.CondWrite32, true, address,
+                    new[] { BaseWord(address)!.Value, BaseWord(address)!.Value }))
+                .ToArray();
+            selected = new KamekChunk(selected.Index, selected.FileOffset, selected.BssSize, selected.CodeSize,
+                selected.CtorStart, selected.CtorEnd, selected.ChunkSize, selected.CodeBlob,
+                selected.Commands.Concat(injected).ToArray());
+        }
+    }
     var patchPlan = KamekPatchPlanner.Build(selected, baseManifest, moduleGuestBase);
     var continuationPlan = ContinuationPlanner.Build(selected, baseManifest, moduleGuestBase);
 
@@ -1990,7 +2064,29 @@ int RunTranslateModCore(string[] argsTail, string? outputDirectoryOverride)
             string.IsNullOrWhiteSpace(c.Symbol)
                 ? $"Retro WFC payload initialization callback {c.Kind}"
                 : $"Retro WFC payload initialization callback {c.Kind} {c.Symbol}"));
+    // mkw100: a bl over inline data is lifted as a tail call to the code after the data, so that
+    // code must be a translated function of its own.
+    var blOverDataTargets = Translator.Core.Lifting.PpcLifter.BlOverData.Values
+        .Distinct()
+        .Select(target => new ModFunctionStart(target, "code after inline data (bl over data)"));
+    // mkw100: module code a run-time patch branches to (RuntimePatchSites variants) is entered from
+    // the game like a Kamek hook target, so it must be a translated function too.
+    var moduleEnd = moduleGuestBase + selected.CodeSize;
+    var runtimePatchTargets = RuntimePatchSites.Current
+        .SelectMany(site => site.Value.Select(word => (Site: site.Key, Word: word)))
+        .Where(v => v.Word >> 26 == 18 && (v.Word & 2) == 0)
+        .Select(v =>
+        {
+            var displacement = (int)(v.Word & 0x03FFFFFC);
+            if ((displacement & 0x02000000) != 0) displacement -= 0x04000000;
+            return unchecked(v.Site + (uint)displacement);
+        })
+        .Where(target => target >= moduleGuestBase && target < moduleEnd)
+        .Distinct()
+        .Select(target => new ModFunctionStart(target, "run-time patch branch target"));
     var kamekFunctionStarts = discoveredKamekFunctionStarts
+        .Concat(blOverDataTargets)
+        .Concat(runtimePatchTargets)
         .Concat(retroWfcSemanticFunctionStarts)
         .Concat(retroWfcInitializerFunctionStarts)
         .Concat(retroWfcInitializationCallbackStarts)

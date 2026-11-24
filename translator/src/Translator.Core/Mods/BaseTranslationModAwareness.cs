@@ -119,6 +119,10 @@ public sealed record BaseTranslationModAwareness(
         {
             if (command.AddressIsAbsolute) patched.Add(command.Address);
         }
+        // mkw100: instructions the module rewrites at run time are retranslated by translate-mod too.
+        var runtimePatches = RuntimePatchSites.Scan(chunk, 0x81800000);
+        patched.UnionWith(runtimePatches.Sites.Keys);
+        patched.UnionWith(runtimePatches.ImmediateSites ?? new HashSet<uint>());
         return patched;
     }
 

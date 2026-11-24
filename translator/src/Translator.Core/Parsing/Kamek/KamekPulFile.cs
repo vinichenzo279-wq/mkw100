@@ -58,18 +58,24 @@ public sealed class KamekPulFile
         return chunk ?? throw new InvalidDataException($"Code.pul does not contain a non-empty chunk for region {regionChar} at index {regionIndex}.");
     }
 
+    // A combined Code.pul starts with one big-endian size per chunk: four (P, E, J, K), or five when
+    // a pack also ships a chunk for the demo disc (Insane Kart Wii; its fifth chunk is never selected).
     private static bool TryParseCombined(byte[] data, out KamekPulFile file)
+        => TryParseCombined(data, 4, out file) || TryParseCombined(data, 5, out file);
+
+    private static bool TryParseCombined(byte[] data, int chunkCount, out KamekPulFile file)
     {
         file = null!;
-        if (data.Length < 0x10 + KamekChunk.HeaderSize)
+        var headerSize = chunkCount * 4;
+        if (data.Length < headerSize + KamekChunk.HeaderSize)
         {
             return false;
         }
 
-        Span<uint> sizes = stackalloc uint[4];
-        long totalSize = 0x10;
+        Span<uint> sizes = stackalloc uint[chunkCount];
+        long totalSize = headerSize;
         var nonzeroCount = 0;
-        for (var i = 0; i < 4; i++)
+        for (var i = 0; i < chunkCount; i++)
         {
             sizes[i] = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(i * 4, 4));
             totalSize += sizes[i];
@@ -85,8 +91,8 @@ public sealed class KamekPulFile
         }
 
         var chunks = new List<KamekChunk>();
-        var offset = 0x10;
-        for (var i = 0; i < 4; i++)
+        var offset = headerSize;
+        for (var i = 0; i < chunkCount; i++)
         {
             var size = sizes[i];
             if (size == 0)

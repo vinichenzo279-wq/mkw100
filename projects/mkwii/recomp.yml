@@ -144,4 +144,31 @@ profiles:
       options:
         - section: SplitScreen8
           option: Pack
+  insane-kart:
+    # Insane Kart Wii (a Pulsar pack, all rights reserved: built from the user's own download only).
+    # It ships no riivolution\ folder: its launcher reads Binaries\boot.thfs, which is a plain
+    # Riivolution XML (RR-style patches; Seperate Savegame stays off so the save is the stage's NAND).
+    enabled: true
+    requires_game_id: RMCP01
+    requires_dol_sha256: 80d18895b39c63bd80f457398bfcbb91b7d16ac116a41a88967e954080155b05
+    code_pul: PulsarPacks/completed/InsaneKart/IKWv3/Binaries/Code.pul
+    mod_root: PulsarPacks/completed/InsaneKart/IKWv3
+    region: P
+    module_guest_base: 0x81800000
+    module_link_base: 0x803992E0
+    output: build/mods/insane_kart_full_cpp
+    # 0x80005EFC: the online-only anti-Wiimmfi word in .init (FKW has it too; no translated function
+    # holds it). 0x81500010: a branch into the module from an address outside the game (the console
+    # side's own code; nothing lives there in the recomp). 0x8002125C: strlen's `lbzu` replaced by a
+    # branch to a null-pointer guard IKW writes into low memory (0x800018A8), which the recomp can't
+    # run; runtime/src/hle/insane_kart.cpp guards strlen instead.
+    # Not droppable and not needed: IKW's Random Combinations rewrites game code at run time (thunks
+    # at 0x80002700/0x80002720); in the recomp those writes don't reach translated code, so that
+    # option does nothing. The veneer at 0x800009C8 is folded by translate-mod (LowMemoryVeneerFolder).
+    drop_commands: ["0x80005EFC", "0x81500010", "0x8002125C"]
+    riivolution:
+      xml: Binaries/boot.thfs
+      options:
+        # The XML's section is named " " (the translator trims it); no section matches any.
+        - option: Pack
           choice: 1

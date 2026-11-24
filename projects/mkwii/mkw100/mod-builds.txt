@@ -13,3 +13,4 @@ retro-rewind  5061374c937b8ebe70fa67bef7f35b16f6e9228b  # WheelWizard RetroRewin
 item-fever    cc8a2cd8872579824e32bd11f55da637a239c9c3  # Item Fever 1.1.2 (Code.pul SHA-256 bfc111b5...)
 formula-kart  9f9ae39ac1d26a6fb62e0c1fd649474ccd7272d4  # Formula Kart Wii (FormulaKartWiiP.bin SHA-1 ea5f4b57..., as fkw_to_kamek.py converts it)
 splitscreen8  bd6f6a10a2c07f3bd60de9cc039a6812b8b6b7ff  # MKWii 8P Splitscreen 1.2.0, payload/mkw/Code.pul (SHA-256 68c01d03...)
+insane-kart   698faae10238d4d087faa238ea11c77366ac4a04  # Insane Kart Wii 3.4.1 (Code.pul SHA-256 0e7eedec...)

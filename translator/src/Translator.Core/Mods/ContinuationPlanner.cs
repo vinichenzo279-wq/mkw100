@@ -171,18 +171,29 @@ public static class ContinuationPlanner
                 continue;
             }
 
-            var sprWriteOffset = offset - 4;
-            if (sprWriteOffset < 0)
+            // The mtctr/mtlr is usually right before the bctr/blr; Insane Kart Wii sets up arguments
+            // in between (mtctr r3; mr r3, r31; li r0, 0x8E; bctr). Look back a few instructions,
+            // stopping at a branch or another write of the same register.
+            var spr = word == BctrInstruction ? 9 : 8;
+            var sprWriteOffset = -1;
+            var sourceRegister = -1;
+            for (var back = offset - 4; back >= 0 && back >= offset - 16; back -= 4)
             {
-                continue;
+                var candidate = PpcWordFields.ReadBigEndianWord(relocatedModuleImage, back);
+                if (PpcInstructionPatterns.TryGetMtspr(candidate, spr, out var register))
+                {
+                    sprWriteOffset = back;
+                    sourceRegister = register;
+                    break;
+                }
+                var primary = candidate >> 26;
+                if (primary is 16 or 18 || (primary == 19 && ((candidate >> 1) & 0x3FF) is 16 or 528) ||
+                    PpcInstructionPatterns.TryGetMtspr(candidate, 8, out _) || PpcInstructionPatterns.TryGetMtspr(candidate, 9, out _))
+                {
+                    break;
+                }
             }
-
-            var sprWrite = PpcWordFields.ReadBigEndianWord(relocatedModuleImage, sprWriteOffset);
-            int sourceRegister;
-            var hasRegisterSource = word == BctrInstruction
-                ? PpcInstructionPatterns.TryGetMtspr(sprWrite, 9, out sourceRegister)
-                : PpcInstructionPatterns.TryGetMtspr(sprWrite, 8, out sourceRegister);
-            if (!hasRegisterSource)
+            if (sprWriteOffset < 0)
             {
                 continue;
             }

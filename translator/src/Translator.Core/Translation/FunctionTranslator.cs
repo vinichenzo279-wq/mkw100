@@ -268,9 +268,51 @@ public sealed class FunctionTranslator
             metrics.PpcInstructionCount = instructions.Count;
         }
 
+        // mkw100: instructions a module rewrites at run time (Mods.RuntimePatchSites) each get a
+        // block of their own; the variants' branch targets inside the function start blocks too.
+        var runtimeVariants = FindRuntimeVariants(instructions);
+        var leaders = new List<uint> { entryPoint };
+        var immediateSites = Translator.Core.Mods.RuntimePatchSites.Immediates.Count == 0
+            ? null
+            : instructions.Where(i => Translator.Core.Mods.RuntimePatchSites.Immediates.Contains(i.Address) &&
+                                      !Translator.Core.Mods.RuntimePatchSites.Current.ContainsKey(i.Address) &&
+                                      Translator.Core.Mods.RuntimePatchSites.IsImmediateForm(i.Word))
+                .ToDictionary(i => i.Address);
+        foreach (var site in immediateSites?.Values ?? Enumerable.Empty<PpcInstruction>())
+        {
+            leaders.Add(site.Address);
+            leaders.Add(site.EndAddress);
+        }
+        if (runtimeVariants is not null)
+        {
+            var decoded = new HashSet<uint>(instructions.Select(i => i.Address));
+            foreach (var (site, variants) in runtimeVariants)
+            {
+                leaders.Add(site.Address);
+                leaders.Add(site.EndAddress);
+                foreach (var variant in variants)
+                {
+                    if (variant.IsCall) continue;
+                    leaders.AddRange(variant.BranchTargets.Where(decoded.Contains));
+                }
+            }
+        }
+
+        // mkw100: run-time variants that call or branch into module hooks returning to LR + K
+        // (Mods.LrAdjustingHooks): every place such a return can land starts a block.
+        var lrHookPlaces = LrHookReturnPlaces(instructions, runtimeVariants);
+        if (lrHookPlaces is not null)
+        {
+            foreach (var hook in lrHookPlaces.Value.Hooks)
+            {
+                leaders.Add(hook);
+            }
+            leaders.AddRange(lrHookPlaces.Value.Places);
+        }
+
         // Build CFG-ready basic blocks.
         var bbSw = Stopwatch.StartNew();
-        basicBlocks = BasicBlockBuilder.Build(instructions, new[] { entryPoint });
+        basicBlocks = BasicBlockBuilder.Build(instructions, leaders);
         bbSw.Stop();
         if (metrics is not null)
         {
@@ -323,6 +365,38 @@ public sealed class FunctionTranslator
         var irBlocks = new List<IrBasicBlock>(basicBlocks.Count);
         foreach (var block in basicBlocks)
         {
+            if (immediateSites is not null && immediateSites.TryGetValue(block.StartAddress, out var immediateSite) &&
+                block.Instructions.Count == 1)
+            {
+                // mkw100: an immediate the module rewrites at run time, read from guest memory.
+                const string ImmediateRegister = "addr_imm_loc";  // block-local (SsaTransformer.IsBlockLocalTemp)
+                var signed = (immediateSite.Word >> 26) is 14 or 11;
+                var immediateIr = new List<IrInstruction>
+                {
+                    new IrCall(ImmediateRegister, signed ? "MKW100_RuntimeImmS" : "MKW100_RuntimeImmU",
+                        new[] { IrValue.Imm(immediateSite.Address) })
+                };
+                immediateIr.AddRange(PpcLifter.LiftWithRuntimeImmediate(immediateSite, ImmediateRegister));
+                var withTrace = new List<IrInstruction>();
+                AppendLoweredWithTrace(withTrace, immediateIr, CreateTrace(immediateSite));
+                withTrace.Add(new IrJump(LabelFor(immediateSite.EndAddress)));
+                irBlocks.Add(new IrBasicBlock(LabelFor(block.StartAddress), withTrace));
+                continue;
+            }
+
+            if (runtimeVariants is not null &&
+                runtimeVariants.FirstOrDefault(v => v.Site.Address == block.StartAddress) is { Site: not null } runtimeSite)
+            {
+                AddRuntimeVariantBlocks(irBlocks, runtimeSite.Site, runtimeSite.Variants, liftedByAddress[runtimeSite.Site.Address],
+                    lifter, instructions, options, entryPoint, lrHookPlaces);
+                if (block.Instructions.Count == 1)
+                {
+                    continue;
+                }
+                throw new InvalidOperationException(
+                    $"Run-time patch site 0x{block.StartAddress:X8} does not start a block of its own.");
+            }
+
             var ir = new List<IrInstruction>();
             foreach (var ins in block.Instructions)
             {
@@ -811,6 +885,214 @@ public sealed class FunctionTranslator
     private static string Base(string name) => RegisterNameUtils.StripNumericSuffix(name);
 
     private static string LabelFor(uint address) => $"0x{address:X8}";
+
+    /// <summary>mkw100: where returns from LR-adjusting module hooks can land in this function.</summary>
+    private readonly record struct LrHookPlaces(
+        IReadOnlySet<uint> Hooks, IReadOnlyList<uint> Places, IReadOnlyList<uint> ReturnPoints,
+        IReadOnlySet<uint> Decoded, uint FunctionStart, uint FunctionEnd);
+
+    private static bool IsLrAdjustingHook(PpcInstruction instruction) =>
+        !instruction.IsConditionalBranch &&
+        (instruction.IsCall || instruction.IsUnconditionalBranch) &&
+        instruction.BranchTargets.Count == 1 &&
+        Translator.Core.Mods.LrAdjustingHooks.Current.ContainsKey(instruction.BranchTargets[0]);
+
+    private static LrHookPlaces? LrHookReturnPlaces(
+        IReadOnlyList<PpcInstruction> instructions,
+        List<(PpcInstruction Site, List<PpcInstruction> Variants)>? runtimeVariants)
+    {
+        if (Translator.Core.Mods.LrAdjustingHooks.Current.Count == 0 || instructions.Count == 0)
+        {
+            return null;
+        }
+
+        // Only run-time variants: static Kamek hooks that skip-return are handled by the continuation
+        // planner's resume dispatch (KamekLrContinuation).
+        var all = instructions.Concat(runtimeVariants?.SelectMany(v => v.Variants) ?? Enumerable.Empty<PpcInstruction>()).ToList();
+        var hooks = (runtimeVariants?.SelectMany(v => v.Variants) ?? Enumerable.Empty<PpcInstruction>())
+            .Where(IsLrAdjustingHook).ToList();
+        if (hooks.Count == 0)
+        {
+            return null;
+        }
+
+        var decoded = new HashSet<uint>(instructions.Select(i => i.Address));
+        var returnPoints = all.Where(i => i.IsCall).Select(i => i.EndAddress).Distinct().ToList();
+        var places = new HashSet<uint>();
+        foreach (var hook in hooks)
+        {
+            foreach (var k in Translator.Core.Mods.LrAdjustingHooks.Current[hook.BranchTargets[0]])
+            {
+                foreach (var point in returnPoints)
+                {
+                    var place = unchecked(point + (uint)k);
+                    if (decoded.Contains(place)) places.Add(place);
+                }
+            }
+            if (hook.IsCall && decoded.Contains(hook.EndAddress)) places.Add(hook.EndAddress);
+        }
+
+        return new LrHookPlaces(
+            hooks.Select(h => h.EndAddress).Where(decoded.Contains).ToHashSet(),
+            places.OrderBy(p => p).ToList(),
+            returnPoints,
+            decoded,
+            instructions.Min(i => i.Address),
+            instructions.Max(i => i.EndAddress));
+    }
+
+    /// <summary>
+    /// mkw100: a call or branch into a module hook that returns to LR + K. After the native call the
+    /// LR the hook left says where the game function goes on: one of its own places (a return point
+    /// of one of its calls plus K, or the next instruction after a call), or out of the function
+    /// (MKW100_LocalReturn gives 0), which returns.
+    /// </summary>
+    private static IReadOnlyList<IrInstruction> LrHookDispatch(
+        PpcInstruction hook, IReadOnlyList<IrInstruction> lowered, LrHookPlaces places, List<IrBasicBlock> irBlocks)
+    {
+        const string Selector = "addr_lrret_loc";  // block-local (SsaTransformer.IsBlockLocalTemp)
+        var core = lowered.ToList();
+        if (core.Count > 0 && core[^1] is IrReturn)
+        {
+            core.RemoveAt(core.Count - 1);
+        }
+
+        var targets = new SortedSet<uint>();
+        foreach (var k in Translator.Core.Mods.LrAdjustingHooks.Current[hook.BranchTargets[0]])
+        {
+            foreach (var point in places.ReturnPoints)
+            {
+                var place = unchecked(point + (uint)k);
+                if (places.Decoded.Contains(place)) targets.Add(place);
+            }
+        }
+        if (hook.IsCall && places.Decoded.Contains(hook.EndAddress))
+        {
+            targets.Add(hook.EndAddress);
+        }
+
+        var returnLabel = $"lrret_{hook.Address:X8}_{hook.Word:X8}";
+        if (!irBlocks.Any(b => b.Label == returnLabel))
+        {
+            irBlocks.Add(new IrBasicBlock(returnLabel, new IrInstruction[] { new IrReturn(null) }));
+        }
+
+        var cases = new List<IrJumpTableCase> { new(0, returnLabel) };
+        cases.AddRange(targets.Select(t => new IrJumpTableCase(t, LabelFor(t))));
+        core.Add(new IrCall(Selector, "MKW100_LocalReturn", new[]
+        {
+            IrValue.Register("lr"), IrValue.Imm(places.FunctionStart), IrValue.Imm(places.FunctionEnd)
+        }));
+        core.Add(new IrJumpTable(Selector, cases));
+        return core;
+    }
+
+    /// <summary>mkw100: the run-time patch sites in this function and their decoded variants.</summary>
+    private static List<(PpcInstruction Site, List<PpcInstruction> Variants)>? FindRuntimeVariants(
+        IReadOnlyList<PpcInstruction> instructions)
+    {
+        var sites = Translator.Core.Mods.RuntimePatchSites.Current;
+        if (sites.Count == 0)
+        {
+            return null;
+        }
+
+        List<(PpcInstruction, List<PpcInstruction>)>? found = null;
+        foreach (var instruction in instructions)
+        {
+            if (!sites.TryGetValue(instruction.Address, out var words))
+            {
+                continue;
+            }
+
+            var variants = words
+                .Where(word => word != instruction.Word)
+                .Select(word => PpcDecoder.Decode(instruction.Address, word))
+                .ToList();
+            if (variants.Count > 0)
+            {
+                (found ??= new()).Add((instruction, variants));
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// mkw100: a run-time patch site as a dispatch on the word guest memory holds there
+    /// (MKW100_RuntimeWord) to one block per known word: the game's own instruction and each word
+    /// the module writes, lifted as if it stood at the site. A block that doesn't end in control flow
+    /// continues at the next instruction.
+    /// </summary>
+    private static void AddRuntimeVariantBlocks(
+        List<IrBasicBlock> irBlocks,
+        PpcInstruction site,
+        IReadOnlyList<PpcInstruction> variants,
+        IReadOnlyList<IrInstruction> originalIr,
+        PpcLifter lifter,
+        IReadOnlyList<PpcInstruction> instructions,
+        TranslationOptions options,
+        uint entryPoint,
+        LrHookPlaces? lrHookPlaces)
+    {
+        string VariantLabel(int index) => $"rv_{site.Address:X8}_{index}";
+        const string Selector = "addr_rv_loc";  // block-local (SsaTransformer.IsBlockLocalTemp)
+
+        var cases = new List<IrJumpTableCase> { new(site.Word, VariantLabel(0)) };
+        for (var i = 0; i < variants.Count; i++)
+        {
+            cases.Add(new IrJumpTableCase(variants[i].Word, VariantLabel(i + 1)));
+        }
+
+        irBlocks.Add(new IrBasicBlock(LabelFor(site.Address), new IrInstruction[]
+        {
+            new IrCall(Selector, "MKW100_RuntimeWord", new[] { IrValue.Imm(site.Address) }),
+            new IrJumpTable(Selector, cases)
+        }));
+
+        void AddVariantBlock(int index, PpcInstruction instruction, IReadOnlyList<IrInstruction> lowered)
+        {
+            if (lrHookPlaces is not null && IsLrAdjustingHook(instruction))
+            {
+                lowered = LrHookDispatch(instruction, lowered, lrHookPlaces.Value, irBlocks);
+            }
+            var ir = new List<IrInstruction>();
+            AppendLoweredWithTrace(ir, lowered, CreateTrace(instruction));
+            var last = ir.LastOrDefault(node => node is not IrComment and not IrTracePpc);
+            if (last is not (IrJump or IrBranch or IrReturn or IrJumpTable or IrIndirectJump or IrUndefined))
+            {
+                ir.Add(new IrJump(LabelFor(site.EndAddress)));
+            }
+
+            irBlocks.Add(new IrBasicBlock(VariantLabel(index), ir));
+        }
+
+        AddVariantBlock(0, site, originalIr);
+        for (var i = 0; i < variants.Count; i++)
+        {
+            IReadOnlyList<IrInstruction> lowered;
+            if (Translator.Core.Mods.RuntimePatchSites.IsImmediateForm(variants[i].Word))
+            {
+                // An li/addi/cmpwi/ori the module writes: it may compute the immediate, so read it
+                // from guest memory (the runtime maps every word of this form onto this case).
+                const string ImmediateRegister = "addr_imm_loc";  // block-local
+                var signed = (variants[i].Word >> 26) is 14 or 11;
+                var withImmediate = new List<IrInstruction>
+                {
+                    new IrCall(ImmediateRegister, signed ? "MKW100_RuntimeImmS" : "MKW100_RuntimeImmU",
+                        new[] { IrValue.Imm(site.Address) })
+                };
+                withImmediate.AddRange(PpcLifter.LiftWithRuntimeImmediate(variants[i], ImmediateRegister));
+                lowered = withImmediate;
+            }
+            else
+            {
+                lowered = lifter.LiftVariant(variants[i], instructions, options.AllowUnsupportedInstructions,
+                    entryPoint, options.KnownFunctionEntryPoints);
+            }
+            AddVariantBlock(i + 1, variants[i], lowered);
+        }
+    }
 
     private static List<IrBasicBlock> ApplyLinkedCallFallthroughLrOverrides(
         IReadOnlyList<IrBasicBlock> blocks,

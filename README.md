@@ -63,6 +63,7 @@ The first build takes a while: it translates the game, builds aurora (the graphi
 | `play-rr-if\` | Experimental: `RetroRewind.exe` built from Retro Rewind with Item Fever's items, with its own `UserData`, `RetroRewind6\` (links) and `ItemFeverItems\` (Item Fever's item files, merged from your download) |
 | `play-fkw\` | `RetroRewind.exe` built from Formula Kart Wii, with its own `UserData`, `fkw\` (links to your download) and `riivolution\fkw.xml` |
 | `play-ss8\` | `RetroRewind.exe` built from MKWii 8P Splitscreen, with its own `UserData` and `SplitScreen8\` (links to the pack the build made in the checkout) |
+| `play-ikw\` | `RetroRewind.exe` built from Insane Kart Wii, with its own `UserData` and `IKWv3\` (links to your download, its `save\` copied) |
 | `install-options.json` | Your WiiCompiled folder and mod choice, reused on the next run |
 
 Your WiiCompiled installation is only read from: the game data and the clean DOL/REL stay there, so keep it where it is. Nothing in it is changed, and your original WiiCompiled saves are not copied.
@@ -114,6 +115,16 @@ A checkout can also build **MKWii 8P Splitscreen** by therenow9 ([source](https:
 ```
 
 Play with **Play-SplitScreen8.cmd**. It lives in `play-ss8\` with its own `UserData`. Players 1-4 are the GameCube rows in F10's controller page; players 5-8 are its "Wii Remote 1-4" rows (shown only in this build), where any gamepad plays as a Wii Remote with a Classic Controller, or a real Wii Remote on that channel. The main menu gets 5 to 8 Players buttons next to the game's own. Like the other mods it takes the checkout's one mod slot; `-NoSplitScreen8` turns it off.
+
+### Insane Kart Wii
+
+A checkout can also build **Insane Kart Wii 3.4.1** (offline, PAL): its tracks, characters, items and modes. Extract the IKW download (and its update zips, over it) anywhere and pass the folder that holds `IKWv3\`:
+
+```powershell
+./Install-MKW100.ps1 -InstallRoot 'D:\Games\WiiCompiled' -InsaneKart 'D:\Mods\Insane Kart Wii'
+```
+
+Play with **Play-InsaneKart.cmd**. It lives in `play-ikw\` with its own `UserData`; `IKWv3\` there links to your download, except `IKWv3\save\` (IKW's own save), which is a copy. It takes the checkout's one mod slot; `-NoInsaneKart` turns it off. The first start asks you to create a licence, as IKW does on a Wii (its save is `UserData\NAND\...\rksys.ikw`). MKW100 is measured on 3.4.1's code; another IKW version needs its addresses measured again (`docs/mkw100/insane-kart.md`) and won't start until then. IKW switches game code on and off while running (its menus, settings and modes); the build compiles every switch it can find in IKW's code with both states, and logs any it couldn't (`insane-kart` lines in `UserData\Logs`). Insane Kart Wii is all rights reserved: build it from your own download, and don't share a built copy. Details: `docs/mkw100/insane-kart.md`.
 
 ## Development
 

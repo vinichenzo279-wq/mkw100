@@ -60,6 +60,17 @@ bool HandleExecutableWrite(uint32_t address, size_t length, uint64_t value);
 // is let through to memory; translated code ignores it, so a native that registers the word reads
 // it back and applies its effect itself.
 void AllowExecutableWord(uint32_t address, const char* name);
+// True when the word lies in translated code (the DOL/REL text or a mod module's code).
+bool IsExecutableAddress(uint32_t address);
+// Run-time patch sites (translator Mods.RuntimePatchSites): a word the mod may write at a game
+// instruction, which the translated code there can run. Registered by the mod's data patches.
+void RegisterRuntimePatchWord(uint32_t address, uint32_t word);
+// A site whose immediate (low half) the mod rewrites with a computed value: any word with the same
+// high half as the site's first word may be written there.
+void RegisterRuntimePatchImmediate(uint32_t address);
+// True when the site is registered and the word is one of its variants or the word it held first.
+// The first query records that word and allows writes to the site.
+bool IsRuntimePatchWord(uint32_t address, uint32_t word);
 void CheckExecutableWrite(uint32_t address, size_t length, uint64_t value);
 
 inline bool ExecutableWriteGuardMayHit(uint32_t address, size_t length) noexcept {

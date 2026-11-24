@@ -45,6 +45,12 @@ public static class BasicBlockBuilder
         for (var i = 0; i < instructions.Count; i++)
         {
             var ins = instructions[i];
+            // mkw100: a bl over inline data (PpcLifter.BlOverDataSites) is lifted as a tail call,
+            // so it ends its block; the data after it is never run.
+            if (Translator.Core.Lifting.PpcLifter.BlOverDataSites.Contains(ins.Address))
+            {
+                leaders.Add(ins.EndAddress);
+            }
             if (i > 0)
             {
                 var previous = instructions[i - 1];

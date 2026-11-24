@@ -19,3 +19,4 @@
 #include "guest_abi/dispatch.h"
 #include "guest_abi/array_overflow.h"
 #include "guest_abi/player_slots.h"
+#include "guest_abi/runtime_patch.h"

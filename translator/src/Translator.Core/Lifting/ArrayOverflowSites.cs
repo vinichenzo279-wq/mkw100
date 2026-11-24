@@ -44,15 +44,20 @@ public sealed class ArrayOverflowSites
 
     public static ArrayOverflowSites Current { get; set; } = new(Array.Empty<Site>());
 
-    private readonly FrozenDictionary<uint, Site> _sites;
+    // Every site as loaded: different packs' sites (profile=NAME) may share a module address.
+    private readonly IReadOnlyList<Site> _all;
+    // By address, for the lifter: built on first use, once the list holds one profile's sites.
+    private readonly Lazy<FrozenDictionary<uint, Site>> _byAddress;
+    private FrozenDictionary<uint, Site> _sites => _byAddress.Value;
 
     public ArrayOverflowSites(IEnumerable<Site> sites, bool traceSignedBytes = false)
     {
-        _sites = sites.ToFrozenDictionary(s => s.Address);
+        _all = sites.ToArray();
+        _byAddress = new Lazy<FrozenDictionary<uint, Site>>(() => _all.ToFrozenDictionary(s => s.Address));
         TraceSignedBytes = traceSignedBytes;
     }
 
-    public int Count => _sites.Count;
+    public int Count => _all.Count;
 
     /// <summary>
     /// Diagnostic build (a `!trace-sbyte` line in the site list): every `extsb` that is not an
@@ -63,10 +68,10 @@ public sealed class ArrayOverflowSites
     public bool TraceSignedBytes { get; }
 
     /// <summary>The sites <paramref name="keep"/> accepts.</summary>
-    public ArrayOverflowSites Where(Func<Site, bool> keep) => new(_sites.Values.Where(keep), TraceSignedBytes);
+    public ArrayOverflowSites Where(Func<Site, bool> keep) => new(_all.Where(keep), TraceSignedBytes);
 
     /// <summary>Every site (mkw100: merged profiles, ProfileMerges).</summary>
-    public IEnumerable<Site> All => _sites.Values;
+    public IEnumerable<Site> All => _all;
 
     /// <summary>A list holding <paramref name="sites"/>, keeping this list's trace setting.</summary>
     public ArrayOverflowSites With(IEnumerable<Site> sites) => new(sites, TraceSignedBytes);
@@ -245,9 +250,12 @@ public sealed class ArrayOverflowSites
             fail("unexpected lifted form");
         var field = (int)((word >> 23) & 7);
         var ra = (int)((word >> 16) & 31);
+        // A pack that already raised the bound past the site's value keeps its own (Insane Kart Wii
+        // writes cmplwi 255 at the lap-count sites).
+        var bound = Math.Max(site.Stride, (int)(word & 0xFFFF));
         return new IrInstruction[]
         {
-            new IrSetCrField(field, IrValue.Register($"r{ra}"), IrValue.Imm(site.Stride), op == 10)
+            new IrSetCrField(field, IrValue.Register($"r{ra}"), IrValue.Imm(bound), op == 10)
         };
     }
 

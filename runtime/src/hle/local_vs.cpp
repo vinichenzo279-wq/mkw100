@@ -212,6 +212,9 @@ constexpr int kFormulaKartMaxRacers = 255;
 // MKWii 8P Splitscreen's vanilla module keeps the base game's loader and kart archives; its own
 // per-racer state is per local player (8), and its loops over the 12 Racedata slots only look for locals.
 constexpr int kSplitScreen8MaxRacers = 255;
+// Insane Kart Wii: its module's per-racer tables are shadowed (array-sites.txt, profile insane-kart)
+// and its Racedata slot reads go through player-slot-sites.txt; see docs/mkw100/insane-kart.md.
+constexpr int kInsaneKartMaxRacers = 255;
 // A pack build MKW100's pack fixes were not measured on (mod_build.h) keeps the game's 12.
 constexpr int kUnknownModMaxRacers = 12;
 int MaxRacers() {
@@ -220,6 +223,7 @@ int MaxRacers() {
     case ModBuild::Kind::ItemFever: return kItemFeverMaxRacers;
     case ModBuild::Kind::FormulaKart: return kFormulaKartMaxRacers;
     case ModBuild::Kind::SplitScreen8: return kSplitScreen8MaxRacers;
+    case ModBuild::Kind::InsaneKart: return kInsaneKartMaxRacers;
     case ModBuild::Kind::Unknown: return kUnknownModMaxRacers;
     default: return kRetroRewindMaxRacers;
     }

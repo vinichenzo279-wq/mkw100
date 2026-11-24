@@ -5,9 +5,11 @@
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <sstream>
+#include <vector>
 #include <filesystem>
 
 #include "memory.h"
@@ -414,6 +416,111 @@ bool HandleExecutableWrite(uint32_t address, size_t length, uint64_t value) {
 
     ReportForbiddenExecutableWrite(address, length, value, *hit);
 }
+
+bool IsExecutableAddress(uint32_t address) {
+    return FindExecutableRange(address & ~3u, 4).has_value();
+}
+
+namespace {
+struct RuntimePatchSite {
+    std::vector<uint32_t> words;
+    bool haveFirst = false;
+    bool immediate = false;  // any word with the first word's high half
+};
+std::map<uint32_t, RuntimePatchSite>& RuntimePatchSites() {
+    static std::map<uint32_t, RuntimePatchSite> sites;
+    return sites;
+}
+
+// li/addi (14), cmplwi (10), cmpwi (11), ori (24): forms the translator compiles with the immediate
+// read at run time (Mods.RuntimePatchSites.IsImmediateForm).
+bool IsImmediateForm(uint32_t word) {
+    const uint32_t op = word >> 26;
+    return op == 14 || op == 10 || op == 11 || op == 24;
+}
+
+// The registered immediate-form word sharing `word`'s opcode and registers (high half), 0 if none:
+// a module may compute the immediate it writes, so the translated case reads it from memory.
+uint32_t ImmediateFormCase(const RuntimePatchSite& site, uint32_t word) {
+    if (!IsImmediateForm(word)) {
+        return 0;
+    }
+    for (const uint32_t known : site.words) {
+        if (IsImmediateForm(known) && (known & 0xFFFF0000u) == (word & 0xFFFF0000u)) {
+            return known;
+        }
+    }
+    return 0;
+}
+} // namespace
+
+void RegisterRuntimePatchWord(uint32_t address, uint32_t word) {
+    std::lock_guard<std::mutex> lock(ModMutex());
+    RuntimePatchSites()[address & ~3u].words.push_back(word);
+}
+
+void RegisterRuntimePatchImmediate(uint32_t address) {
+    std::lock_guard<std::mutex> lock(ModMutex());
+    RuntimePatchSites()[address & ~3u].immediate = true;
+}
+
+bool IsRuntimePatchWord(uint32_t address, uint32_t word) {
+    address &= ~3u;
+    bool firstUse = false;
+    {
+        std::lock_guard<std::mutex> lock(ModMutex());
+        auto it = RuntimePatchSites().find(address);
+        if (it == RuntimePatchSites().end()) {
+            return false;
+        }
+        if (!it->second.haveFirst) {
+            // The word the site held before the mod's first write there (the game's, or a static
+            // Kamek patch's): the translated code's own case.
+            it->second.haveFirst = true;
+            it->second.words.push_back(Memory::Read32(address));
+            firstUse = true;
+        }
+        const bool sameForm = it->second.immediate && !it->second.words.empty() &&
+                              (word & 0xFFFF0000u) == (it->second.words.back() & 0xFFFF0000u);
+        if (!sameForm && std::find(it->second.words.begin(), it->second.words.end(), word) == it->second.words.end() &&
+            ImmediateFormCase(it->second, word) == 0) {
+            return false;
+        }
+    }
+    if (firstUse) {
+        AllowExecutableWord(address, "run-time patch site");
+    }
+    return true;
+}
+
+} // namespace RecompMod
+
+extern "C" uint32_t MKW100_RuntimeWord(uint32_t address) {
+    const uint32_t word = Memory::Read32(address);
+    std::lock_guard<std::mutex> lock(ModMutex());
+    const auto it = RecompMod::RuntimePatchSites().find(address & ~3u);
+    if (it == RecompMod::RuntimePatchSites().end() ||
+        std::find(it->second.words.begin(), it->second.words.end(), word) != it->second.words.end()) {
+        return word;
+    }
+    // A computed immediate: dispatch to the case of the same form, which reads it from memory.
+    const uint32_t known = RecompMod::ImmediateFormCase(it->second, word);
+    return known != 0 ? known : word;
+}
+
+extern "C" uint32_t MKW100_LocalReturn(uint32_t lr, uint32_t start, uint32_t end) {
+    return lr >= start && lr < end ? lr : 0;
+}
+
+extern "C" uint32_t MKW100_RuntimeImmS(uint32_t address) {
+    return static_cast<uint32_t>(static_cast<int32_t>(static_cast<int16_t>(Memory::Read32(address) & 0xFFFFu)));
+}
+
+extern "C" uint32_t MKW100_RuntimeImmU(uint32_t address) {
+    return Memory::Read32(address) & 0xFFFFu;
+}
+
+namespace RecompMod {
 
 void AllowExecutableWord(uint32_t address, const char* name) {
     std::lock_guard<std::mutex> lock(ModMutex());

@@ -512,15 +512,18 @@ static void ScanDirectory(const fs::path& root, const std::string& virtualPrefix
             return;
         }
 
-        const std::uintmax_t size = fs::file_size(entry.path(), entryEc);
+        // The directory entry's size and a lexical relative path: the walk already yields
+        // root/... paths, and fs::relative would canonicalize both through the filesystem for
+        // every file (minutes for a pack of ~18,000 files, Insane Kart Wii).
+        const std::uintmax_t size = entry.file_size(entryEc);
         if (entryEc) {
             RT_LOG(RT_TAG_DVD) << "WARNING: skipping " << HostPathText(entry.path()) << ": "
                       << entryEc.message() << std::endl;
             return;
         }
 
-        const fs::path relative = fs::relative(entry.path(), root, entryEc);
-        if (entryEc) {
+        const fs::path relative = entry.path().lexically_relative(root);
+        if (relative.empty()) {
             return;
         }
 
@@ -667,16 +670,67 @@ static void BuildAndPublishRuntimeFst() {
                                    static_cast<uint64_t>(entry.size));
         }
     }
-    for (DVDFileEntry& entry : g_fileEntries) {
-        if (entry.isDirectory || entry.discOffsetWords != 0) {
-            continue;
+    // Placed after the disc's last file while they fit the FST's 32-bit word offsets (16 GiB).
+    // A pack bigger than that (Insane Kart Wii: ~12 GB of tracks and characters over a disc whose
+    // files reach ~4.4 GB) also fills the disc's gaps, mostly the ranges of the files it replaces.
+    uint64_t appendedEnd = nextFreeBytes;
+    for (const DVDFileEntry& entry : g_fileEntries) {
+        if (!entry.isDirectory && entry.discOffsetWords == 0) {
+            appendedEnd = ((appendedEnd + 31ull) & ~31ull) + std::max<uint32_t>(entry.size, 4u);
         }
-        nextFreeBytes = (nextFreeBytes + 31ull) & ~31ull;
-        if (nextFreeBytes / 4ull > 0xFFFFFFFFull) {
-            FailRuntimeFst("synthetic disc extents exceed the 32-bit FST word offset range");
+    }
+    if (appendedEnd / 4ull <= 0xFFFFFFFFull) {
+        for (DVDFileEntry& entry : g_fileEntries) {
+            if (entry.isDirectory || entry.discOffsetWords != 0) {
+                continue;
+            }
+            nextFreeBytes = (nextFreeBytes + 31ull) & ~31ull;
+            entry.discOffsetWords = static_cast<uint32_t>(nextFreeBytes / 4ull);
+            nextFreeBytes += std::max<uint32_t>(entry.size, 4u);
         }
-        entry.discOffsetWords = static_cast<uint32_t>(nextFreeBytes / 4ull);
-        nextFreeBytes += std::max<uint32_t>(entry.size, 4u);
+    } else {
+        // Free ranges between the extents in use (preserved disc offsets), then the space after
+        // them up to 16 GiB; files go in first fit, largest first so big files find room.
+        std::vector<std::pair<uint64_t, uint64_t>> used;
+        for (const DVDFileEntry& entry : g_fileEntries) {
+            if (!entry.isDirectory && entry.discOffsetWords != 0) {
+                const uint64_t start = static_cast<uint64_t>(entry.discOffsetWords) * 4ull;
+                used.emplace_back(start, start + std::max<uint32_t>(entry.size, 1u));
+            }
+        }
+        std::sort(used.begin(), used.end());
+        std::vector<std::pair<uint64_t, uint64_t>> gaps;  // [start, end)
+        uint64_t cursor = 32;  // word offset 0 means "no extent"
+        for (const auto& [start, end] : used) {
+            if (start > cursor) gaps.emplace_back(cursor, start);
+            cursor = std::max(cursor, end);
+        }
+        constexpr uint64_t kLimitBytes = 0x100000000ull * 4ull;
+        if (cursor < kLimitBytes) gaps.emplace_back(cursor, kLimitBytes);
+        std::vector<DVDFileEntry*> pending;
+        for (DVDFileEntry& entry : g_fileEntries) {
+            if (!entry.isDirectory && entry.discOffsetWords == 0) pending.push_back(&entry);
+        }
+        std::stable_sort(pending.begin(), pending.end(),
+                         [](const DVDFileEntry* a, const DVDFileEntry* b) { return a->size > b->size; });
+        for (DVDFileEntry* entry : pending) {
+            const uint64_t need = std::max<uint32_t>(entry->size, 4u);
+            bool placed = false;
+            for (auto& [start, end] : gaps) {
+                const uint64_t aligned = (start + 31ull) & ~31ull;
+                if (aligned + need <= end && aligned / 4ull <= 0xFFFFFFFFull) {
+                    entry->discOffsetWords = static_cast<uint32_t>(aligned / 4ull);
+                    start = aligned + need;
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) {
+                FailRuntimeFst("synthetic disc extents exceed the 32-bit FST word offset range");
+            }
+        }
+        RT_LOGF(RT_TAG_DVD, "%zu added files placed in the disc's free ranges (they don't fit after its end)\n",
+                pending.size());
     }
 
     std::vector<DvdFstContract::RegisteredFile> registrations;

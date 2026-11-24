@@ -25,13 +25,16 @@ param(
     # An unzipped MKWii 8P Splitscreen release (mkwii-8p-splitscreen-1.2.0, holding payload\mkw\Code.pul):
     # builds the mod product from its "Mario Kart Wii" module (5-8 local players). The character pages'
     # menu controls are generated from the install's disc files (scripts/mkw100/ss8_stage_pack.py, needs python).
-    [string]$SplitScreen8
+    [string]$SplitScreen8,
+    # An Insane Kart Wii pack folder (IKWv3, holding Binaries\Code.pul and Binaries\boot.thfs, IKW's
+    # Riivolution XML under another name): builds the mod product from it, like -ItemFever.
+    [string]$InsaneKart
 )
 # Standalone, isolated Windows fork build. Never calls LocalBuild.ps1, never
 # modifies original Install\Base or the older R13/R23 build cache.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-if (@($RetroRewind, $ItemFever, $FormulaKart, $SplitScreen8 | Where-Object { $_ }).Count -gt 1) { throw 'Pass only one of -RetroRewind, -ItemFever, -FormulaKart, -SplitScreen8.' }
+if (@($RetroRewind, $ItemFever, $FormulaKart, $SplitScreen8, $InsaneKart | Where-Object { $_ }).Count -gt 1) { throw 'Pass only one of -RetroRewind, -ItemFever, -FormulaKart, -SplitScreen8, -InsaneKart.' }
 if ($ItemFeverItems -and -not $RetroRewind) { throw '-ItemFeverItems goes with -RetroRewind.' }
 # The mod product's pack, its recomp.yml profile, where that profile reads Code.pul, and its output.
 $ModPack = $null
@@ -48,6 +51,9 @@ if ($RetroRewind) {
     # The pack is made inside the checkout (Code.pul plus menu archives generated from the disc).
     $ModPack = 'PulsarPacks\completed\SplitScreen8\SplitScreen8'; $ModProfile = 'splitscreen8'; $ModName = 'MKWii 8P Splitscreen'
     $ModStagedPul = 'PulsarPacks\completed\SplitScreen8\SplitScreen8\Binaries'; $ModOut = 'build\mods\splitscreen8_full_cpp'
+} elseif ($InsaneKart) {
+    $ModPack = $InsaneKart; $ModProfile = 'insane-kart'; $ModName = 'Insane Kart Wii'
+    $ModStagedPul = 'PulsarPacks\completed\InsaneKart\IKWv3\Binaries'; $ModOut = 'build\mods\insane_kart_full_cpp'
 }
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Repo = $Here

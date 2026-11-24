@@ -93,7 +93,9 @@ public static class GuestHelperEffectCatalog
         // mkw100: touch no CPU state but their result (guest_abi/player_slots.h, array_overflow.h).
         "MKW100_PlayerSlotOffset", "MKW100_PlayerSlotAddress", "MKW100_IndexScaled", "MKW100_ArrayStep",
         "MKW100_IndexedBase", "MKW100_IndexedRestore", "MKW100_ObjectArrayAdd", "MKW100_LoadHook",
-        "MKW100_RacerByte", "MKW100_TraceSignedByte", "MKW100_IndexedAdd"
+        "MKW100_RacerByte", "MKW100_TraceSignedByte", "MKW100_IndexedAdd",
+        // mkw100: reads the guest word at a run-time patch site (Mods.RuntimePatchSites).
+        "MKW100_RuntimeWord", "MKW100_LocalReturn", "MKW100_RuntimeImmS", "MKW100_RuntimeImmU"
     };
 
     private static readonly string[] XerReadWriteHelpers =
