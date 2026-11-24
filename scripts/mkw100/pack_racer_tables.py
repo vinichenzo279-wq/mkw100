@@ -51,11 +51,25 @@ NOT_RACER_SITES = {
     # number from 0x5ee30 into 8-slot tables at 0x818BE3A8.
     0x5f2d4, 0x5f2dc, 0x5f2ec, 0x5f2f0, 0x5f3fc, 0x5f404,
     0x60fd0,  # 0x60f38, same caller and slots
+    # 0x853b0: `lwzx` into the u32[12] at 0xcf9d0 by the racer number its loops at 0x85544 / 0x856c0
+    # find for a kart; those loops stop at min(racers, 12) (0x85530 / 0x856ac, kept), so it is below 12.
+    0x85588, 0x85704,
+    # 0x3aee8: the same table at 0x3b23c, by its loop counter r16 (`rlwinm 2, 22, 29`), the loop stopping at
+    # min(racers, 12) (0x3b1cc, kept).
+    0x3b23c,
+    # 0x3f8e4's first loop (0x3f95c): tables at 0xb3f04 / 0xb3fb4 by the slot 0x3bb38 returns (0..23, the
+    # registry of item objects), not by a racer.
+    0x3fa08, 0x3fa0c,
 }
 # Item Fever functions whose parameter registers are not racer numbers, checked by hand (a caller's
 # racer only looks passed in because the register held it earlier in the caller).
 NOT_RACER_PARAMS = {
     0x5f268: set(range(3, 11)), 0x60f38: set(range(3, 11)),  # the Black Bob-omb's slots: 0x57bbc passes an item object
+    0x393dc: {3},  # an item object's slot in the 24-entry registry at 0xb3f04 (0x3bb38), not a racer
+    0x39c30: {3}, 0x3ce2c: {3},  # the same slots (each checks r3 <= 23 itself)
+    0x3bbb8: {3},  # an item object (0x3f8e4's first loop, its only caller), looked up in that registry
+    0x3d3cc: {3},  # an ice block's slot (0..5, from 0xa2e64 or a slot loop), every caller
+    0x3d7e8: set(range(3, 11)),  # the same slot, a stack buffer, a position and a Kart::Player (both callers)
 }
 # Racer-indexed accesses to game arrays MKW100 sizes for every racer, each checked by hand; they count
 # as a racer use that is safe past 12, like a call to a racer function (RACER_TAKERS).
@@ -77,6 +91,12 @@ GAME_ARRAY_SITES = {
     # 0x2deb4 (the Pull Star's grab): the owner's Item::Player (Item::Manager +0x14, 0x248 each), the owner
     # being a racer of this race, so below the manager's count.
     0x2df88,
+    # 0x3db60 (the freeze taking the victim's tethered item): the victim's Item::Player, checked against
+    # the manager's count (+0x10) just before.
+    0x3dc28,
+    # 0x34780 (is a racer in a Penguin Suit, asked by the freeze): its Item::Player, below the count.
+    0x34820,
+    0x32f58,  # 0x32eec (the Penguin Suit taken off, called by 0x34780): the same Item::Player, below the count
 }
 # [12] tables whose only references inside 12 elements are the table's own members (fields of element 0,
 # element 1 from a loop pointer), checked by hand; their end is the next relocation or table instead.
@@ -93,6 +113,9 @@ INITIALISED_TABLES = {
     # u8[12] (0xFF at boot only for element 0) set to 0xFF for all 12 by 0x30e7c's reset loop; the
     # Pull Star's grab (0x2deb4) writes the owner's, 0x2e214 reads one.
     0xa2df8: 'the Pull Star grab state, reset to 0xFF for all racers by 0x30e7c',
+    # u8[12] ice-block slot (0..5, 0xFF none) of each frozen racer (0x3db60 sets, 0x3ddac / 0x3f8e4 clear);
+    # 0xFF at boot only for element 0, so item_fever.cpp starts the shadow at 0xFF.
+    0xa2e64: 'the freeze ice-block slot per racer; shadow started at 0xFF by item_fever.cpp',
 }
 # Compares kept at 12 although their racer uses are shadowed, checked by hand: the bound also limits
 # a second index into a [12][12] table, whose rows are widened but whose columns are not.
@@ -104,6 +127,18 @@ KEEP_AT_12 = {
     # (or a restart) jumped to garbage. Any race of more than 12 did it, no Boo needed; headless
     # one-race runs never reload, so only menu play and MKW100_TEST_SERIES runs showed it.
     0x58450: 'bounds a column of the [12][12] table 0xc0278 (the Boo Mushroom pass-through counters)',
+    0x85530: 'bounds the search whose result 0x85588 reads 0xcf9d0 with (NOT_RACER_SITES)',
+    0x856ac: 'bounds the search whose result 0x85704 reads 0xcf9d0 with (NOT_RACER_SITES)',
+    0x3b1cc: 'bounds the loop whose counter 0x3b23c reads 0xcf9d0 with (NOT_RACER_SITES)',
+}
+# Loop counters raised although their function also has a pointer-stepping loop, checked by hand: the
+# loop they bound steps no pointer itself.
+LOOP_COUNTER_OK = {
+    # 0x3f8e4 (the freeze's per-frame pass: thaw countdown, ice block): its racer loop 0x3fb88..0x3ffcc
+    # indexes every table by the racer (r29 / r20) and its ice blocks by slot; the pointer loops are the
+    # other ones (0x3f95c, 0x3fa64, 0x3fff8, 0x4007c). The last two, over racers 0..11 and the 6 slots,
+    # are completed for racers 12+ by item_fever.cpp (FreezePast12).
+    0x3ffd4: 'the freeze pass racer loop (0x3fb88), no pointer stepped in it',
 }
 # Compares whose racer is only passed on to Item Fever functions the analysis cannot follow, raised
 # after checking those functions by hand (no [12] table of their own, or their own guard).
@@ -112,6 +147,24 @@ PASSED_ON_SAFE = {
     # to 0x2fba8, which stores it as a value into hook slots and passes it to 0x2e2f0: its own
     # `cmplwi 12` guard (raised), Kart::Manager::GetKartPlayer and a sound on that kart.
     0x2def4: 'the Pull Star grab: the grabbed racer is only stored and passed to 0x2fba8 / 0x2e2f0',
+    # 0x3e0c8 (the freeze: Ice Flower, Penguin Suit): the victim r5 goes to 0x3e164 (its own guard, raised;
+    # its tables and callees past 12: 0x3a08c / 0x39fd8 (0xcf9d0), 0x3db60 (0xa2e64), 0x35a3c (kept at 12, a
+    # notification)), or, hit by its own item, nowhere (0x3bb38 takes the item object). Its thaw and ice
+    # block run in 0x3f8e4's racer loop, raised with it (LOOP_COUNTER_OK).
+    0x3e0d0: 'the freeze: the victim goes to 0x3e164, whose racer uses are all past 12',
+}
+# Raised compares capped by hand at what another, linked compare reaches.
+RAISE_LIMIT = {
+    # the freeze (0x3e0c8) only as far as its per-frame pass thaws (0x3ffd4: tables 0xb5664 / 0xb7244 hold 24)
+    0x3e0d0: 24,
+}
+# Compares with no racer use the analysis can see, raised after checking by hand.
+FORCE_RAISE = {
+    # 0x32b14 / 0x32bc8 (a racer's effects paused / resumed by the freeze): min(effect manager's count, 12)
+    # bounds an index into the manager's Effects::Player array (+0x68), which MKW100 sizes for every racer
+    # (as 0x5a510, GAME_ARRAY_SITES); `rlwinm 2, 22, 29` scales it, so the analysis does not see it.
+    0x32b50: 'clamps a racer to the effect manager count (its Effects::Player array holds every racer)',
+    0x32bf8: 'clamps a racer to the effect manager count (its Effects::Player array holds every racer)',
 }
 RACERS = 255
 XLOAD = {23, 87, 279, 343, 535, 599}          # lwzx lbzx lhzx lhax lfsx lfdx
@@ -529,22 +582,22 @@ def analyse(pul, known):
             uses = [a for a in f.accesses if a[6] == reg]
             taken = f.taken.get(reg, [])
             passed = f.module_calls.get(reg, [])
-            if not uses and not taken and not passed:
+            if not uses and not taken and not passed and o not in FORCE_RAISE:
                 keep.append((o, f.start, 'no racer use found'))
                 continue
             if o in KEEP_AT_12:
                 keep.append((o, f.start, KEEP_AT_12[o]))
                 continue
-            if pointer_loop and reg in f.counters:
+            if pointer_loop and reg in f.counters and o not in LOOP_COUNTER_OK:
                 keep.append((o, f.start, 'loop counter of a pointer-stepping loop'))
                 continue
             reason, limit = why_unsafe(f, reg)
-            if not reason and not uses and not taken and o not in PASSED_ON_SAFE:
+            if not reason and not uses and not taken and o not in PASSED_ON_SAFE and o not in FORCE_RAISE:
                 reason = 'only passed on to Item Fever functions (no table or racer function of its own)'
             if reason:
                 keep.append((o, f.start, reason))
             else:
-                widen[o] = (f.start, len(uses), len(taken), limit)
+                widen[o] = (f.start, len(uses), len(taken), min(limit, RAISE_LIMIT.get(o, RACERS)))
                 widen_set.add(o)
     return tables, left_out, sites, widen, keep
 

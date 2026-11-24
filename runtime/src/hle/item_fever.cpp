@@ -301,6 +301,103 @@ extern "C" void RrItemFever_BooReset_819181ac(CpuContext* ctx) {
 }
 REGISTER_NATIVE_WRAPPER_AS(0x819181AC, RrItemFever_BooReset_819181ac, "RrItemFever_BooReset_819181ac");
 
+// The freeze (Ice Flower, Penguin Suit) past 12 racers. Its per-frame pass (module +0x3F8E4: thaw
+// countdown, ice block) runs its racer loop up to 24 racers (array-sites.txt; tables 0xB5664 and
+// 0xB7244 hold 24, and the freeze itself stops there too). Its last two loops, over the 6 ice
+// blocks, look at racers 0..11 only: the first hides a block no racer 0..11 holds, the second
+// clears the slot of racers 0..11 no longer frozen. For racers 12..23 they are completed here:
+// a frozen racer's block is shown again, a thawed racer's slot cleared.
+namespace {
+void FreezePast12(CpuContext* ctx, bool combinedSite) {
+    if (!BooSite(combinedSite)) return;
+    const uint32_t frozen = ShadowOfRacerTable(0x818B90E8);  // u8 [12] at +0xB90E8 (0xB3F04 + 0x51E4)
+    const uint32_t slots = ShadowOfRacerTable(0x818A2E64);   // u8 [12] at +0xA2E64
+    const uint32_t manager = Memory::Read32(0x809C18F8);
+    if (!frozen || !slots || !manager) return;
+    const uint32_t code = 0x81800000 + ModBuild::ItemFeverOffset();
+    const uint32_t blocks = 0x818B9EBC + ModBuild::ItemFeverOffset();  // u32 [6] at +0xB9EBC (0xB3F04 + 0x5FB8)
+    const uint32_t count = std::min<uint32_t>(Memory::Read8(manager + 0x24), 24);
+    static uint8_t was[12] = {};
+    for (uint32_t p = 12; p < count; ++p) {
+        const uint32_t i = p - 12;
+        const uint8_t slot = Memory::Read8(slots + i);
+        const uint8_t now = Memory::Read8(frozen + i) ? 1 : 0;
+        if (now != was[i]) RT_LOGF("item-fever", "freeze: racer %u %s (ice block %u)\n", p, now ? "frozen" : "thawed", slot);
+        was[i] = now;
+        if (!now) {
+            if (slot != 0xFF) Memory::Write8(slots + i, 0xFF);
+        } else if (slot < 6 && Memory::Read32(blocks + 4 * slot)) {
+            BooCall(ctx, code + 0x3D3CC, slot, 1);
+        }
+    }
+}
+} // namespace
+
+// Item Fever gives a newly frozen racer an ice block (+0x3DB60, one of 6) none of racers 0..11
+// holds; a racer 12+ holding one is not seen, so two frozen racers could share it. After it, a
+// racer 12+ given a block someone else holds moves to a free one (its pass places it next frame).
+namespace {
+void FreezeOwnBlock(bool combinedSite, uint32_t victim) {
+    if (!BooSite(combinedSite) || victim < 12 || victim >= 24) return;
+    const uint32_t frozen = ShadowOfRacerTable(0x818B90E8);
+    const uint32_t slots = ShadowOfRacerTable(0x818A2E64);
+    const uint32_t manager = Memory::Read32(0x809C18F8);
+    if (!frozen || !slots || !manager) return;
+    const uint32_t offset = ModBuild::ItemFeverOffset();
+    const uint32_t blocks = 0x818B9EBC + offset;
+    const uint32_t count = std::min<uint32_t>(Memory::Read8(manager + 0x24), 24);
+    auto slotOf = [&](uint32_t p) {
+        return p < 12 ? Memory::Read8(0x818A2E64 + offset + p) : Memory::Read8(slots + p - 12);
+    };
+    auto frozenNow = [&](uint32_t p) {
+        return p < 12 ? Memory::Read8(0x818B90E8 + offset + p) != 0 : Memory::Read8(frozen + p - 12) != 0;
+    };
+    const uint8_t mine = slotOf(victim);
+    if (mine >= 6) return;
+    bool shared = false;
+    bool used[6] = {};
+    for (uint32_t p = 0; p < count; ++p) {
+        if (p == victim || !frozenNow(p)) continue;
+        const uint8_t s = slotOf(p);
+        if (s < 6) used[s] = true;
+        shared |= s == mine;
+    }
+    if (!shared) return;
+    for (uint8_t s = 0; s < 6; ++s) {
+        if (!used[s] && s != mine && Memory::Read32(blocks + 4 * s)) {
+            Memory::Write8(slots + victim - 12, s);
+            return;
+        }
+    }
+}
+} // namespace
+
+extern "C" void ItemFever_FreezeBlock_8183db60(CpuContext* ctx) {
+    const uint32_t victim = ctx->gpr[4];
+    MKW_GUEST_NEXT(8183DB60)(ctx);
+    FreezeOwnBlock(false, victim);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8183DB60, ItemFever_FreezeBlock_8183db60, "ItemFever_FreezeBlock_8183db60");
+
+extern "C" void RrItemFever_FreezeBlock_818fdb60(CpuContext* ctx) {
+    const uint32_t victim = ctx->gpr[4];
+    MKW_GUEST_NEXT(818FDB60)(ctx);
+    FreezeOwnBlock(true, victim);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x818FDB60, RrItemFever_FreezeBlock_818fdb60, "RrItemFever_FreezeBlock_818fdb60");
+
+extern "C" void ItemFever_FreezePass_8183f8e4(CpuContext* ctx) {
+    MKW_GUEST_NEXT(8183F8E4)(ctx);
+    FreezePast12(ctx, false);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8183F8E4, ItemFever_FreezePass_8183f8e4, "ItemFever_FreezePass_8183f8e4");
+
+extern "C" void RrItemFever_FreezePass_818ff8e4(CpuContext* ctx) {
+    MKW_GUEST_NEXT(818FF8E4)(ctx);
+    FreezePast12(ctx, true);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x818FF8E4, RrItemFever_FreezePass_818ff8e4, "RrItemFever_FreezePass_818ff8e4");
+
 // Item Fever's unlocks, available from the start while "All characters, vehicles and cups
 // available" (local_vs unlock_all, on by default) is on:
 //   200cc: Item Fever opens its 200cc class (picked like mirror) for a license once all 8 cups are
@@ -535,6 +632,10 @@ void ReadyRacerTables() {
             }
         }
     }
+    // The freeze's ice-block slot per racer (0xFF none): 0xFF at boot only for element 0.
+    if (const uint32_t slots = ShadowOfRacerTable(0x818A2E64)) {
+        for (uint32_t i = 0; i < kShadowRacers; ++i) Memory::Write8(slots + i, 0xFF);
+    }
 }
 
 // MKW100_TEST_RACER_TABLES: every 600 race frames, which tables racers 12+ have written to (a
@@ -641,4 +742,28 @@ void ItemFever::RaceFrame(CpuContext* ctx, uint32_t raceinfo) {
     lastFrame = frame;
     LogRacerTables(frame);
     if (ModBuild::IsKnownItemFever()) TestGiveItem(ctx, raceinfo);  // the combined build: rr_item_fever.cpp
+    // MKW100_TEST_FREEZE=<racer>[,<racer>...]: at race frame 900, racer 0 freezes those racers through
+    // Item Fever's own freeze (module +0x3E0C8: owner r4, victim r5), as an Ice Flower hit does.
+    static const std::vector<uint32_t> freezeVictims = [] {
+        std::vector<uint32_t> out;
+        if (const char* text = std::getenv("MKW100_TEST_FREEZE")) {
+            for (char* end = nullptr; *text; text = *end ? end + 1 : end) {
+                out.push_back(uint32_t(std::strtoul(text, &end, 0)));
+                if (end == text) break;
+            }
+        }
+        return out;
+    }();
+    if (!freezeVictims.empty() && frame == 900 && Memory::Read32(raceinfo + 0x28) == 2) {
+        const uint32_t code = 0x81800000 + ModBuild::ItemFeverOffset();
+        for (const uint32_t victim : freezeVictims) {
+            const CpuContext saved = *ctx;
+            ctx->gpr[3] = 0;
+            ctx->gpr[4] = 0;
+            ctx->gpr[5] = victim;
+            InvokeIndirectCpu(code + 0x3E0C8, ctx);
+            *ctx = saved;
+            RT_LOGF("item-fever", "test: racer 0 froze racer %u\n", victim);
+        }
+    }
 }
