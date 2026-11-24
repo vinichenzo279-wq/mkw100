@@ -67,6 +67,13 @@ distributing anything.
   `insane_kart.cpp` resets the shadows when a race starts.
 - Code behind a kept check simply skips racers 12+ (an effect that doesn't reach them), it doesn't
   corrupt memory.
+- A table with no `racer < 12` check is invisible to the script. One is listed by hand (array-sites.txt,
+  plus the table in `insane_kart.cpp`): u8[12] at 0x81872384, cleared for every racer each frame by
+  IKW's hook in Kart::Manager::Update. Unshadowed, racers 20..23 zeroed `Settings::Mgr::sInstance`
+  (0x81872398) right behind it, so from the first race on every settings read came from low memory:
+  wrong minimap icon names (race-start crash in `SetPicturePane`), wrong character models, empty
+  texts. Headless direct-boot races never showed it (the corruption only shows on the next screens).
+  For a new version, check the address with a menu-path race (`MKW100_TEST_MENU_PRESS`).
 
 ## A new IKW version
 

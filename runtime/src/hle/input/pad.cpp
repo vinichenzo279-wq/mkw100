@@ -129,8 +129,13 @@ extern "C" uint32_t PAD__Read_HLE(uint32_t statusPtr)
         every > 0) {
         static uint32_t reads = 0;
         ++reads;
-        if (reads >= 600 && (reads % uint32_t(every)) < 6) {
+        // Pad 0 stays connected between presses, so a run without a real controller isn't paused
+        // on "controller disconnected".
+        if (statuses[0].err != PAD_ERR_NONE) {
+            statuses[0] = PADStatus{};
             statuses[0].err = PAD_ERR_NONE;
+        }
+        if (reads >= 600 && (reads % uint32_t(every)) < 6) {
             statuses[0].button |= PAD_BUTTON_A;
         }
     }

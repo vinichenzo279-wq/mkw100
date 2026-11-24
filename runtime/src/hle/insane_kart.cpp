@@ -29,6 +29,8 @@ namespace {
 struct RacerTable { uint32_t table, size, shadow; };
 constexpr RacerTable kRacerTables[] = {
 #include "insane_kart_racer_tables.inc"
+    // Added by hand (array-sites.txt): the per-racer u8[12] its Kart::Manager::Update hook clears.
+    {0x81872384, 1, 0x82E04000},
 };
 constexpr uint32_t kShadowRacers = 255 - 12;
 
