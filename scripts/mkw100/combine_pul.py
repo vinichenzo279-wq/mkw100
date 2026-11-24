@@ -28,6 +28,12 @@ Plan file, one entry per line (# comments):
     stub-rr 0xADDRESS          # make the RR function at this guest address return at once (blr)
     drop-rr 0xADDRESS          # leave out RR's patch at this game address (the game's code runs)
     write32 0xADDRESS 0xVALUE  # an extra patch of MKW100's own: write VALUE at a game address
+    nest-bl 0xIF_OFF 0xRR_OFF  # IF's `bl <game function>` at IF module offset IF_OFF calls RR's wrapper
+                               # of that function (RR module offset RR_OFF) instead: both wrappers run
+    nest-ctr 0xIF_LIS 0xIF_BCTRL 0xRR_NE 0xRR_EQ
+                               # the same for an IF call through `lis; addi r12; mtctr r12 ... bctrl`
+                               # to a game address: it calls RR's wrapper RR_NE when r4 != 0, RR_EQ
+                               # when r4 == 0 (one IF wrapper hooked at two game sites that pass r4)
 """
 import argparse
 import hashlib
@@ -45,7 +51,8 @@ LINK_BASE = 0x803992E0  # where the Pulsar loader puts Code.pul on a PAL Wii (re
 
 def read_plan(path):
     plan = {'if-offset': 0xC0000, 'chain': [], 'keep': set(), 'keep-func': set(), 'own-func': set(),
-            'rename-string': [], 'stub-rr': [], 'keep-range': [], 'drop-rr': set(), 'write32': []}
+            'rename-string': [], 'stub-rr': [], 'keep-range': [], 'drop-rr': set(), 'write32': [],
+            'nest-bl': [], 'nest-ctr': []}
     for raw in open(path, encoding='utf-8'):
         line = raw.split('#', 1)[0].split()
         if not line:
@@ -57,6 +64,11 @@ def read_plan(path):
             continue
         if line[0] == 'write32':
             plan['write32'].append((int(line[1], 16), int(line[2], 16)))
+            continue
+        if line[0] in ('nest-bl', 'nest-ctr'):
+            plan[line[0]].append(tuple(int(x, 16) for x in line[1:]))
+            if len(plan[line[0]][-1]) != (2 if line[0] == 'nest-bl' else 4):
+                raise SystemExit(f'{path}: {line[0]} has the wrong number of values')
             continue
         if line[0] == 'keep-range':
             plan['keep-range'].append((int(line[1], 16), int(line[2], 16)))
@@ -163,7 +175,8 @@ def main():
     tramp_at = (ctor_at + 4 * len(ctors) + 0xFF) & ~0xFF
 
     marker_at = 0xAFF00
-    if tramp_at + 0x40 * len(plan['chain']) > marker_at or marker_at + 56 > off:
+    stub_at = tramp_at + 0x40 * len(plan['chain'])
+    if stub_at + 0x10 * len(plan['nest-ctr']) > marker_at or marker_at + 56 > off:
         raise SystemExit('no room for the trampolines and the marker below if-offset')
     image = bytearray(off + iff['code'])
     image[marker_at:marker_at + 56] = (b'MKW100 RR+IF v1' + bytes(1) + bytes.fromhex(digests['retro-rewind']) +
@@ -186,6 +199,29 @@ def main():
                     raise SystemExit('if-offset must keep low halves (multiple of 0x10000)')
                 struct.pack_into('>I', image, off + o, (w & 0xFFFF0000) | (((hi + off) >> 16) & 0xFFFF))
                 moved += 1
+
+    # Nested wrappers: IF's wrapper of a game function calls RR's wrapper of it, which calls the game.
+    rr_code = rr['code']
+    nested = set()
+    for if_off, rr_off in plan['nest-bl']:
+        hits = [c for c in iff['cmds'] if not c[1] and c[0] == 'Rel24' and c[2] & ~3 == if_off]
+        if len(hits) != 1 or struct.unpack('>I', iff['blob'][if_off:if_off + 4])[0] >> 26 != 18:
+            raise SystemExit(f'nest-bl 0x{if_off:x}: not a relocated bl in IF')
+        if not 0 <= rr_off < rr_code:
+            raise SystemExit(f'nest-bl 0x{rr_off:x}: not RR code')
+        struct.pack_into('>I', image, off + if_off, ppc_b(off + if_off, rr_off, True))
+        nested.add(if_off)
+    for n, (lis_at, bctrl_at, rr_ne, rr_eq) in enumerate(plan['nest-ctr']):
+        w = [struct.unpack('>I', iff['blob'][o:o + 4])[0] for o in (lis_at, lis_at + 4, lis_at + 8, bctrl_at)]
+        if (w[0] >> 26 != 15 or w[1] >> 26 != 14 or (w[1] >> 21) & 31 != 12 or w[2] != 0x7D8903A6
+                or w[3] != 0x4E800421 or not 0 <= rr_ne < rr_code or not 0 <= rr_eq < rr_code):
+            raise SystemExit(f'nest-ctr 0x{lis_at:x}: expected lis; addi r12; mtctr r12 ... bctrl')
+        at = stub_at + 0x10 * n
+        stub = [0x2C040000, 0x41820008, ppc_b(at + 8, rr_ne, False), ppc_b(at + 12, rr_eq, False)]  # cmpwi r4,0; beq +8
+        image[at:at + 16] = b''.join(struct.pack('>I', x) for x in stub)
+        for o in (lis_at, lis_at + 4, lis_at + 8):
+            struct.pack_into('>I', image, off + o, 0x60000000)  # nop (r3 is set again before the call)
+        struct.pack_into('>I', image, off + bctrl_at, ppc_b(off + bctrl_at, at, True))
 
     for old, new in plan['rename-string']:
         hits = [i for i in range(off, off + iff['code']) if image[i:i + len(old) + 1] == old + bytes(1)
@@ -257,7 +293,7 @@ def main():
     cmds = [c for i, c in enumerate(cmds) if i not in drop]
     # Item Fever's module-relative commands last, so nothing of Retro Rewind's overwrites them.
     for k, ab, addr, args in iff['cmds']:
-        if not ab:
+        if not ab and not (k == 'Rel24' and addr & ~3 in nested):
             cmds.append((k, False, addr + off, shift(k, args, off)))
 
     body = bytearray()
@@ -275,7 +311,7 @@ def main():
     print(f'combined: code 0x{len(image):x} + bss 0x{iff["bss"]:x}, IF at +0x{off:x}, '
           f'{len(ctors)} constructors at +0x{ctor_at:x}, {len(plan["chain"])} chained sites, '
           f'{kept} IF game patches kept, {len(drop)} RR commands replaced, {moved} IF self-references moved, '
-          f'{len(plan["stub-rr"])} RR functions stubbed')
+          f'{len(plan["stub-rr"])} RR functions stubbed, {len(nested) + len(plan["nest-ctr"])} wrappers nested')
     print(f'Kamek code SHA-1 {hashlib.sha1(bytes(image)).hexdigest()}')
 
 

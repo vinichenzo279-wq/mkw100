@@ -122,6 +122,116 @@ extern "C" void ItemFever_Reset90E0_8184e210(CpuContext* ctx) {
 }
 REGISTER_NATIVE_WRAPPER_AS(0x8184E210, ItemFever_Reset90E0_8184e210, "ItemFever_Reset90E0_8184e210");
 
+// Boo Mushroom past 12 racers. Its per-frame pass (module +0x58414) runs a fixed min(racers, 12)
+// times: that bound also limits the column of its [12][12] pass-through table (+0xC0278), so it
+// stays at 12 (pack_racer_tables.py KEEP_AT_12). The pass also runs each racer's two countdowns:
+// the ghost (flag +0xC0234, frames left +0xC0250) and the boost of a Boo Mushroom used during a
+// spin (+0xC0268). A racer 12+ starts a ghost like the others (+0x5821C, its tables shadowed),
+// but nothing ended it: invisible for the rest of the race. The countdowns run here for racers
+// 12+, on the shadows, with Item Fever's own calls; their pass-through (stealing) still does not.
+namespace {
+constexpr uint32_t kBooGhostShadow = 0x82E65C50;   // u8  [12] at +0xC0234
+constexpr uint32_t kBooBlockShadow = 0x82E65D44;   // u8  [12] at +0xC0240
+constexpr uint32_t kBooFramesShadow = 0x82E65E38;  // s16 [12] at +0xC0250
+constexpr uint32_t kBooSpinShadow = 0x82E66020;    // u8  [12] at +0xC0268
+constexpr uint32_t kBooPassShadow = 0x82E66114;    // u16 [12][12] at +0xC0278
+
+uint32_t BooCall(CpuContext* ctx, uint32_t function, uint32_t r3, uint32_t r4 = 0) {
+    const CpuContext saved = *ctx;
+    ctx->gpr[3] = r3;
+    ctx->gpr[4] = r4;
+    InvokeIndirectCpu(function, ctx);
+    const uint32_t result = ctx->gpr[3];
+    *ctx = saved;
+    return result;
+}
+
+bool BooSite(bool combinedSite) {
+    return combinedSite ? ModBuild::Current() == ModBuild::Kind::RetroRewindItemFever : ModBuild::IsKnownItemFever() &&
+                                                                                           ModBuild::ItemFeverOffset() == 0;
+}
+
+void BooPast12(CpuContext* ctx, bool combinedSite) {
+    if (!BooSite(combinedSite)) return;
+    const uint32_t code = 0x81800000 + ModBuild::ItemFeverOffset();
+    const uint32_t manager = Memory::Read32(0x809C18F8);  // Kart::Manager
+    if (!manager) return;
+    const uint32_t count = Memory::Read8(manager + 0x24);
+    for (uint32_t p = 12; p < count; ++p) {
+        const uint32_t i = p - 12;
+        // A Boo Mushroom used during a spin: its boost until the spin ends, then the ghost (0x584C4).
+        if (const uint8_t spin = Memory::Read8(kBooSpinShadow + i)) {
+            const uint32_t player = BooCall(ctx, 0x80590100, manager, p);  // Kart::Manager::GetKartPlayer
+            const uint32_t movement = player ? Memory::Read32(player + 0x44) : 0;
+            if (!movement) {
+                Memory::Write8(kBooSpinShadow + i, 0);
+            } else {
+                BooCall(ctx, 0x8057F3D8, movement);  // Kart::Movement::ActivateMushroom
+                if (BooCall(ctx, code + 0x58188, movement) & 0xFF) {
+                    Memory::Write8(kBooSpinShadow + i, 0);
+                    BooCall(ctx, code + 0x5821C, p);
+                } else {
+                    Memory::Write8(kBooSpinShadow + i, uint8_t(spin - 1));
+                    if (spin == 1) BooCall(ctx, code + 0x5821C, p);
+                }
+            }
+        }
+        // The ghost (0x58548): its frames count down, then Item Fever ends it.
+        if (!Memory::Read8(kBooGhostShadow + i)) continue;
+        const uint32_t player = BooCall(ctx, 0x80590100, manager, p);
+        if (!player || !Memory::Read32(player + 0x20)) {
+            Memory::Write8(kBooGhostShadow + i, 0);
+            continue;
+        }
+        BooCall(ctx, code + 0x5E58C, p);
+        int16_t frames = int16_t(Memory::Read16(kBooFramesShadow + 2 * i));
+        if (frames > 0) Memory::Write16(kBooFramesShadow + 2 * i, uint16_t(--frames));
+        if (frames > 0) continue;
+        BooCall(ctx, code + 0x5E3EC, p, 0);
+        BooCall(ctx, code + 0x5E3D0, p);
+        BooCall(ctx, code + 0x5E6D0, p);
+        Memory::Write8(kBooGhostShadow + i, 0);
+        RT_LOGF("item-fever", "Boo: ghost of racer %u over\n", p);
+    }
+}
+
+// Its race reset (+0x581AC, on Pulsar's race-load list) clears racers 0..11; the shadows with it.
+void BooReset(bool combinedSite) {
+    if (!BooSite(combinedSite)) return;
+    for (uint32_t i = 0; i < kFeverShadowRacers; ++i) {
+        Memory::Write8(kBooGhostShadow + i, 0);
+        Memory::Write8(kBooBlockShadow + i, 0);
+        Memory::Write16(kBooFramesShadow + 2 * i, 0);
+        Memory::Write8(kBooSpinShadow + i, 0);
+        for (uint32_t b = 0; b < 0x18; ++b) Memory::Write8(kBooPassShadow + i * 0x18 + b, 0);
+    }
+}
+} // namespace
+
+extern "C" void ItemFever_BooPass_81858414(CpuContext* ctx) {
+    MKW_GUEST_NEXT(81858414)(ctx);
+    BooPast12(ctx, false);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x81858414, ItemFever_BooPass_81858414, "ItemFever_BooPass_81858414");
+
+extern "C" void ItemFever_BooReset_818581ac(CpuContext* ctx) {
+    MKW_GUEST_NEXT(818581AC)(ctx);
+    BooReset(false);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x818581AC, ItemFever_BooReset_818581ac, "ItemFever_BooReset_818581ac");
+
+extern "C" void RrItemFever_BooPass_81918414(CpuContext* ctx) {
+    MKW_GUEST_NEXT(81918414)(ctx);
+    BooPast12(ctx, true);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x81918414, RrItemFever_BooPass_81918414, "RrItemFever_BooPass_81918414");
+
+extern "C" void RrItemFever_BooReset_819181ac(CpuContext* ctx) {
+    MKW_GUEST_NEXT(819181AC)(ctx);
+    BooReset(true);
+}
+REGISTER_NATIVE_WRAPPER_AS(0x819181AC, RrItemFever_BooReset_819181ac, "RrItemFever_BooReset_819181ac");
+
 // Item Fever's unlocks, available from the start while "All characters, vehicles and cups
 // available" (local_vs unlock_all, on by default) is on:
 //   200cc: Item Fever opens its 200cc class (picked like mirror) for a license once all 8 cups are
@@ -402,7 +512,12 @@ void TestGiveItem(CpuContext* ctx, uint32_t raceinfo) {
     const uint32_t players = Memory::Read32(manager + 0x14);
     static uint32_t lastGiven = 0;
     uint32_t stillHeld = 0, given = 0, other = 0, full = 0;
-    for (uint32_t i = 0; i < count; ++i) {
+    // MKW100_TEST_GIVE_ITEM_EVERY=<n>: only racers 0, n, 2n, ... get it (the others keep their box items).
+    static const uint32_t every = [] {
+        const char* text = std::getenv("MKW100_TEST_GIVE_ITEM_EVERY");
+        return text && *text ? uint32_t(std::max(1L, std::strtol(text, nullptr, 0))) : 1u;
+    }();
+    for (uint32_t i = 0; i < count; i += every) {
         const uint32_t player = players + i * 0x248;     // Item::Player
         if (Memory::Read8(player + 0x19)) continue;      // human
         const uint32_t inventory = player + 0x88;

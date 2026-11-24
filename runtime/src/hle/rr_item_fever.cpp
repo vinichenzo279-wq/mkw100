@@ -12,6 +12,7 @@
 #include "memory.h"
 #include "runtime_log.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 
@@ -50,7 +51,12 @@ void TestGiveItem(CpuContext* ctx, uint32_t raceinfo) {
     const uint32_t players = Memory::Read32(manager + 0x14);
     static uint32_t lastGiven = 0;
     uint32_t stillHeld = 0, given = 0, other = 0, full = 0;
-    for (uint32_t i = 0; i < count; ++i) {
+    // MKW100_TEST_GIVE_ITEM_EVERY=<n>: only racers 0, n, 2n, ... get it (the others keep their box items).
+    static const uint32_t every = [] {
+        const char* text = std::getenv("MKW100_TEST_GIVE_ITEM_EVERY");
+        return text && *text ? uint32_t(std::max(1L, std::strtol(text, nullptr, 0))) : 1u;
+    }();
+    for (uint32_t i = 0; i < count; i += every) {
         const uint32_t player = players + i * kItemPlayerSize;
         if (Memory::Read8(player + 0x19)) continue;  // human
         const uint32_t inventory = player + kInventory;

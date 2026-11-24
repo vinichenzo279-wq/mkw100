@@ -398,3 +398,23 @@ keep 0x8082EE2C   # 0x8082ec9c
 keep 0x8082EF44   # 0x8082ec9c
 keep 0x8082F674   # BackModelMgr::Update
 keep 0x8082F718   # BackModelMgr::Update
+
+# User's RR+IF play test, 2026-11-24 (Chain Chomp, Snowball, Ice Flower and Rock did nothing, no item
+# timer bar or Purple Shell distance meter): Item Fever patches the earlier audit left out.
+# Its file lookups: a kart-archive lookup of "honeBall" (the Snowball) or "ice.brres" (the Ice
+# Flower) that fails is retried in Common. Retro Rewind does not patch these functions.
+keep 0x805411FC   # ArchiveMgr::GetFile
+keep 0x805413C8   # ArchiveMgr::GetKartArchiveFile
+# Its countdown control's update, which also draws its item timer and distance texts ([MKWCI-DIST]).
+keep 0x807EE358   # CtrlRaceCount::OnUpdate
+# Both packs wrap ObjectsMgr::CreateInstance's two calls of ObjectsMgr::CreateAllObjects. Item
+# Fever's wrapper adds its objects (Chain Chomps, Goombas, ...) to the course's, then calls the
+# game's CreateAllObjects through ctr; nested, it calls Retro Rewind's wrapper of that site instead
+# (r4 = 1 at the first call, 0 at the second).
+keep 0x8082A7D4   # ObjectsMgr::CreateInstance+0x50
+keep 0x8082A800   # ObjectsMgr::CreateInstance+0x7C
+nest-ctr 0x51F74 0x51F88 0x4FF0 0x9A04
+# Both packs wrap Kart::Movement::Update's call of Kart::Boost::Update (Item Fever: the Rock's giga
+# combo); Item Fever's wrapper calls Retro Rewind's.
+keep 0x8057934C   # Kart::Movement::Update+0xA70
+nest-bl 0x17234 0x39C78
