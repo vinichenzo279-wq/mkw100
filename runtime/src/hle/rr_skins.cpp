@@ -1,4 +1,5 @@
-// mkw100: Retro Rewind kart archives and character skins past 12 racers, and skins on CPU racers.
+// mkw100: Retro Rewind kart archives and character skins past 12 racers, skins on CPU racers, and
+// Mii Outfit C open with the other unlocks.
 //
 // Retro Rewind ships up to 100 alternative skins per character (Character/AllKart
 // "<kart>-<char>-<n>-allkart*.szs", Character/Driver "<char>-<n>.brres"). Its Code.pul scans which
@@ -290,3 +291,22 @@ extern "C" void RR_RacerSkin_818329a0(CpuContext* ctx) {
     ctx->gpr[3] = character < kSkinCharacters && SkinExists(character, skin) ? skin : 0;
 }
 REGISTER_NATIVE_WRAPPER_AS(0x818329A0, RR_RacerSkin_818329a0, "RR_RacerSkin_818329a0");
+
+// Mii Outfit C. Retro Rewind adds an Outfit C button to character selection and opens it only at
+// 30000 VR: its OnActivate (0x8184FED8) calls PointRating::GetUserVR (0x8182AD58) from 0x8184FF60
+// and compares the result with 30000.0f. While "All characters, vehicles and cups available"
+// (local_vs unlock_all, on by default) is on, that one call reports 30000, so the button is open
+// like the game's own unlocks. The VR shown anywhere else is untouched.
+constexpr uint32_t kOutfitCVrCheckReturn = 0x8184FF64;
+constexpr double kOutfitCVr = 30000.0;
+
+extern "C" void RR_UserVr_8182ad58(CpuContext* ctx) {
+    const bool outfitC = ctx->lr == kOutfitCVrCheckReturn && KnownRrBuild() && LocalVs::UnlocksEnabled();
+    MKW_GUEST_NEXT(8182AD58)(ctx);
+    if (outfitC && ctx->fpr[1].d < kOutfitCVr) {
+        static bool logged = false;
+        if (!logged) { logged = true; RT_LOGF("rr-skins", "Mii Outfit C unlocked (all characters available)\n"); }
+        ctx->fpr[1].d = kOutfitCVr;
+    }
+}
+REGISTER_NATIVE_WRAPPER_AS(0x8182AD58, RR_UserVr_8182ad58, "RR_UserVr_8182ad58");
