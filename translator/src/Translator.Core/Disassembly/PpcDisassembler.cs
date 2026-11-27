@@ -184,7 +184,8 @@ public sealed class PpcDisassembler : IDisposable
                         break;
                     }
                     var cursorOffset = image.GetOffset(cursor, sizeof(uint));
-                    var word = BinaryPrimitives.ReadUInt32BigEndian(image.Memory.AsSpan(cursorOffset, 4));
+                    var word = InstructionOverrides.Current.Apply(
+                        cursor, BinaryPrimitives.ReadUInt32BigEndian(image.Memory.AsSpan(cursorOffset, 4)));
                     ins = PpcDecoder.Decode(cursor, word);
                     instructionMap[cursor] = ins;
                 }
